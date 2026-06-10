@@ -1,12 +1,131 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Github Pages Site</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIワークアウトプランナー | あなた専用の筋トレメニュー</title>
+  <meta name="description" content="体重・身長・目的・使える器具から、AIがあなたに最適な1週間の筋トレメニューを提案します。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Welcome to My Github Pages Site</h1>
-    <p>This is my first GitHub Pages.</p>
+  <header class="site-header">
+    <div class="header-inner">
+      <h1 class="logo"><span class="logo-en">AI WORKOUT</span><span class="logo-ja">プランナー</span></h1>
+      <button type="button" id="settings-btn" class="icon-btn" aria-label="設定">⚙</button>
+    </div>
+    <p class="tagline">体格・目的・使える器具から、あなた専用の1週間メニューを作成</p>
+    <p id="mode-indicator" class="mode-indicator"></p>
+  </header>
+
+  <main>
+    <form id="menu-form" class="panel" novalidate>
+      <h2 class="panel-title">プロフィール入力</h2>
+
+      <div class="field-grid">
+        <label class="field">
+          <span>体重 (kg)</span>
+          <input type="number" id="weight" min="20" max="300" step="0.1" placeholder="65" required>
+        </label>
+        <label class="field">
+          <span>身長 (cm)</span>
+          <input type="number" id="height" min="100" max="250" step="0.1" placeholder="170" required>
+        </label>
+        <label class="field">
+          <span>年齢</span>
+          <input type="number" id="age" min="10" max="100" placeholder="30" required>
+        </label>
+        <label class="field">
+          <span>性別</span>
+          <select id="gender">
+            <option value="男性">男性</option>
+            <option value="女性">女性</option>
+            <option value="その他・回答しない">その他・回答しない</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>目的</span>
+          <select id="goal">
+            <option value="hypertrophy">筋肥大(筋肉を大きくしたい)</option>
+            <option value="cut">減量・引き締め</option>
+            <option value="strength">筋力・体力向上</option>
+            <option value="health">健康維持</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>経験レベル</span>
+          <select id="level">
+            <option value="beginner">初心者(〜1年)</option>
+            <option value="intermediate">中級者(1〜3年)</option>
+            <option value="advanced">上級者(3年以上)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>週のトレーニング頻度</span>
+          <select id="frequency">
+            <option value="1">週1回</option>
+            <option value="2">週2回</option>
+            <option value="3" selected>週3回</option>
+            <option value="4">週4回</option>
+            <option value="5">週5回</option>
+            <option value="6">週6回</option>
+            <option value="7">週7回</option>
+          </select>
+        </label>
+      </div>
+
+      <h2 class="panel-title">使える器具・施設 <small>(複数選択可・未選択なら自重のみ)</small></h2>
+      <div id="preset-buttons" class="preset-bar"></div>
+      <div id="equipment-groups" class="equipment-groups"></div>
+
+      <p id="form-error" class="error-msg" role="alert"></p>
+      <button type="submit" id="generate-btn" class="primary-btn">メニュー作成</button>
+    </form>
+
+    <section id="result-section" class="panel" hidden>
+      <div class="result-header">
+        <h2 class="panel-title">あなたの1週間メニュー</h2>
+        <span id="result-badge" class="badge"></span>
+      </div>
+      <div id="result-content" class="result-content"></div>
+    </section>
+  </main>
+
+  <dialog id="settings-modal" class="settings-modal">
+    <h2>設定</h2>
+    <p class="settings-desc">
+      Anthropic API キーを設定すると、Claude AI があなた専用のメニューを生成します。
+      キーが未設定の場合は内蔵アルゴリズムでメニューを作成します。
+    </p>
+    <label class="field">
+      <span>Anthropic API キー</span>
+      <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off">
+    </label>
+    <label class="check-field">
+      <input type="checkbox" id="force-builtin">
+      <span>API キーがあっても常に内蔵アルゴリズムを使う</span>
+    </label>
+    <div class="settings-note">
+      <strong>⚠ API キーの取り扱いについて</strong>
+      <ul>
+        <li>キーはこのブラウザの localStorage にのみ保存され、外部には送信されません(Anthropic API への通信を除く)。</li>
+        <li>共有 PC では保存しないでください。</li>
+        <li>Claude API の利用には Anthropic の従量課金が発生します。</li>
+      </ul>
+    </div>
+    <div class="settings-actions">
+      <button type="button" id="api-key-delete" class="secondary-btn">キーを削除</button>
+      <button type="button" id="settings-close" class="secondary-btn">閉じる</button>
+      <button type="button" id="api-key-save" class="primary-btn">保存</button>
+    </div>
+  </dialog>
+
+  <footer class="site-footer">
+    <p>本アプリの提案は一般的なフィットネス情報であり、医療アドバイスではありません。持病のある方は医師に相談してください。</p>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>
