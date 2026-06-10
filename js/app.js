@@ -1,8 +1,9 @@
 // UI の配線:フォーム入力 → メニュー生成(Claude / 内蔵ロジック)→ 描画
-import { generatePlan, EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS } from "./planner.js";
+import { generatePlan, allExerciseNames, EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS } from "./planner.js";
 
 const STORAGE_KEY_API = "anthropic_api_key";
 const STORAGE_KEY_FORCE_BUILTIN = "force_builtin";
+const STORAGE_KEY_LOGS = "workout_logs";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -96,11 +97,18 @@ function renderBuiltinPlan(plan) {
   html += `<div class="card"><span class="card-label">分割法</span><span class="card-value small">${escapeHtml(plan.splitName)}</span></div>`;
   html += `</div>`;
 
+  if (plan.historySummary) {
+    html += `<div class="history-summary"><strong>📒 記録の反映</strong><ul>`;
+    for (const line of plan.historySummary) html += `<li>${escapeHtml(line)}</li>`;
+    html += `</ul></div>`;
+  }
+
   for (const day of plan.days) {
     html += `<section class="day-block"><h3>${escapeHtml(day.title)}</h3>`;
     html += `<table><thead><tr><th>種目</th><th>セット</th><th>回数</th><th>休憩</th></tr></thead><tbody>`;
     for (const ex of day.exercises) {
-      html += `<tr><td>${escapeHtml(ex.name)}</td><td>${ex.sets}</td><td>${escapeHtml(ex.reps)}</td><td>${escapeHtml(ex.rest)}</td></tr>`;
+      const note = ex.note ? `<br><small class="ex-note">${escapeHtml(ex.note)}</small>` : "";
+      html += `<tr><td>${escapeHtml(ex.name)}${note}</td><td>${ex.sets}</td><td>${escapeHtml(ex.reps)}</td><td>${escapeHtml(ex.rest)}</td></tr>`;
     }
     html += `</tbody></table>`;
     if (day.cardio) {
@@ -200,14 +208,14 @@ function showResultSection() {
   $("#result-section").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function runBuiltin(profile) {
-  const plan = generatePlan(profile);
+function runBuiltin(profile, logs) {
+  const plan = generatePlan(profile, logs);
   setResultMode("builtin");
   $("#result-content").innerHTML = renderBuiltinPlan(plan);
   showResultSection();
 }
 
-async function runAi(profile, apiKey) {
+async function runAi(profile, apiKey, logs) {
   const content = $("#result-content");
   setResultMode("ai");
   content.innerHTML = `<p class="generating">Claude がメニューを考えています…</p>`;
@@ -217,7 +225,7 @@ async function runAi(profile, apiKey) {
     content.innerHTML =
       `<p class="error-msg">${escapeHtml(msg)}</p>` +
       `<button type="button" id="fallback-btn" class="secondary-btn">内蔵ロジックで生成する</button>`;
-    $("#fallback-btn").addEventListener("click", () => runBuiltin(profile));
+    $("#fallback-btn").addEventListener("click", () => runBuiltin(profile, logs));
   };
 
   // 動的 import:API キーを使う人だけが SDK(CDN)を読み込む
@@ -232,7 +240,7 @@ async function runAi(profile, apiKey) {
 
   let buffer = "";
   try {
-    await aiModule.generateWithClaude(profile, apiKey, (delta) => {
+    await aiModule.generateWithClaude(profile, apiKey, logs, (delta) => {
       buffer += delta;
       content.innerHTML = renderMarkdown(buffer);
     });
@@ -258,17 +266,123 @@ async function onGenerate(event) {
 
   const apiKey = localStorage.getItem(STORAGE_KEY_API);
   const forceBuiltin = localStorage.getItem(STORAGE_KEY_FORCE_BUILTIN) === "1";
+  const logs = loadLogs();
   const btn = $("#generate-btn");
   btn.disabled = true;
   try {
     if (apiKey && !forceBuiltin) {
-      await runAi(profile, apiKey);
+      await runAi(profile, apiKey, logs);
     } else {
-      runBuiltin(profile);
+      runBuiltin(profile, logs);
     }
   } finally {
     btn.disabled = false;
   }
+}
+
+// ---------- トレーニング記録 ----------
+
+function loadLogs() {
+  try {
+    const logs = JSON.parse(localStorage.getItem(STORAGE_KEY_LOGS) ?? "[]");
+    return Array.isArray(logs) ? logs : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLogs(logs) {
+  localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(logs));
+}
+
+function addLogRow(entry = {}) {
+  const row = document.createElement("div");
+  row.className = "log-row";
+  row.innerHTML =
+    `<input type="text" class="log-name" list="exercise-names" placeholder="種目名(例: ベンチプレス)" value="${escapeHtml(entry.name ?? "")}">` +
+    `<input type="number" class="log-weight" min="0" step="0.5" placeholder="重量kg">` +
+    `<input type="number" class="log-sets" min="1" max="20" placeholder="セット">` +
+    `<input type="number" class="log-reps" min="1" max="200" placeholder="回数">` +
+    `<button type="button" class="row-delete" aria-label="この行を削除">✕</button>`;
+  row.querySelector(".row-delete").addEventListener("click", () => row.remove());
+  $("#log-entries").appendChild(row);
+}
+
+function renderLogList() {
+  const logs = loadLogs().sort((a, b) => (a.date < b.date ? 1 : -1));
+  const box = $("#log-list");
+  if (logs.length === 0) {
+    box.innerHTML = `<p class="log-empty">まだ記録がありません。トレーニングをしたら記録してみましょう。</p>`;
+    return;
+  }
+  let html = `<h3 class="log-list-title">これまでの記録(${logs.length}件)</h3>`;
+  for (const log of logs) {
+    const summary = log.entries
+      .map((e) => {
+        const w = parseFloat(e.weight) > 0 ? `${e.weight}kg×` : "";
+        return `${e.name} ${w}${e.reps}回×${e.sets}セット`;
+      })
+      .join(" / ");
+    html +=
+      `<div class="log-item" data-id="${log.id}">` +
+      `<div class="log-item-body"><span class="log-item-date">${escapeHtml(log.date)}</span>` +
+      `<span class="log-item-summary">${escapeHtml(summary)}</span></div>` +
+      `<button type="button" class="row-delete log-item-delete" aria-label="この記録を削除">✕</button></div>`;
+  }
+  box.innerHTML = html;
+  box.querySelectorAll(".log-item-delete").forEach((btn) =>
+    btn.addEventListener("click", (e) => {
+      const id = e.target.closest(".log-item").dataset.id;
+      saveLogs(loadLogs().filter((l) => String(l.id) !== id));
+      renderLogList();
+    })
+  );
+}
+
+function onLogSubmit(event) {
+  event.preventDefault();
+  const errorBox = $("#log-error");
+  errorBox.textContent = "";
+
+  const date = $("#log-date").value;
+  if (!date) {
+    errorBox.textContent = "日付を入力してください。";
+    return;
+  }
+  const entries = [...document.querySelectorAll("#log-entries .log-row")]
+    .map((row) => ({
+      name: row.querySelector(".log-name").value.trim(),
+      weight: row.querySelector(".log-weight").value,
+      sets: row.querySelector(".log-sets").value || "1",
+      reps: row.querySelector(".log-reps").value || "1",
+    }))
+    .filter((e) => e.name.length > 0);
+  if (entries.length === 0) {
+    errorBox.textContent = "少なくとも1つ、種目名を入力してください。";
+    return;
+  }
+
+  const logs = loadLogs();
+  logs.push({ id: Date.now(), date, entries });
+  saveLogs(logs);
+  $("#log-entries").innerHTML = "";
+  addLogRow();
+  renderLogList();
+}
+
+function setupLogSection() {
+  // 種目名のサジェスト
+  const datalist = $("#exercise-names");
+  for (const name of allExerciseNames()) {
+    const option = document.createElement("option");
+    option.value = name;
+    datalist.appendChild(option);
+  }
+  $("#log-date").value = new Date().toISOString().slice(0, 10);
+  addLogRow();
+  $("#log-add-row").addEventListener("click", () => addLogRow());
+  $("#log-form").addEventListener("submit", onLogSubmit);
+  renderLogList();
 }
 
 // ---------- 設定モーダル ----------
@@ -307,5 +421,6 @@ function setupSettings() {
 
 buildEquipmentCheckboxes();
 setupSettings();
+setupLogSection();
 updateModeIndicator();
 $("#menu-form").addEventListener("submit", onGenerate);

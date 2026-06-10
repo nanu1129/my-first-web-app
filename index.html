@@ -84,6 +84,22 @@
       <button type="submit" id="generate-btn" class="primary-btn">メニュー作成</button>
     </form>
 
+    <section class="panel" id="log-section">
+      <h2 class="panel-title">トレーニング記録 <small>(記録するとメニュー生成に反映されます)</small></h2>
+      <form id="log-form" novalidate>
+        <label class="field log-date-field">
+          <span>日付</span>
+          <input type="date" id="log-date">
+        </label>
+        <div id="log-entries"></div>
+        <button type="button" id="log-add-row" class="secondary-btn">+ 種目を追加</button>
+        <p id="log-error" class="error-msg" role="alert"></p>
+        <button type="submit" class="primary-btn log-save-btn">この内容で記録する</button>
+      </form>
+      <div id="log-list" class="log-list"></div>
+    </section>
+    <datalist id="exercise-names"></datalist>
+
     <section id="result-section" class="panel" hidden>
       <div class="result-header">
         <h2 class="panel-title">あなたの1週間メニュー</h2>

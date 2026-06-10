@@ -12,9 +12,31 @@ const SYSTEM_PROMPT = `あなたは経験豊富なプロのパーソナルトレ
 - プールが使える場合は、目的に応じて水泳・水中ウォーキングを有酸素運動として積極的に組み込むこと。
 - 各トレーニング日について「## Day N:(内容)」の見出しを付け、種目・セット数・回数・休憩時間を表で示すこと。
 - 最後に「## 栄養・生活アドバイス」の見出しで、タンパク質摂取量の目安(体重から計算)、カロリー方針、注意点を箇条書きで示すこと。
-- 安全に配慮し、レベルに合わない高難度種目は避けること。医学的な診断はしないこと。`;
+- 安全に配慮し、レベルに合わない高難度種目は避けること。医学的な診断はしないこと。
 
-function buildUserMessage(profile) {
+トレーニング記録が提供された場合は、必ず以下を反映すること:
+- 記録にある種目は前回の重量・回数を踏まえ、漸進性過負荷(重量+2.5kg または 回数+1 など)の具体的な目標を示す。
+- 記録上しばらく鍛えていない部位を優先的に組み込み、全身のバランスを取る。
+- 最後のトレーニングから3週間以上空いている場合は、以前の70〜80%程度の負荷から再開するメニューにする。
+- 記録から読み取れる頻度・継続状況に合わせて無理のないボリュームにする。`;
+
+// 直近のトレーニング記録をプロンプト用テキストにまとめる(新しい順に最大12回分)
+function buildLogsSection(logs) {
+  if (!logs || logs.length === 0) return "";
+  const recent = [...logs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 12);
+  const lines = recent.map((log) => {
+    const entries = log.entries
+      .map((e) => {
+        const weight = parseFloat(e.weight) > 0 ? `${e.weight}kg×` : "";
+        return `${e.name} ${weight}${e.reps}回×${e.sets}セット`;
+      })
+      .join("、");
+    return `- ${log.date}: ${entries}`;
+  });
+  return `\n\n## 最近のトレーニング記録(新しい順)\n${lines.join("\n")}`;
+}
+
+function buildUserMessage(profile, logs) {
   let keys = profile.equipment;
   // 「マシン一式」選択時は個別マシンの列挙をまとめて簡潔にする
   if (keys.includes("machine")) {
@@ -37,12 +59,12 @@ function buildUserMessage(profile) {
 - 目的: ${GOALS[profile.goal] ?? profile.goal}
 - 経験レベル: ${LEVELS[profile.level] ?? profile.level}
 - 週のトレーニング頻度: ${profile.frequency}回
-- 使える器具・施設: ${equipmentText}`;
+- 使える器具・施設: ${equipmentText}${buildLogsSection(logs)}`;
 }
 
 // メニューを生成し、テキストの増分を onText コールバックで逐次通知する。
 // 戻り値は完成したメッセージ全文。
-export async function generateWithClaude(profile, apiKey, onText) {
+export async function generateWithClaude(profile, apiKey, logs, onText) {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
   const stream = client.messages.stream({
@@ -50,7 +72,7 @@ export async function generateWithClaude(profile, apiKey, onText) {
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildUserMessage(profile) }],
+    messages: [{ role: "user", content: buildUserMessage(profile, logs) }],
   });
 
   stream.on("text", (delta) => onText(delta));

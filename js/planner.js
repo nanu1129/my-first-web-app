@@ -189,20 +189,82 @@ function isAvailable(exercise, selectedSet) {
   return exercise.equipment.every((tag) => selectedSet.has(tag));
 }
 
-// 指定部位から、使える器具とレベルに合う種目を優先度順に1つ選ぶ
-function pickExercise(muscle, selectedSet, levelNum, used) {
+// 記録入力のサジェスト用に全種目名を返す
+export function allExerciseNames() {
+  return EXERCISES.map((e) => e.name);
+}
+
+const MUSCLE_LABELS = {
+  chest: "胸", back: "背中", legs: "脚",
+  shoulders: "肩", arms: "腕", core: "体幹", cardio: "有酸素",
+};
+
+// トレーニング記録を分析する。
+// logs: [{ date: "YYYY-MM-DD", entries: [{ name, weight, sets, reps }] }]
+export function analyzeLogs(logs, now = new Date()) {
+  if (!logs || logs.length === 0) return null;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const daysAgo = (dateStr) => Math.floor((now - new Date(`${dateStr}T00:00:00`)) / DAY_MS);
+  const sorted = [...logs].sort((a, b) => (a.date < b.date ? 1 : -1)); // 新しい順
+
+  const daysSinceLast = daysAgo(sorted[0].date);
+  const recentCount = sorted.filter((l) => daysAgo(l.date) <= 28).length;
+  const weeklyAvg = Math.round((recentCount / 4) * 10) / 10;
+
+  const nameToMuscle = new Map(EXERCISES.map((e) => [e.name, e.muscle]));
+  const muscleLastDays = {};   // 部位 -> 最後に鍛えてからの日数
+  const lastRecordByName = {}; // 種目名 -> 最新の記録
+  for (const log of sorted) {
+    const days = daysAgo(log.date);
+    for (const entry of log.entries) {
+      const muscle = nameToMuscle.get(entry.name);
+      if (muscle && !(muscle in muscleLastDays)) muscleLastDays[muscle] = days;
+      if (!lastRecordByName[entry.name]) lastRecordByName[entry.name] = { ...entry, date: log.date };
+    }
+  }
+
+  // 記録上、14日以上鍛えていない(または一度も出てこない)筋トレ部位
+  const neglectedMuscles = Object.keys(MUSCLE_LABELS).filter(
+    (m) => m !== "cardio" && (muscleLastDays[m] === undefined || muscleLastDays[m] > 14)
+  );
+
+  return {
+    count: logs.length,
+    lastDate: sorted[0].date,
+    daysSinceLast,
+    weeklyAvg,
+    muscleLastDays,
+    lastRecordByName,
+    neglectedMuscles,
+    muscleLabel: (m) => MUSCLE_LABELS[m] ?? m,
+  };
+}
+
+// 前回記録から「次の一歩」の目標を文章にする
+function progressionNote(record) {
+  const weight = parseFloat(record.weight);
+  if (weight > 0) {
+    return `前回(${record.date}): ${weight}kg×${record.reps}回×${record.sets}セット → 重量+2.5kgか回数+1を目標に`;
+  }
+  return `前回(${record.date}): ${record.reps}回×${record.sets}セット → 回数+1〜2を目標に`;
+}
+
+// 指定部位から、使える器具とレベルに合う種目を優先度順に1つ選ぶ。
+// 記録に登場する種目(=やり慣れている種目)はわずかに優先する。
+function pickExercise(muscle, selectedSet, levelNum, used, knownNames = new Set()) {
+  const score = (e) => e.priority + (knownNames.has(e.name) ? 1.5 : 0);
   const candidates = EXERCISES.filter(
     (e) => e.muscle === muscle && isAvailable(e, selectedSet) && !used.has(e.name)
-  ).sort((a, b) => b.priority - a.priority);
+  ).sort((a, b) => score(b) - score(a));
   // レベルに合うものを優先し、無ければレベル制限を緩めて選ぶ
   const fit = candidates.find((e) => e.level <= levelNum) ?? candidates[0];
   if (fit) used.add(fit.name);
   return fit ?? null;
 }
 
-function pickCardio(selectedSet, levelNum) {
+function pickCardio(selectedSet, levelNum, knownNames) {
   const used = new Set();
-  return pickExercise("cardio", selectedSet, levelNum, used);
+  return pickExercise("cardio", selectedSet, levelNum, used, knownNames);
 }
 
 // 週頻度から分割法と各日の対象部位を決める
@@ -282,9 +344,10 @@ function buildAdvice(profile, bmi) {
   return { protein, calories, tips };
 }
 
-// メイン:プロフィールから1週間のメニューを生成する
+// メイン:プロフィール(+トレーニング記録)から1週間のメニューを生成する
 // profile: { weight, height, age, gender, goal, level, frequency, equipment: string[] }
-export function generatePlan(profile) {
+// logs:    [{ date, entries: [{ name, weight, sets, reps }] }](省略可)
+export function generatePlan(profile, logs = [], now = new Date()) {
   const levelNum = LEVEL_NUM[profile.level] ?? 1;
   const selectedSet = new Set(profile.equipment);
   // 「マシン一式」選択時は個別マシンすべてを使えるものとして扱う
@@ -294,20 +357,37 @@ export function generatePlan(profile) {
   const bmi = calcBmi(profile.weight, profile.height);
   const split = buildSplit(profile.frequency);
   const params = GOAL_PARAMS[profile.goal] ?? GOAL_PARAMS.health;
-  const cardio = params.cardioMin ? pickCardio(selectedSet, levelNum) : null;
+
+  const analysis = analyzeLogs(logs, now);
+  const knownNames = new Set(Object.keys(analysis?.lastRecordByName ?? {}));
+  const cardio = params.cardioMin ? pickCardio(selectedSet, levelNum, knownNames) : null;
 
   const days = split.days.map((day) => {
+    // 以前鍛えていたのに14日以上空いている部位を、その日のメニューの先頭(=疲れていない状態)に回す。
+    // 記録に一度も出てこない部位は対象外(通常のコンパウンド優先の順序を保つ)。
+    let muscles = day.muscles;
+    if (analysis) {
+      const stale = new Set(
+        analysis.neglectedMuscles.filter((m) => m in analysis.muscleLastDays)
+      );
+      if (stale.size > 0) {
+        muscles = [...muscles].sort((a, b) => (stale.has(b) ? 1 : 0) - (stale.has(a) ? 1 : 0));
+      }
+    }
+
     const used = new Set();
     const exercises = [];
-    for (const muscle of day.muscles) {
-      const ex = pickExercise(muscle, selectedSet, levelNum, used);
+    for (const muscle of muscles) {
+      const ex = pickExercise(muscle, selectedSet, levelNum, used, knownNames);
       if (!ex) continue;
       const p = ex.kind === "compound" ? params.compound : params.isolation;
+      const record = analysis?.lastRecordByName[ex.name];
       exercises.push({
         name: ex.name,
         sets: p.sets,
         reps: ex.name === "プランク" ? "30〜60秒キープ" : p.reps,
         rest: p.rest,
+        note: record ? progressionNote(record) : null,
       });
     }
     return {
@@ -317,10 +397,32 @@ export function generatePlan(profile) {
     };
   });
 
+  const advice = buildAdvice(profile, bmi);
+  let historySummary = null;
+  if (analysis) {
+    historySummary = [
+      `トレーニング記録 ${analysis.count}件を反映しました`,
+      `前回のトレーニング: ${analysis.lastDate}(${analysis.daysSinceLast}日前)`,
+      `直近4週間の頻度: 週あたり約${analysis.weeklyAvg}回`,
+    ];
+    const neglectedTrained = analysis.neglectedMuscles.filter((m) => m in analysis.muscleLastDays);
+    if (neglectedTrained.length > 0) {
+      historySummary.push(
+        `しばらく鍛えていない部位: ${neglectedTrained.map(analysis.muscleLabel).join("・")}(各日の前半に配置)`
+      );
+    }
+    if (analysis.daysSinceLast >= 21) {
+      advice.tips.unshift(
+        "3週間以上のブランクがあります。重量は以前の70〜80%程度から再開し、1〜2週間かけて戻しましょう。"
+      );
+    }
+  }
+
   return {
     bmi,
     splitName: split.name,
     days,
-    advice: buildAdvice(profile, bmi),
+    advice,
+    historySummary,
   };
 }
