@@ -5,7 +5,17 @@ export const EQUIPMENT = {
   barbell: "バーベル(ラック・プレート)",
   dumbbell: "ダンベル",
   kettlebell: "ケトルベル",
-  machine: "トレーニングマシン一式",
+  machine: "マシン一式(下の個別マシンすべて)",
+  mc_chest_press: "チェストプレスマシン",
+  mc_pec_fly: "ペックフライ(チェストフライ)マシン",
+  mc_lat_pulldown: "ラットプルダウンマシン",
+  mc_seated_row: "シーテッドロー(ローイング)マシン",
+  mc_shoulder_press: "ショルダープレスマシン",
+  mc_leg_press: "レッグプレスマシン",
+  mc_leg_extension: "レッグエクステンションマシン",
+  mc_leg_curl: "レッグカールマシン",
+  mc_smith: "スミスマシン",
+  mc_abdominal: "アブドミナルクランチマシン",
   cable: "ケーブルマシン",
   pullup_bar: "懸垂バー",
   bench: "トレーニングベンチ",
@@ -13,18 +23,30 @@ export const EQUIPMENT = {
   pool: "プール",
   treadmill: "ランニングマシン / 屋外ランニング",
   bike: "エアロバイク",
+  mc_rowing: "ローイングエルゴメーター",
 };
+
+// 「マシン一式」を選んだときに使えるとみなす個別マシン
+export const MACHINE_KEYS = [
+  "mc_chest_press", "mc_pec_fly", "mc_lat_pulldown", "mc_seated_row",
+  "mc_shoulder_press", "mc_leg_press", "mc_leg_extension", "mc_leg_curl",
+  "mc_smith", "mc_abdominal", "cable",
+];
 
 export const EQUIPMENT_GROUPS = [
   { label: "フリーウェイト系", keys: ["barbell", "dumbbell", "kettlebell"] },
-  { label: "設備系", keys: ["machine", "cable", "pullup_bar", "bench", "band"] },
-  { label: "有酸素・施設系", keys: ["pool", "treadmill", "bike"] },
+  { label: "ジムマシン", keys: ["machine", ...MACHINE_KEYS] },
+  { label: "その他設備", keys: ["pullup_bar", "bench", "band"] },
+  { label: "有酸素・施設系", keys: ["pool", "treadmill", "bike", "mc_rowing"] },
 ];
 
 export const PRESETS = {
   gym: {
     label: "ジム(フル装備)",
-    keys: ["barbell", "dumbbell", "kettlebell", "machine", "cable", "pullup_bar", "bench", "treadmill", "bike"],
+    keys: [
+      "barbell", "dumbbell", "kettlebell", "machine", ...MACHINE_KEYS,
+      "pullup_bar", "bench", "treadmill", "bike", "mc_rowing",
+    ],
   },
   home: { label: "自宅(自重のみ)", keys: [] },
   home_db: { label: "自宅+ダンベル", keys: ["dumbbell", "bench"] },
@@ -51,10 +73,11 @@ const EXERCISES = [
   { name: "インクラインベンチプレス", muscle: "chest", equipment: ["barbell", "bench"], level: 2, priority: 8, kind: "compound" },
   { name: "ダンベルプレス", muscle: "chest", equipment: ["dumbbell", "bench"], level: 1, priority: 9, kind: "compound" },
   { name: "ダンベルフライ", muscle: "chest", equipment: ["dumbbell", "bench"], level: 1, priority: 6, kind: "isolation" },
-  { name: "チェストプレス(マシン)", muscle: "chest", equipment: ["machine"], level: 1, priority: 8, kind: "compound" },
-  { name: "ペックフライ(マシン)", muscle: "chest", equipment: ["machine"], level: 1, priority: 6, kind: "isolation" },
+  { name: "チェストプレス(マシン)", muscle: "chest", equipment: ["mc_chest_press"], level: 1, priority: 8, kind: "compound" },
+  { name: "ペックフライ(マシン)", muscle: "chest", equipment: ["mc_pec_fly"], level: 1, priority: 6, kind: "isolation" },
   { name: "ケーブルクロスオーバー", muscle: "chest", equipment: ["cable"], level: 2, priority: 5, kind: "isolation" },
   { name: "バンドチェストプレス", muscle: "chest", equipment: ["band"], level: 1, priority: 4, kind: "compound" },
+  { name: "スミスマシンベンチプレス", muscle: "chest", equipment: ["mc_smith", "bench"], level: 1, priority: 7, kind: "compound" },
   { name: "腕立て伏せ", muscle: "chest", equipment: [], level: 1, priority: 7, kind: "compound" },
   { name: "ワイドプッシュアップ", muscle: "chest", equipment: [], level: 1, priority: 5, kind: "compound" },
   { name: "デクラインプッシュアップ", muscle: "chest", equipment: [], level: 2, priority: 5, kind: "compound" },
@@ -62,8 +85,8 @@ const EXERCISES = [
   // --- 背中 ---
   { name: "デッドリフト", muscle: "back", equipment: ["barbell"], level: 2, priority: 10, kind: "compound" },
   { name: "ベントオーバーロー", muscle: "back", equipment: ["barbell"], level: 2, priority: 9, kind: "compound" },
-  { name: "ラットプルダウン", muscle: "back", equipment: ["machine"], level: 1, priority: 8, kind: "compound" },
-  { name: "シーテッドロー(マシン)", muscle: "back", equipment: ["machine"], level: 1, priority: 7, kind: "compound" },
+  { name: "ラットプルダウン", muscle: "back", equipment: ["mc_lat_pulldown"], level: 1, priority: 8, kind: "compound" },
+  { name: "シーテッドロー(マシン)", muscle: "back", equipment: ["mc_seated_row"], level: 1, priority: 7, kind: "compound" },
   { name: "ケーブルロー", muscle: "back", equipment: ["cable"], level: 1, priority: 7, kind: "compound" },
   { name: "懸垂(チンニング)", muscle: "back", equipment: ["pullup_bar"], level: 2, priority: 9, kind: "compound" },
   { name: "斜め懸垂(インバーテッドロー)", muscle: "back", equipment: ["pullup_bar"], level: 1, priority: 6, kind: "compound" },
@@ -75,13 +98,14 @@ const EXERCISES = [
   // --- 脚 ---
   { name: "バーベルスクワット", muscle: "legs", equipment: ["barbell"], level: 1, priority: 10, kind: "compound" },
   { name: "ルーマニアンデッドリフト", muscle: "legs", equipment: ["barbell"], level: 2, priority: 8, kind: "compound" },
-  { name: "レッグプレス", muscle: "legs", equipment: ["machine"], level: 1, priority: 8, kind: "compound" },
-  { name: "レッグエクステンション", muscle: "legs", equipment: ["machine"], level: 1, priority: 5, kind: "isolation" },
-  { name: "レッグカール", muscle: "legs", equipment: ["machine"], level: 1, priority: 5, kind: "isolation" },
+  { name: "レッグプレス", muscle: "legs", equipment: ["mc_leg_press"], level: 1, priority: 8, kind: "compound" },
+  { name: "レッグエクステンション", muscle: "legs", equipment: ["mc_leg_extension"], level: 1, priority: 5, kind: "isolation" },
+  { name: "レッグカール", muscle: "legs", equipment: ["mc_leg_curl"], level: 1, priority: 5, kind: "isolation" },
   { name: "ゴブレットスクワット", muscle: "legs", equipment: ["dumbbell"], level: 1, priority: 7, kind: "compound" },
   { name: "ダンベルランジ", muscle: "legs", equipment: ["dumbbell"], level: 1, priority: 7, kind: "compound" },
   { name: "ブルガリアンスクワット", muscle: "legs", equipment: ["dumbbell", "bench"], level: 2, priority: 8, kind: "compound" },
   { name: "ケトルベルスイング", muscle: "legs", equipment: ["kettlebell"], level: 1, priority: 7, kind: "compound" },
+  { name: "スミスマシンスクワット", muscle: "legs", equipment: ["mc_smith"], level: 1, priority: 8, kind: "compound" },
   { name: "自重スクワット", muscle: "legs", equipment: [], level: 1, priority: 6, kind: "compound" },
   { name: "フォワードランジ", muscle: "legs", equipment: [], level: 1, priority: 5, kind: "compound" },
   { name: "ヒップリフト", muscle: "legs", equipment: [], level: 1, priority: 4, kind: "isolation" },
@@ -92,7 +116,7 @@ const EXERCISES = [
   { name: "ダンベルショルダープレス", muscle: "shoulders", equipment: ["dumbbell"], level: 1, priority: 8, kind: "compound" },
   { name: "サイドレイズ", muscle: "shoulders", equipment: ["dumbbell"], level: 1, priority: 6, kind: "isolation" },
   { name: "リアレイズ", muscle: "shoulders", equipment: ["dumbbell"], level: 1, priority: 5, kind: "isolation" },
-  { name: "ショルダープレス(マシン)", muscle: "shoulders", equipment: ["machine"], level: 1, priority: 7, kind: "compound" },
+  { name: "ショルダープレス(マシン)", muscle: "shoulders", equipment: ["mc_shoulder_press"], level: 1, priority: 7, kind: "compound" },
   { name: "ケーブルサイドレイズ", muscle: "shoulders", equipment: ["cable"], level: 2, priority: 5, kind: "isolation" },
   { name: "バンドサイドレイズ", muscle: "shoulders", equipment: ["band"], level: 1, priority: 4, kind: "isolation" },
   { name: "パイクプッシュアップ", muscle: "shoulders", equipment: [], level: 1, priority: 5, kind: "compound" },
@@ -114,12 +138,14 @@ const EXERCISES = [
   { name: "ロシアンツイスト", muscle: "core", equipment: [], level: 1, priority: 4, kind: "isolation" },
   { name: "ハンギングレッグレイズ", muscle: "core", equipment: ["pullup_bar"], level: 2, priority: 6, kind: "isolation" },
   { name: "ケーブルクランチ", muscle: "core", equipment: ["cable"], level: 2, priority: 5, kind: "isolation" },
+  { name: "アブドミナルクランチ(マシン)", muscle: "core", equipment: ["mc_abdominal"], level: 1, priority: 6, kind: "isolation" },
 
   // --- 有酸素 ---
   { name: "水泳(クロール)", muscle: "cardio", equipment: ["pool"], level: 2, priority: 10, kind: "cardio" },
   { name: "水中ウォーキング", muscle: "cardio", equipment: ["pool"], level: 1, priority: 8, kind: "cardio" },
   { name: "ランニング", muscle: "cardio", equipment: ["treadmill"], level: 1, priority: 8, kind: "cardio" },
   { name: "エアロバイク", muscle: "cardio", equipment: ["bike"], level: 1, priority: 7, kind: "cardio" },
+  { name: "ローイングエルゴメーター", muscle: "cardio", equipment: ["mc_rowing"], level: 1, priority: 7, kind: "cardio" },
   { name: "バーピー", muscle: "cardio", equipment: [], level: 2, priority: 6, kind: "cardio" },
   { name: "ジャンピングジャック+その場ジョギング", muscle: "cardio", equipment: [], level: 1, priority: 5, kind: "cardio" },
 ];
@@ -261,6 +287,10 @@ function buildAdvice(profile, bmi) {
 export function generatePlan(profile) {
   const levelNum = LEVEL_NUM[profile.level] ?? 1;
   const selectedSet = new Set(profile.equipment);
+  // 「マシン一式」選択時は個別マシンすべてを使えるものとして扱う
+  if (selectedSet.has("machine")) {
+    for (const key of MACHINE_KEYS) selectedSet.add(key);
+  }
   const bmi = calcBmi(profile.weight, profile.height);
   const split = buildSplit(profile.frequency);
   const params = GOAL_PARAMS[profile.goal] ?? GOAL_PARAMS.health;

@@ -2,7 +2,7 @@
 // 公式 SDK を CDN(ESM)経由で利用する。dangerouslyAllowBrowser により
 // ブラウザ直接アクセス用の CORS ヘッダーが自動付与される。
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
-import { EQUIPMENT, GOALS, LEVELS } from "./planner.js";
+import { EQUIPMENT, GOALS, LEVELS, MACHINE_KEYS } from "./planner.js";
 
 const SYSTEM_PROMPT = `あなたは経験豊富なプロのパーソナルトレーナーです。
 利用者のプロフィールに基づいて、1週間の筋トレメニューを日本語の Markdown で提案してください。
@@ -15,8 +15,18 @@ const SYSTEM_PROMPT = `あなたは経験豊富なプロのパーソナルトレ
 - 安全に配慮し、レベルに合わない高難度種目は避けること。医学的な診断はしないこと。`;
 
 function buildUserMessage(profile) {
-  const equipmentText = profile.equipment.length > 0
-    ? profile.equipment.map((k) => EQUIPMENT[k] ?? k).join("、")
+  let keys = profile.equipment;
+  // 「マシン一式」選択時は個別マシンの列挙をまとめて簡潔にする
+  if (keys.includes("machine")) {
+    keys = keys.filter((k) => k !== "machine" && !MACHINE_KEYS.includes(k));
+    keys.unshift("__machine_all__");
+  }
+  const label = (k) =>
+    k === "__machine_all__"
+      ? "ジムのトレーニングマシン一式(チェストプレス、ラットプルダウン、レッグプレス、スミスマシン、ケーブル等)"
+      : EQUIPMENT[k] ?? k;
+  const equipmentText = keys.length > 0
+    ? keys.map(label).join("、")
     : "なし(自重トレーニングのみ可能)";
   return `以下のプロフィールに最適な1週間の筋トレメニューを作成してください。
 

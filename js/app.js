@@ -1,5 +1,5 @@
 // UI の配線:フォーム入力 → メニュー生成(Claude / 内蔵ロジック)→ 描画
-import { generatePlan, EQUIPMENT, EQUIPMENT_GROUPS, PRESETS } from "./planner.js";
+import { generatePlan, EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS } from "./planner.js";
 
 const STORAGE_KEY_API = "anthropic_api_key";
 const STORAGE_KEY_FORCE_BUILTIN = "force_builtin";
@@ -28,6 +28,23 @@ function buildEquipmentCheckboxes() {
       fieldset.appendChild(label);
     }
     container.appendChild(fieldset);
+  }
+
+  // 「マシン一式」のチェックで個別マシンを一括チェック/解除。
+  // 逆に個別マシンの選択状態が変わったら「一式」のチェックを追従させる。
+  const machineToggle = document.querySelector('input[name="equipment"][value="machine"]');
+  const machineItems = [...document.querySelectorAll('input[name="equipment"]')].filter((cb) =>
+    MACHINE_KEYS.includes(cb.value)
+  );
+  if (machineToggle) {
+    machineToggle.addEventListener("change", () => {
+      machineItems.forEach((cb) => { cb.checked = machineToggle.checked; });
+    });
+    machineItems.forEach((cb) =>
+      cb.addEventListener("change", () => {
+        machineToggle.checked = machineItems.every((item) => item.checked);
+      })
+    );
   }
 
   const presetBar = $("#preset-buttons");
