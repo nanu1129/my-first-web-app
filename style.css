@@ -178,11 +178,20 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 5px 0;
   cursor: pointer;
   font-size: 0.95rem;
 }
-.equip-item input { accent-color: var(--accent); width: 17px; height: 17px; }
+.equip-item input { accent-color: var(--accent); width: 17px; height: 17px; flex-shrink: 0; }
+.equip-icon { font-size: 1.25rem; width: 1.6em; text-align: center; flex-shrink: 0; }
+.equip-text { flex: 1; }
+/* チェック時に行をハイライトして選択状態を分かりやすく */
+.equip-item:has(input:checked) {
+  background: rgba(200, 240, 74, 0.1);
+  border-radius: 6px;
+  margin: 0 -6px;
+  padding: 5px 6px;
+}
 
 /* ボタン */
 
@@ -294,12 +303,20 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .log-date-field { max-width: 220px; margin-bottom: 12px; }
 
 .log-row {
-  display: grid;
-  grid-template-columns: minmax(140px, 2.2fr) 1fr 0.8fr 0.8fr auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
 }
-.log-row input { min-width: 0; }
+.log-row input,
+.log-row select { min-width: 0; }
+.log-track { flex: 0 0 auto; }
+.log-name { flex: 1 1 160px; }
+.log-fields { display: flex; gap: 8px; flex: 2 1 240px; }
+.log-fields input { flex: 1; }
 
 .row-delete {
   background: transparent;
@@ -346,11 +363,19 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 
 .ex-note { color: var(--ai); font-size: 0.78rem; }
 
+.rep-scheme {
+  background: var(--bg-elevated);
+  border-left: 3px solid var(--accent);
+  padding: 10px 14px;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.88rem;
+  color: var(--text-dim);
+  margin: 14px 0 4px;
+}
+
 @media (max-width: 560px) {
-  .log-row {
-    grid-template-columns: 1fr 1fr 1fr auto;
-  }
-  .log-row .log-name { grid-column: 1 / -1; }
+  .log-name { flex-basis: 100%; }
+  .log-fields { flex-basis: 100%; }
 }
 
 /* ---------- 設定モーダル ---------- */

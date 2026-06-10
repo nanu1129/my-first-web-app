@@ -26,6 +26,32 @@ export const EQUIPMENT = {
   mc_rowing: "ローイングエルゴメーター",
 };
 
+// 各器具・施設の絵文字アイコン(一覧から素早く見つけるための視覚的な目印)
+export const EQUIPMENT_ICONS = {
+  barbell: "🏋️",
+  dumbbell: "💪",
+  kettlebell: "🔔",
+  machine: "🧰",
+  mc_chest_press: "🪑",
+  mc_pec_fly: "🦋",
+  mc_lat_pulldown: "⬇️",
+  mc_seated_row: "🚣",
+  mc_shoulder_press: "🆙",
+  mc_leg_press: "🦵",
+  mc_leg_extension: "🦿",
+  mc_leg_curl: "🦵",
+  mc_smith: "🏗️",
+  mc_abdominal: "🔻",
+  cable: "🔌",
+  pullup_bar: "🧗",
+  bench: "🛋️",
+  band: "🎗️",
+  pool: "🏊",
+  treadmill: "🏃",
+  bike: "🚴",
+  mc_rowing: "🚣",
+};
+
 // 「マシン一式」を選んだときに使えるとみなす個別マシン
 export const MACHINE_KEYS = [
   "mc_chest_press", "mc_pec_fly", "mc_lat_pulldown", "mc_seated_row",
@@ -150,29 +176,80 @@ const EXERCISES = [
   { name: "ジャンピングジャック+その場ジョギング", muscle: "cardio", equipment: [], level: 1, priority: 5, kind: "cardio" },
 ];
 
-// 目的別のセット・レップ・休憩設定
+// 記録・表示の方式を種目ごとに分類する。
+// weight = 重量×セット×回数 / time = 時間キープ×セット / cardio = 時間(+距離)
+const TIME_HOLD = new Set(["プランク"]);
+// 高回数が向く種目(腹筋・カーフ・自重の補助種目など)
+const HIGH_REP = new Set([
+  "カーフレイズ", "クランチ", "レッグレイズ", "ロシアンツイスト",
+  "ハンギングレッグレイズ", "ケーブルクランチ", "アブドミナルクランチ(マシン)",
+  "スーパーマン(バックエクステンション)", "ヒップリフト",
+]);
+
+function trackOf(ex) {
+  if (ex.kind === "cardio") return "cardio";
+  if (TIME_HOLD.has(ex.name)) return "time";
+  return "weight";
+}
+function repStyleOf(ex) {
+  if (TIME_HOLD.has(ex.name)) return "hold";
+  if (HIGH_REP.has(ex.name)) return "high";
+  return "normal";
+}
+for (const ex of EXERCISES) {
+  ex.track = trackOf(ex);
+  ex.repStyle = repStyleOf(ex);
+}
+
+// 種目名から記録方式を判定する(記録フォームの自動切り替え用)。未知の種目は weight 扱い。
+const NAME_TO_EXERCISE = new Map(EXERCISES.map((e) => [e.name, e]));
+export function getExerciseTrack(name) {
+  return NAME_TO_EXERCISE.get(name)?.track ?? "weight";
+}
+
+// 目的別のセット・レップ・休憩設定。sets は中級者基準で、レベルに応じて後述の resolveParams で増減する。
 const GOAL_PARAMS = {
   hypertrophy: {
     compound: { sets: 4, reps: "8〜12回", rest: "90秒" },
     isolation: { sets: 3, reps: "10〜12回", rest: "60秒" },
     cardioMin: null,
+    scheme: "筋肥大狙い:コンパウンド(多関節)種目は8〜12回でギリギリ挙がる重量を選び、最後まで追い込みます。補助種目はやや軽めで10回前後。",
   },
   cut: {
     compound: { sets: 3, reps: "12〜15回", rest: "45〜60秒" },
     isolation: { sets: 3, reps: "15回", rest: "30〜45秒" },
     cardioMin: "20〜30分",
+    scheme: "減量狙い:やや軽い重量で回数を多めに、休憩を短くして心拍を保ち消費カロリーを高めます。仕上げに有酸素を追加。",
   },
   strength: {
     compound: { sets: 5, reps: "4〜6回", rest: "2〜3分" },
     isolation: { sets: 3, reps: "8〜10回", rest: "90秒" },
     cardioMin: "15〜20分",
+    scheme: "筋力狙い:重い重量×低回数(4〜6回)。フォームを最優先し、休憩はしっかり2〜3分取って毎セット高い質を保ちます。",
   },
   health: {
     compound: { sets: 3, reps: "10〜15回", rest: "60秒" },
     isolation: { sets: 2, reps: "12〜15回", rest: "60秒" },
     cardioMin: "10〜15分(軽め)",
+    scheme: "健康維持:無理のない重量で中〜高回数。関節に優しく、続けやすさを最優先します。",
   },
 };
+
+// 種目・レベルに応じて実際のセット数・回数・休憩を決める。
+// レベルでセット数を調整し(初心者は控えめ・上級者は複合種目を増量)、
+// キープ系・高回数系の種目は専用の回数表記にする。
+function resolveParams(ex, params, levelNum) {
+  const base = ex.kind === "compound" ? params.compound : params.isolation;
+  let sets = base.sets;
+  if (levelNum === 1) sets = Math.max(2, sets - 1);               // 初心者:1セット減らして安全に
+  else if (levelNum === 3 && ex.kind === "compound") sets += 1;   // 上級者:複合種目を1セット追加
+
+  let reps = base.reps;
+  if (ex.repStyle === "hold") reps = "30〜60秒キープ";
+  else if (ex.repStyle === "high") reps = "15〜20回";
+
+  return { sets, reps, rest: base.rest };
+}
 
 export function calcBmi(weightKg, heightCm) {
   const h = heightCm / 100;
@@ -242,6 +319,14 @@ export function analyzeLogs(logs, now = new Date()) {
 
 // 前回記録から「次の一歩」の目標を文章にする
 function progressionNote(record) {
+  const track = record.track ?? "weight";
+  if (track === "time") {
+    return `前回(${record.date}): ${record.seconds}秒×${record.sets}セット → +5〜10秒を目標に`;
+  }
+  if (track === "cardio") {
+    const dist = record.distance ? `・${record.distance}km` : "";
+    return `前回(${record.date}): ${record.minutes}分${dist} → 時間か距離を少しずつ伸ばす`;
+  }
   const weight = parseFloat(record.weight);
   if (weight > 0) {
     return `前回(${record.date}): ${weight}kg×${record.reps}回×${record.sets}セット → 重量+2.5kgか回数+1を目標に`;
@@ -380,20 +465,28 @@ export function generatePlan(profile, logs = [], now = new Date()) {
     for (const muscle of muscles) {
       const ex = pickExercise(muscle, selectedSet, levelNum, used, knownNames);
       if (!ex) continue;
-      const p = ex.kind === "compound" ? params.compound : params.isolation;
+      const p = resolveParams(ex, params, levelNum);
       const record = analysis?.lastRecordByName[ex.name];
       exercises.push({
         name: ex.name,
+        track: ex.track,
         sets: p.sets,
-        reps: ex.name === "プランク" ? "30〜60秒キープ" : p.reps,
+        reps: p.reps,
         rest: p.rest,
         note: record ? progressionNote(record) : null,
       });
     }
+    const cardioRecord = cardio ? analysis?.lastRecordByName[cardio.name] : null;
     return {
       title: day.title,
       exercises,
-      cardio: cardio ? { name: cardio.name, duration: params.cardioMin } : null,
+      cardio: cardio
+        ? {
+            name: cardio.name,
+            duration: params.cardioMin,
+            note: cardioRecord ? progressionNote(cardioRecord) : null,
+          }
+        : null,
     };
   });
 
@@ -421,6 +514,7 @@ export function generatePlan(profile, logs = [], now = new Date()) {
   return {
     bmi,
     splitName: split.name,
+    repScheme: params.scheme,
     days,
     advice,
     historySummary,

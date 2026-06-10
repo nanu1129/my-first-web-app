@@ -24,15 +24,18 @@ const SYSTEM_PROMPT = `あなたは経験豊富なプロのパーソナルトレ
 function buildLogsSection(logs) {
   if (!logs || logs.length === 0) return "";
   const recent = [...logs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 12);
-  const lines = recent.map((log) => {
-    const entries = log.entries
-      .map((e) => {
-        const weight = parseFloat(e.weight) > 0 ? `${e.weight}kg×` : "";
-        return `${e.name} ${weight}${e.reps}回×${e.sets}セット`;
-      })
-      .join("、");
-    return `- ${log.date}: ${entries}`;
-  });
+  const fmt = (e) => {
+    if (e.track === "cardio") {
+      const dist = e.distance ? `・${e.distance}km` : "";
+      return `${e.name} ${e.minutes || 0}分${dist}`;
+    }
+    if (e.track === "time") {
+      return `${e.name} ${e.seconds || 0}秒×${e.sets || 1}セット`;
+    }
+    const weight = parseFloat(e.weight) > 0 ? `${e.weight}kg×` : "";
+    return `${e.name} ${weight}${e.reps || 1}回×${e.sets || 1}セット`;
+  };
+  const lines = recent.map((log) => `- ${log.date}: ${log.entries.map(fmt).join("、")}`);
   return `\n\n## 最近のトレーニング記録(新しい順)\n${lines.join("\n")}`;
 }
 
