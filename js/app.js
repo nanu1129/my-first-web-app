@@ -1,5 +1,8 @@
 // UI の配線:フォーム入力 → メニュー生成(Claude / 内蔵ロジック)→ 描画
-import { generatePlan, allExerciseNames, EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS } from "./planner.js";
+import {
+  generatePlan, allExerciseNames, getExerciseTrack,
+  EQUIPMENT, EQUIPMENT_ICONS, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS,
+} from "./planner.js";
 
 const STORAGE_KEY_API = "anthropic_api_key";
 const STORAGE_KEY_FORCE_BUILTIN = "force_builtin";
@@ -24,8 +27,14 @@ function buildEquipmentCheckboxes() {
       input.type = "checkbox";
       input.name = "equipment";
       input.value = key;
-      label.appendChild(input);
-      label.appendChild(document.createTextNode(EQUIPMENT[key]));
+      const icon = document.createElement("span");
+      icon.className = "equip-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = EQUIPMENT_ICONS[key] ?? "";
+      const text = document.createElement("span");
+      text.className = "equip-text";
+      text.textContent = EQUIPMENT[key];
+      label.append(input, icon, text);
       fieldset.appendChild(label);
     }
     container.appendChild(fieldset);
@@ -97,6 +106,10 @@ function renderBuiltinPlan(plan) {
   html += `<div class="card"><span class="card-label">分割法</span><span class="card-value small">${escapeHtml(plan.splitName)}</span></div>`;
   html += `</div>`;
 
+  if (plan.repScheme) {
+    html += `<p class="rep-scheme">💡 ${escapeHtml(plan.repScheme)}</p>`;
+  }
+
   if (plan.historySummary) {
     html += `<div class="history-summary"><strong>📒 記録の反映</strong><ul>`;
     for (const line of plan.historySummary) html += `<li>${escapeHtml(line)}</li>`;
@@ -112,7 +125,8 @@ function renderBuiltinPlan(plan) {
     }
     html += `</tbody></table>`;
     if (day.cardio) {
-      html += `<p class="cardio-note">🏃 有酸素:${escapeHtml(day.cardio.name)} ${escapeHtml(day.cardio.duration)}</p>`;
+      const cnote = day.cardio.note ? `<br><small class="ex-note">${escapeHtml(day.cardio.note)}</small>` : "";
+      html += `<p class="cardio-note">🏃 有酸素:${escapeHtml(day.cardio.name)} ${escapeHtml(day.cardio.duration)}${cnote}</p>`;
     }
     html += `</section>`;
   }
@@ -295,17 +309,68 @@ function saveLogs(logs) {
   localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(logs));
 }
 
-function addLogRow(entry = {}) {
+// 記録方式ごとの入力欄を組み立てる
+function fieldsHtml(track) {
+  if (track === "cardio") {
+    return (
+      `<input type="number" class="f-min" min="0" step="1" placeholder="時間(分)">` +
+      `<input type="number" class="f-dist" min="0" step="0.1" placeholder="距離km(任意)">`
+    );
+  }
+  if (track === "time") {
+    return (
+      `<input type="number" class="f-sec" min="0" step="5" placeholder="時間(秒)">` +
+      `<input type="number" class="f-sets" min="1" max="20" placeholder="セット">`
+    );
+  }
+  return (
+    `<input type="number" class="f-weight" min="0" step="0.5" placeholder="重量kg">` +
+    `<input type="number" class="f-sets" min="1" max="20" placeholder="セット">` +
+    `<input type="number" class="f-reps" min="1" max="200" placeholder="回数">`
+  );
+}
+
+function addLogRow() {
   const row = document.createElement("div");
   row.className = "log-row";
   row.innerHTML =
-    `<input type="text" class="log-name" list="exercise-names" placeholder="種目名(例: ベンチプレス)" value="${escapeHtml(entry.name ?? "")}">` +
-    `<input type="number" class="log-weight" min="0" step="0.5" placeholder="重量kg">` +
-    `<input type="number" class="log-sets" min="1" max="20" placeholder="セット">` +
-    `<input type="number" class="log-reps" min="1" max="200" placeholder="回数">` +
+    `<select class="log-track" aria-label="種類">` +
+    `<option value="weight">🏋️ 筋トレ</option>` +
+    `<option value="time">🧘 体幹・キープ</option>` +
+    `<option value="cardio">🏃 有酸素</option>` +
+    `</select>` +
+    `<input type="text" class="log-name" list="exercise-names" placeholder="種目名(例: ベンチプレス)">` +
+    `<span class="log-fields">${fieldsHtml("weight")}</span>` +
     `<button type="button" class="row-delete" aria-label="この行を削除">✕</button>`;
+
+  const trackSel = row.querySelector(".log-track");
+  const nameInput = row.querySelector(".log-name");
+  const fieldsBox = row.querySelector(".log-fields");
+  const setTrack = (track) => { fieldsBox.innerHTML = fieldsHtml(track); };
+
+  trackSel.addEventListener("change", () => setTrack(trackSel.value));
+  // 種目名がデータベースの種目に一致したら、記録方式を自動で切り替える
+  nameInput.addEventListener("change", () => {
+    const t = getExerciseTrack(nameInput.value.trim());
+    if (t !== trackSel.value) {
+      trackSel.value = t;
+      setTrack(t);
+    }
+  });
   row.querySelector(".row-delete").addEventListener("click", () => row.remove());
   $("#log-entries").appendChild(row);
+}
+
+function entrySummary(e) {
+  if (e.track === "cardio") {
+    const dist = e.distance ? `・${e.distance}km` : "";
+    return `${e.name} ${e.minutes || 0}分${dist}`;
+  }
+  if (e.track === "time") {
+    return `${e.name} ${e.seconds || 0}秒×${e.sets || 1}セット`;
+  }
+  const w = parseFloat(e.weight) > 0 ? `${e.weight}kg×` : "";
+  return `${e.name} ${w}${e.reps || 1}回×${e.sets || 1}セット`;
 }
 
 function renderLogList() {
@@ -317,12 +382,7 @@ function renderLogList() {
   }
   let html = `<h3 class="log-list-title">これまでの記録(${logs.length}件)</h3>`;
   for (const log of logs) {
-    const summary = log.entries
-      .map((e) => {
-        const w = parseFloat(e.weight) > 0 ? `${e.weight}kg×` : "";
-        return `${e.name} ${w}${e.reps}回×${e.sets}セット`;
-      })
-      .join(" / ");
+    const summary = log.entries.map(entrySummary).join(" / ");
     html +=
       `<div class="log-item" data-id="${log.id}">` +
       `<div class="log-item-body"><span class="log-item-date">${escapeHtml(log.date)}</span>` +
@@ -350,12 +410,18 @@ function onLogSubmit(event) {
     return;
   }
   const entries = [...document.querySelectorAll("#log-entries .log-row")]
-    .map((row) => ({
-      name: row.querySelector(".log-name").value.trim(),
-      weight: row.querySelector(".log-weight").value,
-      sets: row.querySelector(".log-sets").value || "1",
-      reps: row.querySelector(".log-reps").value || "1",
-    }))
+    .map((row) => {
+      const track = row.querySelector(".log-track").value;
+      const name = row.querySelector(".log-name").value.trim();
+      const val = (cls) => row.querySelector(cls)?.value ?? "";
+      if (track === "cardio") {
+        return { name, track, minutes: val(".f-min") || "0", distance: val(".f-dist") };
+      }
+      if (track === "time") {
+        return { name, track, seconds: val(".f-sec") || "0", sets: val(".f-sets") || "1" };
+      }
+      return { name, track, weight: val(".f-weight"), sets: val(".f-sets") || "1", reps: val(".f-reps") || "1" };
+    })
     .filter((e) => e.name.length > 0);
   if (entries.length === 0) {
     errorBox.textContent = "少なくとも1つ、種目名を入力してください。";
