@@ -18,8 +18,16 @@
 
 * { box-sizing: border-box; }
 
+html {
+  /* iOS で横向き時などに文字が勝手に拡大され、レイアウト比率が崩れるのを防ぐ */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
+  /* 不意の横はみ出しでページ全体が縮小表示(細く見える)されるのを防ぐ */
+  overflow-x: hidden;
   background:
     radial-gradient(1200px 500px at 80% -10%, rgba(200, 240, 74, 0.07), transparent 60%),
     var(--bg);
@@ -119,7 +127,7 @@ form .panel-title:not(:first-child) { margin-top: 28px; }
 
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
   gap: 14px;
 }
 
@@ -157,7 +165,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 
 .equipment-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
   gap: 14px;
 }
 
@@ -276,6 +284,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   text-align: left;
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
 }
 .result-content th { color: var(--text-dim); font-size: 0.8rem; }
 .result-content tr:hover td { background: rgba(255, 255, 255, 0.02); }
@@ -345,7 +354,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   padding: 10px 12px;
   margin-bottom: 8px;
 }
-.log-item-body { flex: 1; min-width: 0; }
+.log-item-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .log-item-date { font-weight: 700; color: var(--accent); margin-right: 10px; }
 .log-item-summary { font-size: 0.88rem; color: var(--text-dim); }
 .log-item-delete { flex-shrink: 0; height: 32px; }
