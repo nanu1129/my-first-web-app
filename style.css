@@ -22,6 +22,8 @@ html {
   /* iOS で横向き時などに文字が勝手に拡大され、レイアウト比率が崩れるのを防ぐ */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* iOS Safari は body だけでは横はみ出しを抑止できないため html にも指定 */
+  overflow-x: hidden;
 }
 
 body {
@@ -133,6 +135,9 @@ form .panel-title:not(:first-child) { margin-top: 28px; }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field > span { font-size: 0.85rem; font-weight: 700; color: var(--text-dim); }
+
+/* どの入力欄も親要素より広がらない(スマホでの横はみ出し防止) */
+input, select { max-width: 100%; }
 
 input[type="number"],
 input[type="password"],
@@ -324,8 +329,11 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .log-row select { min-width: 0; }
 .log-track { flex: 0 0 auto; }
 .log-name { flex: 1 1 160px; }
-.log-fields { display: flex; gap: 8px; flex: 2 1 240px; }
-.log-fields input { flex: 1; }
+.log-fields { display: flex; flex-wrap: wrap; gap: 8px; flex: 2 1 240px; min-width: 0; }
+/* width: 0 + flex-grow で行幅を等分する。
+   iOS Safari は入力欄の固有幅(約150px)を min-width: 0 だけでは縮めず、
+   3欄合計が画面幅を超えてページ全体が縮小表示される原因になっていた */
+.log-fields input { flex: 1 1 0; width: 0; min-width: 0; }
 
 .row-delete {
   background: transparent;
