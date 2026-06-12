@@ -2,7 +2,7 @@
 // 公式 SDK を CDN(ESM)経由で利用する。dangerouslyAllowBrowser により
 // ブラウザ直接アクセス用の CORS ヘッダーが自動付与される。
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
-import { EQUIPMENT, GOALS, LEVELS, MACHINE_KEYS } from "./planner.js";
+import { EQUIPMENT, GOALS, LEVELS, MACHINE_KEYS } from "./planner.js?v=4";
 
 const SYSTEM_PROMPT = `あなたは経験豊富なプロのパーソナルトレーナーです。
 利用者のプロフィールに基づいて、1週間の筋トレメニューを日本語の Markdown で提案してください。

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <header class="site-header">
@@ -27,15 +27,15 @@
       <div class="field-grid">
         <label class="field">
           <span>体重 (kg)</span>
-          <input type="number" id="weight" min="20" max="300" step="0.1" placeholder="65" required>
+          <select id="weight"></select>
         </label>
         <label class="field">
           <span>身長 (cm)</span>
-          <input type="number" id="height" min="100" max="250" step="0.1" placeholder="170" required>
+          <select id="height"></select>
         </label>
         <label class="field">
           <span>年齢</span>
-          <input type="number" id="age" min="10" max="100" placeholder="30" required>
+          <select id="age"></select>
         </label>
         <label class="field">
           <span>性別</span>
@@ -87,10 +87,16 @@
     <section class="panel" id="log-section">
       <h2 class="panel-title">トレーニング記録 <small>(記録するとメニュー生成に反映されます)</small></h2>
       <form id="log-form" novalidate>
-        <label class="field log-date-field">
-          <span>日付</span>
-          <input type="date" id="log-date">
-        </label>
+        <div class="log-date-wrap">
+          <label class="field log-date-field">
+            <span>日付</span>
+            <input type="date" id="log-date">
+          </label>
+          <div class="date-quick">
+            <button type="button" class="preset-btn" data-days-ago="0">今日</button>
+            <button type="button" class="preset-btn" data-days-ago="1">昨日</button>
+          </div>
+        </div>
         <div id="log-entries"></div>
         <button type="button" id="log-add-row" class="secondary-btn">+ 種目を追加</button>
         <p id="log-error" class="error-msg" role="alert"></p>
@@ -142,6 +148,6 @@
     <p>本アプリの提案は一般的なフィットネス情報であり、医療アドバイスではありません。持病のある方は医師に相談してください。</p>
   </footer>
 
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=4"></script>
 </body>
 </html>
