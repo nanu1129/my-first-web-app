@@ -79,24 +79,6 @@ body {
   color: var(--text-dim);
 }
 
-.mode-indicator {
-  margin: 4px 0 0;
-  font-size: 0.8rem;
-  color: var(--text-dim);
-}
-
-.icon-btn {
-  background: var(--bg-elevated);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  width: 44px;
-  height: 44px;
-  font-size: 1.3rem;
-  cursor: pointer;
-}
-.icon-btn:hover { border-color: var(--accent); }
-
 /* ---------- レイアウト・パネル ---------- */
 
 main {
@@ -244,16 +226,6 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 
 .result-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
-.badge {
-  font-size: 0.75rem;
-  font-weight: 700;
-  border-radius: 999px;
-  padding: 4px 12px;
-  white-space: nowrap;
-}
-.badge-ai { background: rgba(124, 196, 255, 0.15); color: var(--ai); border: 1px solid var(--ai); }
-.badge-builtin { background: rgba(200, 240, 74, 0.12); color: var(--accent); border: 1px solid var(--accent); }
-
 .summary-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
 
 .card {
@@ -310,9 +282,6 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .result-content h2, .result-content h3 { color: var(--accent); margin: 20px 0 8px; }
 .result-content h4 { margin: 14px 0 6px; }
 .result-content p { margin: 8px 0; }
-
-.generating { color: var(--text-dim); animation: pulse 1.4s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: 0.45; } }
 
 /* ---------- トレーニング記録 ---------- */
 
@@ -407,41 +376,6 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   .log-name-custom { flex-basis: 100%; }
   .log-fields { flex-basis: 100%; }
 }
-
-/* ---------- 設定モーダル ---------- */
-
-.settings-modal {
-  background: var(--bg-panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 24px;
-  max-width: 480px;
-  width: calc(100% - 40px);
-}
-.settings-modal::backdrop { background: rgba(0, 0, 0, 0.65); }
-.settings-modal h2 { margin-top: 0; font-size: 1.15rem; }
-.settings-desc { color: var(--text-dim); font-size: 0.9rem; }
-
-.check-field { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-size: 0.9rem; }
-.check-field input { accent-color: var(--accent); width: 17px; height: 17px; }
-
-.settings-note {
-  background: rgba(255, 107, 94, 0.08);
-  border: 1px solid rgba(255, 107, 94, 0.35);
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-size: 0.82rem;
-}
-.settings-note ul { margin: 6px 0 0; padding-left: 18px; }
-
-.settings-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 18px;
-}
-.settings-actions .primary-btn { width: auto; margin: 0; padding: 9px 22px; font-size: 0.95rem; }
 
 /* ---------- フッター ---------- */
 
