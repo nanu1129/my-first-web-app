@@ -308,6 +308,44 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 }
 .focus-star { color: var(--accent); }
 
+/* メニューの相談・調整バー */
+.consult-bar {
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin: 14px 0 4px;
+}
+.consult-label { font-size: 0.85rem; font-weight: 700; color: var(--text-dim); }
+.consult-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.consult-btn {
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 0.88rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+.consult-btn:hover { border-color: var(--accent); color: var(--accent); }
+.consult-hint { margin: 8px 0 0; font-size: 0.78rem; color: var(--text-dim); }
+
+/* 種目の差し替えボタン */
+.swap-btn {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.swap-btn:hover { color: var(--accent); border-color: var(--accent); }
+
 .day-record-btn { margin-top: 10px; }
 
 .cardio-note {

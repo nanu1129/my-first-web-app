@@ -1,9 +1,10 @@
 // UI の配線:フォーム入力 → メニュー生成(Claude / 内蔵ロジック)→ 描画
 import {
   generatePlan, allExerciseNames, exerciseChoices, getExerciseTrack, getDistanceUnit,
+  alternativeExercise, alternativeCardio, adjustPlanVolume, shortenPlan,
   EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS, MUSCLE_LABELS,
-} from "./planner.js?v=8";
-import { EQUIPMENT_SVG } from "./icons.js?v=8";
+} from "./planner.js?v=9";
+import { EQUIPMENT_SVG } from "./icons.js?v=9";
 
 const STORAGE_KEY_LOGS = "workout_logs";
 
@@ -167,18 +168,32 @@ function renderBuiltinPlan(plan) {
     html += `</ul></div>`;
   }
 
+  html += `<div class="consult-bar">` +
+    `<span class="consult-label">🛠 メニューの相談・調整${plan.shortened ? "(時短版: 各日最大4種目)" : ""}</span>` +
+    `<div class="consult-btns">` +
+    `<button type="button" class="consult-btn" data-act="harder">💪 もっときつく</button>` +
+    `<button type="button" class="consult-btn" data-act="easier">🌙 もっと楽に</button>` +
+    `<button type="button" class="consult-btn" data-act="shorter">⏱ 時間を短く</button>` +
+    `<button type="button" class="consult-btn" data-act="reset">↺ 最初の提案に戻す</button>` +
+    `</div>` +
+    `<p class="consult-hint">種目の横の「↻」を押すと、同じ部位の別種目に差し替えられます</p>` +
+    `</div>`;
+
   for (const [i, day] of plan.days.entries()) {
     html += `<section class="day-block"><h3>${escapeHtml(day.title)}</h3>`;
     html += `<table><thead><tr><th>種目</th><th>セット</th><th>回数</th><th>休憩</th></tr></thead><tbody>`;
     for (const ex of day.exercises) {
       const note = ex.note ? `<br><small class="ex-note">${escapeHtml(ex.note)}</small>` : "";
       const star = ex.focused ? `<span class="focus-star">★</span> ` : "";
-      html += `<tr><td>${star}${escapeHtml(ex.name)}${note}</td><td>${ex.sets}</td><td>${escapeHtml(ex.reps)}</td><td>${escapeHtml(ex.rest)}</td></tr>`;
+      const j = day.exercises.indexOf(ex);
+      const swap = `<button type="button" class="swap-btn" data-day="${i}" data-ex="${j}" aria-label="別の種目に替える" title="別の種目に替える">↻</button>`;
+      html += `<tr><td>${star}${escapeHtml(ex.name)} ${swap}${note}</td><td>${ex.sets}</td><td>${escapeHtml(ex.reps)}</td><td>${escapeHtml(ex.rest)}</td></tr>`;
     }
     html += `</tbody></table>`;
     if (day.cardio) {
       const cnote = day.cardio.note ? `<br><small class="ex-note">${escapeHtml(day.cardio.note)}</small>` : "";
-      html += `<p class="cardio-note">🏃 有酸素:${escapeHtml(day.cardio.name)} ${escapeHtml(day.cardio.duration)}${cnote}</p>`;
+      const cswap = `<button type="button" class="swap-btn cardio-swap" data-day="${i}" aria-label="別の有酸素に替える" title="別の有酸素に替える">↻</button>`;
+      html += `<p class="cardio-note">🏃 有酸素:${escapeHtml(day.cardio.name)} ${escapeHtml(day.cardio.duration)} ${cswap}${cnote}</p>`;
     }
     html += `<button type="button" class="secondary-btn day-record-btn" data-day="${i}">📝 この日をやったので記録する</button>`;
     html += `</section>`;
@@ -202,15 +217,60 @@ function showResultSection() {
 }
 
 function runBuiltin(profile, logs) {
-  const plan = generatePlan(profile, logs);
+  let plan = generatePlan(profile, logs);
   const content = $("#result-content");
-  content.innerHTML = renderBuiltinPlan(plan);
-  // 「この日をやったので記録する」→ その日の内容を記録フォームへ転記
-  content.querySelectorAll(".day-record-btn").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      prefillLogFromDay(plan.days[parseInt(btn.dataset.day, 10)]);
-    })
-  );
+
+  const render = () => {
+    content.innerHTML = renderBuiltinPlan(plan);
+
+    // 「この日をやったので記録する」→ その日の内容を記録フォームへ転記
+    content.querySelectorAll(".day-record-btn").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        prefillLogFromDay(plan.days[parseInt(btn.dataset.day, 10)]);
+      })
+    );
+
+    // 種目の差し替え(同じ部位・使える器具の別候補に切替)
+    content.querySelectorAll(".swap-btn:not(.cardio-swap)").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const d = parseInt(btn.dataset.day, 10);
+        const e = parseInt(btn.dataset.ex, 10);
+        const alt = alternativeExercise(profile, logs, plan.days[d], e);
+        if (alt) {
+          plan.days[d].exercises[e] = alt;
+          render();
+        }
+      })
+    );
+
+    // 有酸素の差し替え(泳法の切替など)
+    content.querySelectorAll(".cardio-swap").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const d = parseInt(btn.dataset.day, 10);
+        const alt = alternativeCardio(profile, logs, plan.days[d].cardio.name);
+        if (alt) {
+          plan.days[d].cardio.name = alt.name;
+          plan.days[d].cardio.note = alt.note;
+          render();
+        }
+      })
+    );
+
+    // メニュー全体の調整
+    content.querySelectorAll(".consult-btn").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        switch (btn.dataset.act) {
+          case "harder": adjustPlanVolume(plan, 1); break;
+          case "easier": adjustPlanVolume(plan, -1); break;
+          case "shorter": shortenPlan(plan); break;
+          case "reset": plan = generatePlan(profile, logs); break;
+        }
+        render();
+      })
+    );
+  };
+
+  render();
   showResultSection();
 }
 

@@ -445,13 +445,99 @@ function buildAdvice(profile, bmi) {
 // メイン:プロフィール(+トレーニング記録)から1週間のメニューを生成する
 // profile: { weight, height, age, gender, goal, level, frequency, equipment: string[] }
 // logs:    [{ date, entries: [{ name, weight, sets, reps }] }](省略可)
+// ---------- メニューへの相談(調整)機能 ----------
+
+// 現在の種目を、同じ部位・使える器具の「次の候補種目」に差し替えた行を返す。
+// タップするたびに候補を順に切り替えられる。候補が無ければ null。
+export function alternativeExercise(profile, logs, day, exIndex, now = new Date()) {
+  const current = day.exercises[exIndex];
+  if (!current?.muscle) return null;
+  const levelNum = LEVEL_NUM[profile.level] ?? 1;
+  const selectedSet = expandEquipment(profile.equipment);
+  const params = GOAL_PARAMS[profile.goal] ?? GOAL_PARAMS.health;
+  const others = new Set(day.exercises.filter((_, i) => i !== exIndex).map((e) => e.name));
+
+  let candidates = EXERCISES.filter(
+    (e) => e.muscle === current.muscle && isAvailable(e, selectedSet) && !others.has(e.name) && e.level <= levelNum
+  );
+  if (candidates.length <= 1) {
+    candidates = EXERCISES.filter(
+      (e) => e.muscle === current.muscle && isAvailable(e, selectedSet) && !others.has(e.name)
+    );
+  }
+  candidates.sort((a, b) => b.priority - a.priority);
+  if (candidates.length <= 1) return null;
+
+  const idx = candidates.findIndex((e) => e.name === current.name);
+  const next = candidates[(idx + 1) % candidates.length];
+  if (next.name === current.name) return null;
+
+  const p = resolveParams(next, params, levelNum);
+  const analysis = analyzeLogs(logs, now);
+  const record = analysis?.lastRecordByName[next.name];
+  return {
+    name: next.name,
+    muscle: next.muscle,
+    track: next.track,
+    sets: p.sets,
+    reps: p.reps,
+    rest: p.rest,
+    note: record ? progressionNote(record) : null,
+    focused: current.focused,
+  };
+}
+
+// 有酸素種目を次の候補に差し替える(プールがあれば泳法の切替などに使える)
+export function alternativeCardio(profile, logs, currentName, now = new Date()) {
+  const levelNum = LEVEL_NUM[profile.level] ?? 1;
+  const selectedSet = expandEquipment(profile.equipment);
+  let candidates = EXERCISES.filter(
+    (e) => e.muscle === "cardio" && isAvailable(e, selectedSet) && e.level <= levelNum
+  );
+  if (candidates.length <= 1) {
+    candidates = EXERCISES.filter((e) => e.muscle === "cardio" && isAvailable(e, selectedSet));
+  }
+  candidates.sort((a, b) => b.priority - a.priority);
+  if (candidates.length <= 1) return null;
+
+  const idx = candidates.findIndex((e) => e.name === currentName);
+  const next = candidates[(idx + 1) % candidates.length];
+  if (next.name === currentName) return null;
+
+  const analysis = analyzeLogs(logs, now);
+  const record = analysis?.lastRecordByName[next.name];
+  return { name: next.name, note: record ? progressionNote(record) : null };
+}
+
+// 全種目のセット数を増減する(2〜6セットでクランプ)
+export function adjustPlanVolume(plan, delta) {
+  for (const day of plan.days) {
+    for (const ex of day.exercises) {
+      ex.sets = Math.max(2, Math.min(6, ex.sets + delta));
+    }
+  }
+}
+
+// 各日を最大4種目に短縮する(強化部位・コンパウンド優先の並び順を保ったまま先頭から残す)
+export function shortenPlan(plan) {
+  for (const day of plan.days) {
+    day.exercises = day.exercises.slice(0, 4);
+  }
+  plan.shortened = true;
+}
+
+// 器具タグを実際に使える集合へ展開(「マシン一式」は個別マシンすべてに展開)
+function expandEquipment(keys) {
+  const set = new Set(keys);
+  if (set.has("machine")) {
+    for (const key of MACHINE_KEYS) set.add(key);
+  }
+  return set;
+}
+
 export function generatePlan(profile, logs = [], now = new Date()) {
   const levelNum = LEVEL_NUM[profile.level] ?? 1;
-  const selectedSet = new Set(profile.equipment);
-  // 「マシン一式」選択時は個別マシンすべてを使えるものとして扱う
-  if (selectedSet.has("machine")) {
-    for (const key of MACHINE_KEYS) selectedSet.add(key);
-  }
+  const selectedSet = expandEquipment(profile.equipment);
   const bmi = calcBmi(profile.weight, profile.height);
   const split = buildSplit(profile.frequency);
   const params = GOAL_PARAMS[profile.goal] ?? GOAL_PARAMS.health;
@@ -484,6 +570,7 @@ export function generatePlan(profile, logs = [], now = new Date()) {
       const record = analysis?.lastRecordByName[ex.name];
       exercises.push({
         name: ex.name,
+        muscle: ex.muscle,
         track: ex.track,
         sets: p.sets,
         reps: p.reps,
