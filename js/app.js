@@ -2,10 +2,8 @@
 import {
   generatePlan, allExerciseNames, exercisesByMuscle, getExerciseTrack,
   EQUIPMENT, EQUIPMENT_ICONS, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS,
-} from "./planner.js?v=5";
+} from "./planner.js?v=6";
 
-const STORAGE_KEY_API = "anthropic_api_key";
-const STORAGE_KEY_FORCE_BUILTIN = "force_builtin";
 const STORAGE_KEY_LOGS = "workout_logs";
 
 const $ = (sel) => document.querySelector(sel);
@@ -189,81 +187,7 @@ function renderBuiltinPlan(plan) {
   return html;
 }
 
-// ---------- 簡易 Markdown レンダラ(見出し・リスト・表・太字のみ) ----------
-
-function renderMarkdown(md) {
-  const lines = md.split("\n");
-  let html = "";
-  let inList = false;
-  let tableRows = [];
-
-  const inline = (text) =>
-    escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-
-  const flushTable = () => {
-    if (tableRows.length === 0) return;
-    const [header, ...body] = tableRows;
-    html += "<table><thead><tr>";
-    for (const cell of header) html += `<th>${inline(cell)}</th>`;
-    html += "</tr></thead><tbody>";
-    for (const row of body) {
-      html += "<tr>";
-      for (const cell of row) html += `<td>${inline(cell)}</td>`;
-      html += "</tr>";
-    }
-    html += "</tbody></table>";
-    tableRows = [];
-  };
-
-  const closeList = () => {
-    if (inList) {
-      html += "</ul>";
-      inList = false;
-    }
-  };
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith("|")) {
-      closeList();
-      const cells = trimmed.split("|").slice(1, -1).map((c) => c.trim());
-      // 区切り行(|---|---|)はスキップ
-      if (cells.every((c) => /^:?-{2,}:?$/.test(c))) continue;
-      tableRows.push(cells);
-      continue;
-    }
-    flushTable();
-
-    if (trimmed.startsWith("### ")) { closeList(); html += `<h4>${inline(trimmed.slice(4))}</h4>`; continue; }
-    if (trimmed.startsWith("## ")) { closeList(); html += `<h3>${inline(trimmed.slice(3))}</h3>`; continue; }
-    if (trimmed.startsWith("# ")) { closeList(); html += `<h2>${inline(trimmed.slice(2))}</h2>`; continue; }
-    if (/^[-*] /.test(trimmed)) {
-      if (!inList) { html += "<ul>"; inList = true; }
-      html += `<li>${inline(trimmed.slice(2))}</li>`;
-      continue;
-    }
-    closeList();
-    if (trimmed.length > 0) html += `<p>${inline(trimmed)}</p>`;
-  }
-  closeList();
-  flushTable();
-  return html;
-}
-
 // ---------- 生成フロー ----------
-
-function setResultMode(mode) {
-  const badge = $("#result-badge");
-  if (mode === "ai") {
-    badge.textContent = "Claude AI 生成";
-    badge.className = "badge badge-ai";
-  } else {
-    badge.textContent = "内蔵アルゴリズム";
-    badge.className = "badge badge-builtin";
-  }
-}
 
 function showResultSection() {
   $("#result-section").hidden = false;
@@ -272,7 +196,6 @@ function showResultSection() {
 
 function runBuiltin(profile, logs) {
   const plan = generatePlan(profile, logs);
-  setResultMode("builtin");
   const content = $("#result-content");
   content.innerHTML = renderBuiltinPlan(plan);
   // 「この日をやったので記録する」→ その日の内容を記録フォームへ転記
@@ -284,43 +207,7 @@ function runBuiltin(profile, logs) {
   showResultSection();
 }
 
-async function runAi(profile, apiKey, logs) {
-  const content = $("#result-content");
-  setResultMode("ai");
-  content.innerHTML = `<p class="generating">Claude がメニューを考えています…</p>`;
-  showResultSection();
-
-  const showError = (msg) => {
-    content.innerHTML =
-      `<p class="error-msg">${escapeHtml(msg)}</p>` +
-      `<button type="button" id="fallback-btn" class="secondary-btn">内蔵ロジックで生成する</button>`;
-    $("#fallback-btn").addEventListener("click", () => runBuiltin(profile, logs));
-  };
-
-  // 動的 import:API キーを使う人だけが SDK(CDN)を読み込む
-  let aiModule;
-  try {
-    aiModule = await import("./ai.js?v=5");
-  } catch (error) {
-    console.error(error);
-    showError("AI モジュールの読み込みに失敗しました。ネットワーク接続を確認してください。");
-    return;
-  }
-
-  let buffer = "";
-  try {
-    await aiModule.generateWithClaude(profile, apiKey, logs, (delta) => {
-      buffer += delta;
-      content.innerHTML = renderMarkdown(buffer);
-    });
-    content.innerHTML = renderMarkdown(buffer);
-  } catch (error) {
-    console.error(error);
-    showError(aiModule.describeApiError(error));
-  }
-}
-
-async function onGenerate(event) {
+function onGenerate(event) {
   event.preventDefault();
   const errorBox = $("#form-error");
   errorBox.textContent = "";
@@ -333,20 +220,7 @@ async function onGenerate(event) {
     return;
   }
 
-  const apiKey = localStorage.getItem(STORAGE_KEY_API);
-  const forceBuiltin = localStorage.getItem(STORAGE_KEY_FORCE_BUILTIN) === "1";
-  const logs = loadLogs();
-  const btn = $("#generate-btn");
-  btn.disabled = true;
-  try {
-    if (apiKey && !forceBuiltin) {
-      await runAi(profile, apiKey, logs);
-    } else {
-      runBuiltin(profile, logs);
-    }
-  } finally {
-    btn.disabled = false;
-  }
+  runBuiltin(profile, loadLogs());
 }
 
 // ---------- トレーニング記録 ----------
@@ -603,43 +477,9 @@ function setupProfileSelects() {
   fillSelect($("#age"), numRange(10, 90), 30, (v) => `${v}歳`);
 }
 
-// ---------- 設定モーダル ----------
-
-function updateModeIndicator() {
-  const hasKey = !!localStorage.getItem(STORAGE_KEY_API);
-  const forceBuiltin = localStorage.getItem(STORAGE_KEY_FORCE_BUILTIN) === "1";
-  $("#mode-indicator").textContent =
-    hasKey && !forceBuiltin ? "現在のモード:Claude AI 生成" : "現在のモード:内蔵アルゴリズム";
-}
-
-function setupSettings() {
-  const modal = $("#settings-modal");
-  $("#settings-btn").addEventListener("click", () => {
-    $("#api-key-input").value = localStorage.getItem(STORAGE_KEY_API) ?? "";
-    $("#force-builtin").checked = localStorage.getItem(STORAGE_KEY_FORCE_BUILTIN) === "1";
-    modal.showModal();
-  });
-  $("#settings-close").addEventListener("click", () => modal.close());
-  $("#api-key-save").addEventListener("click", () => {
-    const key = $("#api-key-input").value.trim();
-    if (key) localStorage.setItem(STORAGE_KEY_API, key);
-    else localStorage.removeItem(STORAGE_KEY_API);
-    localStorage.setItem(STORAGE_KEY_FORCE_BUILTIN, $("#force-builtin").checked ? "1" : "0");
-    updateModeIndicator();
-    modal.close();
-  });
-  $("#api-key-delete").addEventListener("click", () => {
-    localStorage.removeItem(STORAGE_KEY_API);
-    $("#api-key-input").value = "";
-    updateModeIndicator();
-  });
-}
-
 // ---------- 初期化 ----------
 
 buildEquipmentCheckboxes();
 setupProfileSelects();
-setupSettings();
 setupLogSection();
-updateModeIndicator();
 $("#menu-form").addEventListener("submit", onGenerate);
