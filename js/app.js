@@ -1,9 +1,9 @@
 // UI の配線:フォーム入力 → メニュー生成(Claude / 内蔵ロジック)→ 描画
 import {
-  generatePlan, allExerciseNames, exercisesByMuscle, getExerciseTrack,
+  generatePlan, allExerciseNames, exerciseChoices, getExerciseTrack, getDistanceUnit,
   EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS, MUSCLE_LABELS,
-} from "./planner.js?v=7";
-import { EQUIPMENT_SVG } from "./icons.js?v=7";
+} from "./planner.js?v=8";
+import { EQUIPMENT_SVG } from "./icons.js?v=8";
 
 const STORAGE_KEY_LOGS = "workout_logs";
 
@@ -245,12 +245,16 @@ function saveLogs(logs) {
   localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(logs));
 }
 
-// 記録方式ごとの入力欄(すべて選択式)を組み立てる
-function fieldsHtml(track) {
+// 記録方式ごとの入力欄(すべて選択式)を組み立てる。
+// distUnit: 有酸素の距離単位。プール種目は "m"(25m刻み)、それ以外は "km"
+function fieldsHtml(track, distUnit = "km") {
   if (track === "cardio") {
+    const dist = distUnit === "m"
+      ? optionsHtml(numRange(25, 2000, 25), "", (v) => `${v}m`)
+      : optionsHtml(numRange(0.5, 20, 0.5), "", (v) => `${v}km`);
     return (
       `<select class="f-min" aria-label="時間">${optionsHtml(numRange(5, 120, 5), 20, (v) => `${v}分`)}</select>` +
-      `<select class="f-dist" aria-label="距離"><option value="">距離なし</option>${optionsHtml(numRange(0.5, 20, 0.5), "", (v) => `${v}km`)}</select>`
+      `<select class="f-dist" data-unit="${distUnit}" aria-label="距離"><option value="">距離なし</option>${dist}</select>`
     );
   }
   if (track === "time") {
@@ -266,19 +270,19 @@ function fieldsHtml(track) {
   );
 }
 
-// 種目名の選択リスト(部位ごとにグループ化+自由入力)
-function nameSelectHtml() {
-  let html = `<select class="log-name" aria-label="種目"><option value="">種目を選択…</option>`;
-  for (const group of exercisesByMuscle()) {
+// 種目名の選択肢(記録方式に応じたリスト+自由入力)
+function nameOptionsHtml(track) {
+  let html = `<option value="">種目を選択…</option>`;
+  for (const group of exerciseChoices(track)) {
     html += `<optgroup label="${group.label}">`;
     for (const name of group.names) html += `<option value="${name}">${name}</option>`;
     html += `</optgroup>`;
   }
-  html += `<option value="__custom__">✏️ その他(自由入力)</option></select>`;
+  html += `<option value="__custom__">✏️ その他(自由入力)</option>`;
   return html;
 }
 
-// prefill: { track, name, weight, sets, reps, seconds, minutes }(任意)
+// prefill: { track, name, weight, sets, reps, seconds, minutes, distance }(任意)
 function addLogRow(prefill = null) {
   const row = document.createElement("div");
   row.className = "log-row";
@@ -288,7 +292,7 @@ function addLogRow(prefill = null) {
     `<option value="time">🧘 体幹・キープ</option>` +
     `<option value="cardio">🏃 有酸素</option>` +
     `</select>` +
-    nameSelectHtml() +
+    `<select class="log-name" aria-label="種目">${nameOptionsHtml("weight")}</select>` +
     `<input type="text" class="log-name-custom" list="exercise-names" placeholder="種目名を入力" hidden>` +
     `<span class="log-fields">${fieldsHtml("weight")}</span>` +
     `<button type="button" class="row-delete" aria-label="この行を削除">✕</button>`;
@@ -297,13 +301,23 @@ function addLogRow(prefill = null) {
   const nameSel = row.querySelector(".log-name");
   const customInput = row.querySelector(".log-name-custom");
   const fieldsBox = row.querySelector(".log-fields");
-  const setTrack = (track) => {
+
+  const rebuildFields = (track, name = "") => {
+    fieldsBox.innerHTML = fieldsHtml(track, getDistanceUnit(name));
+  };
+  // 種類の切り替え:種目リストと入力欄を丸ごと差し替える
+  const setTrack = (track, keepName = false) => {
     if (track !== trackSel.value) trackSel.value = track;
-    fieldsBox.innerHTML = fieldsHtml(track);
+    if (!keepName) {
+      nameSel.innerHTML = nameOptionsHtml(track);
+      customInput.hidden = true;
+      customInput.value = "";
+    }
+    rebuildFields(track, keepName ? nameSel.value : "");
   };
 
   trackSel.addEventListener("change", () => setTrack(trackSel.value));
-  // 種目を選んだら、記録方式(筋トレ/キープ/有酸素)を自動で切り替える
+  // 種目を選んだら、距離単位など入力欄を種目に合わせる
   nameSel.addEventListener("change", () => {
     const custom = nameSel.value === "__custom__";
     customInput.hidden = !custom;
@@ -311,18 +325,28 @@ function addLogRow(prefill = null) {
       customInput.focus();
       return;
     }
-    if (nameSel.value) setTrack(getExerciseTrack(nameSel.value));
+    if (nameSel.value) rebuildFields(trackSel.value, nameSel.value);
   });
+  // 自由入力の種目名がデータベースにあれば、種類と入力欄を自動調整
   customInput.addEventListener("change", () => {
-    const t = getExerciseTrack(customInput.value.trim());
-    setTrack(t);
+    const name = customInput.value.trim();
+    const t = getExerciseTrack(name);
+    if (t !== trackSel.value) {
+      trackSel.value = t;
+      nameSel.innerHTML = nameOptionsHtml(t);
+      nameSel.value = "__custom__";
+      customInput.hidden = false;
+    }
+    fieldsBox.innerHTML = fieldsHtml(t, getDistanceUnit(name));
   });
   row.querySelector(".row-delete").addEventListener("click", () => row.remove());
 
   if (prefill) {
-    setTrack(prefill.track ?? "weight");
+    const track = prefill.track ?? "weight";
+    setTrack(track);
     if ([...nameSel.options].some((o) => o.value === prefill.name)) {
       nameSel.value = prefill.name;
+      rebuildFields(track, prefill.name);
     } else {
       nameSel.value = "__custom__";
       customInput.hidden = false;
@@ -375,7 +399,7 @@ function prefillLogFromDay(day) {
 
 function entrySummary(e) {
   if (e.track === "cardio") {
-    const dist = e.distance ? `・${e.distance}km` : "";
+    const dist = e.distance ? `・${e.distance}${e.unit ?? "km"}` : "";
     return `${e.name} ${e.minutes || 0}分${dist}`;
   }
   if (e.track === "time") {
@@ -430,7 +454,13 @@ function onLogSubmit(event) {
         : selected;
       const val = (cls) => row.querySelector(cls)?.value ?? "";
       if (track === "cardio") {
-        return { name, track, minutes: val(".f-min") || "0", distance: val(".f-dist") };
+        const distSel = row.querySelector(".f-dist");
+        return {
+          name, track,
+          minutes: val(".f-min") || "0",
+          distance: distSel?.value ?? "",
+          unit: distSel?.dataset.unit ?? "km",
+        };
       }
       if (track === "time") {
         return { name, track, seconds: val(".f-sec") || "0", sets: val(".f-sets") || "1" };

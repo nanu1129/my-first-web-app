@@ -110,6 +110,7 @@ const EXERCISES = [
   { name: "フォワードランジ", muscle: "legs", equipment: [], level: 1, priority: 5, kind: "compound" },
   { name: "ヒップリフト", muscle: "legs", equipment: [], level: 1, priority: 4, kind: "isolation" },
   { name: "カーフレイズ", muscle: "legs", equipment: [], level: 1, priority: 3, kind: "isolation" },
+  { name: "ウォールシット(空気椅子)", muscle: "legs", equipment: [], level: 1, priority: 4, kind: "isolation" },
 
   // --- 肩 ---
   { name: "オーバーヘッドプレス", muscle: "shoulders", equipment: ["barbell"], level: 2, priority: 9, kind: "compound" },
@@ -133,6 +134,7 @@ const EXERCISES = [
 
   // --- 体幹 ---
   { name: "プランク", muscle: "core", equipment: [], level: 1, priority: 7, kind: "isolation" },
+  { name: "サイドプランク", muscle: "core", equipment: [], level: 1, priority: 6, kind: "isolation" },
   { name: "クランチ", muscle: "core", equipment: [], level: 1, priority: 5, kind: "isolation" },
   { name: "レッグレイズ", muscle: "core", equipment: [], level: 1, priority: 5, kind: "isolation" },
   { name: "ロシアンツイスト", muscle: "core", equipment: [], level: 1, priority: 4, kind: "isolation" },
@@ -142,6 +144,10 @@ const EXERCISES = [
 
   // --- 有酸素 ---
   { name: "水泳(クロール)", muscle: "cardio", equipment: ["pool"], level: 2, priority: 10, kind: "cardio" },
+  { name: "水泳(平泳ぎ)", muscle: "cardio", equipment: ["pool"], level: 1, priority: 9, kind: "cardio" },
+  { name: "水泳(背泳ぎ)", muscle: "cardio", equipment: ["pool"], level: 2, priority: 7, kind: "cardio" },
+  { name: "水泳(バタフライ)", muscle: "cardio", equipment: ["pool"], level: 3, priority: 5, kind: "cardio" },
+  { name: "ビート板キック", muscle: "cardio", equipment: ["pool"], level: 1, priority: 6, kind: "cardio" },
   { name: "水中ウォーキング", muscle: "cardio", equipment: ["pool"], level: 1, priority: 8, kind: "cardio" },
   { name: "ランニング", muscle: "cardio", equipment: ["treadmill"], level: 1, priority: 8, kind: "cardio" },
   { name: "エアロバイク", muscle: "cardio", equipment: ["bike"], level: 1, priority: 7, kind: "cardio" },
@@ -152,7 +158,7 @@ const EXERCISES = [
 
 // 記録・表示の方式を種目ごとに分類する。
 // weight = 重量×セット×回数 / time = 時間キープ×セット / cardio = 時間(+距離)
-const TIME_HOLD = new Set(["プランク"]);
+const TIME_HOLD = new Set(["プランク", "サイドプランク", "ウォールシット(空気椅子)"]);
 // 高回数が向く種目(腹筋・カーフ・自重の補助種目など)
 const HIGH_REP = new Set([
   "カーフレイズ", "クランチ", "レッグレイズ", "ロシアンツイスト",
@@ -179,6 +185,29 @@ for (const ex of EXERCISES) {
 const NAME_TO_EXERCISE = new Map(EXERCISES.map((e) => [e.name, e]));
 export function getExerciseTrack(name) {
   return NAME_TO_EXERCISE.get(name)?.track ?? "weight";
+}
+
+// 有酸素種目の距離単位。プール種目は25m刻みの「m」、それ以外は「km」
+export function getDistanceUnit(name) {
+  const ex = NAME_TO_EXERCISE.get(name);
+  return ex?.equipment.includes("pool") ? "m" : "km";
+}
+
+// 記録フォームの種目リストを記録方式(筋トレ/キープ/有酸素)別に返す
+export function exerciseChoices(track) {
+  if (track === "cardio") {
+    return [{ label: "有酸素", names: EXERCISES.filter((e) => e.track === "cardio").map((e) => e.name) }];
+  }
+  if (track === "time") {
+    return [{ label: "体幹・キープ系", names: EXERCISES.filter((e) => e.track === "time").map((e) => e.name) }];
+  }
+  const order = ["chest", "back", "legs", "shoulders", "arms", "core"];
+  return order
+    .map((m) => ({
+      label: MUSCLE_LABELS[m],
+      names: EXERCISES.filter((e) => e.muscle === m && e.track === "weight").map((e) => e.name),
+    }))
+    .filter((g) => g.names.length > 0);
 }
 
 // 目的別のセット・レップ・休憩設定。sets は中級者基準で、レベルに応じて後述の resolveParams で増減する。
@@ -308,7 +337,7 @@ function progressionNote(record) {
     return `前回(${record.date}): ${record.seconds}秒×${record.sets}セット → +5〜10秒を目標に`;
   }
   if (track === "cardio") {
-    const dist = record.distance ? `・${record.distance}km` : "";
+    const dist = record.distance ? `・${record.distance}${record.unit ?? "km"}` : "";
     return `前回(${record.date}): ${record.minutes}分${dist} → 時間か距離を少しずつ伸ばす`;
   }
   const weight = parseFloat(record.weight);
