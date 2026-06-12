@@ -2,7 +2,7 @@
 import {
   generatePlan, allExerciseNames, exercisesByMuscle, getExerciseTrack,
   EQUIPMENT, EQUIPMENT_ICONS, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS,
-} from "./planner.js?v=4";
+} from "./planner.js?v=5";
 
 const STORAGE_KEY_API = "anthropic_api_key";
 const STORAGE_KEY_FORCE_BUILTIN = "force_builtin";
@@ -33,6 +33,29 @@ function fillSelect(select, values, selected, labelFor) {
 // 重量の選択肢: 自重(0) / 1〜10kg は1kg刻み / それ以上は2.5kg刻み
 const WEIGHT_CHOICES = [0, ...numRange(1, 10, 1), ...numRange(12.5, 200, 2.5)];
 const weightLabel = (v) => (v === 0 ? "自重・なし" : `${v}kg`);
+
+// セレクトの選択肢から、指定値に最も近いものを選ぶ
+function selectNearest(select, value) {
+  if (!select || value == null || Number.isNaN(value)) return;
+  let best = null;
+  let bestDiff = Infinity;
+  for (const opt of select.options) {
+    if (opt.value === "") continue;
+    const diff = Math.abs(parseFloat(opt.value) - value);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = opt.value;
+    }
+  }
+  if (best != null) select.value = best;
+}
+
+// "8〜12回" "30〜60秒キープ" "20〜30分" 等の文字列から代表値(中央)を取り出す
+function midNumber(text) {
+  const nums = String(text).match(/\d+(?:\.\d+)?/g)?.map(Number);
+  if (!nums || nums.length === 0) return null;
+  return nums.length >= 2 ? Math.round((nums[0] + nums[1]) / 2) : nums[0];
+}
 
 // ---------- 器具チェックボックスの構築 ----------
 
@@ -140,7 +163,7 @@ function renderBuiltinPlan(plan) {
     html += `</ul></div>`;
   }
 
-  for (const day of plan.days) {
+  for (const [i, day] of plan.days.entries()) {
     html += `<section class="day-block"><h3>${escapeHtml(day.title)}</h3>`;
     html += `<table><thead><tr><th>種目</th><th>セット</th><th>回数</th><th>休憩</th></tr></thead><tbody>`;
     for (const ex of day.exercises) {
@@ -152,6 +175,7 @@ function renderBuiltinPlan(plan) {
       const cnote = day.cardio.note ? `<br><small class="ex-note">${escapeHtml(day.cardio.note)}</small>` : "";
       html += `<p class="cardio-note">🏃 有酸素:${escapeHtml(day.cardio.name)} ${escapeHtml(day.cardio.duration)}${cnote}</p>`;
     }
+    html += `<button type="button" class="secondary-btn day-record-btn" data-day="${i}">📝 この日をやったので記録する</button>`;
     html += `</section>`;
   }
 
@@ -249,7 +273,14 @@ function showResultSection() {
 function runBuiltin(profile, logs) {
   const plan = generatePlan(profile, logs);
   setResultMode("builtin");
-  $("#result-content").innerHTML = renderBuiltinPlan(plan);
+  const content = $("#result-content");
+  content.innerHTML = renderBuiltinPlan(plan);
+  // 「この日をやったので記録する」→ その日の内容を記録フォームへ転記
+  content.querySelectorAll(".day-record-btn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      prefillLogFromDay(plan.days[parseInt(btn.dataset.day, 10)]);
+    })
+  );
   showResultSection();
 }
 
@@ -269,7 +300,7 @@ async function runAi(profile, apiKey, logs) {
   // 動的 import:API キーを使う人だけが SDK(CDN)を読み込む
   let aiModule;
   try {
-    aiModule = await import("./ai.js?v=4");
+    aiModule = await import("./ai.js?v=5");
   } catch (error) {
     console.error(error);
     showError("AI モジュールの読み込みに失敗しました。ネットワーク接続を確認してください。");
@@ -366,7 +397,8 @@ function nameSelectHtml() {
   return html;
 }
 
-function addLogRow() {
+// prefill: { track, name, weight, sets, reps, seconds, minutes }(任意)
+function addLogRow(prefill = null) {
   const row = document.createElement("div");
   row.className = "log-row";
   row.innerHTML =
@@ -405,7 +437,59 @@ function addLogRow() {
     setTrack(t);
   });
   row.querySelector(".row-delete").addEventListener("click", () => row.remove());
+
+  if (prefill) {
+    setTrack(prefill.track ?? "weight");
+    if ([...nameSel.options].some((o) => o.value === prefill.name)) {
+      nameSel.value = prefill.name;
+    } else {
+      nameSel.value = "__custom__";
+      customInput.hidden = false;
+      customInput.value = prefill.name ?? "";
+    }
+    selectNearest(row.querySelector(".f-weight"), prefill.weight);
+    selectNearest(row.querySelector(".f-sets"), prefill.sets);
+    selectNearest(row.querySelector(".f-reps"), prefill.reps);
+    selectNearest(row.querySelector(".f-sec"), prefill.seconds);
+    selectNearest(row.querySelector(".f-min"), prefill.minutes);
+  }
+
   $("#log-entries").appendChild(row);
+}
+
+// 生成メニューの1日分を記録フォームに転記する(重量は前回記録があればそれを初期値に)
+function prefillLogFromDay(day) {
+  // 種目名 → 前回の重量(最新の記録を優先)
+  const lastWeight = new Map();
+  const sorted = loadLogs().sort((a, b) => (a.date < b.date ? 1 : -1));
+  for (const log of sorted) {
+    for (const e of log.entries) {
+      if (!lastWeight.has(e.name) && parseFloat(e.weight) > 0) lastWeight.set(e.name, parseFloat(e.weight));
+    }
+  }
+
+  $("#log-entries").innerHTML = "";
+  for (const ex of day.exercises) {
+    const rep = midNumber(ex.reps);
+    addLogRow({
+      track: ex.track,
+      name: ex.name,
+      weight: ex.track === "weight" ? (lastWeight.get(ex.name) ?? 0) : null,
+      sets: ex.sets,
+      reps: ex.track === "weight" ? rep : null,
+      seconds: ex.track === "time" ? rep : null,
+    });
+  }
+  if (day.cardio) {
+    addLogRow({
+      track: "cardio",
+      name: day.cardio.name,
+      minutes: midNumber(day.cardio.duration),
+    });
+  }
+  $("#log-date").value = new Date().toISOString().slice(0, 10);
+  $("#log-error").textContent = "";
+  $("#log-section").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function entrySummary(e) {
