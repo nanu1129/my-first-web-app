@@ -1,14 +1,38 @@
 // UI の配線:フォーム入力 → メニュー生成(Claude / 内蔵ロジック)→ 描画
 import {
-  generatePlan, allExerciseNames, getExerciseTrack,
+  generatePlan, allExerciseNames, exercisesByMuscle, getExerciseTrack,
   EQUIPMENT, EQUIPMENT_ICONS, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS,
-} from "./planner.js";
+} from "./planner.js?v=4";
 
 const STORAGE_KEY_API = "anthropic_api_key";
 const STORAGE_KEY_FORCE_BUILTIN = "force_builtin";
 const STORAGE_KEY_LOGS = "workout_logs";
 
 const $ = (sel) => document.querySelector(sel);
+
+// ---------- 選択式入力のヘルパー ----------
+
+// start〜end を step 刻みで並べた数値配列(0.5 等の小数 step にも対応)
+function numRange(start, end, step = 1) {
+  const values = [];
+  for (let v = start; v <= end + 1e-9; v = Math.round((v + step) * 100) / 100) values.push(v);
+  return values;
+}
+
+// <option> 群の HTML を作る。labelFor で表示文字列を変えられる
+function optionsHtml(values, selected, labelFor = (v) => String(v)) {
+  return values
+    .map((v) => `<option value="${v}"${String(v) === String(selected) ? " selected" : ""}>${labelFor(v)}</option>`)
+    .join("");
+}
+
+function fillSelect(select, values, selected, labelFor) {
+  select.innerHTML = optionsHtml(values, selected, labelFor);
+}
+
+// 重量の選択肢: 自重(0) / 1〜10kg は1kg刻み / それ以上は2.5kg刻み
+const WEIGHT_CHOICES = [0, ...numRange(1, 10, 1), ...numRange(12.5, 200, 2.5)];
+const weightLabel = (v) => (v === 0 ? "自重・なし" : `${v}kg`);
 
 // ---------- 器具チェックボックスの構築 ----------
 
@@ -245,7 +269,7 @@ async function runAi(profile, apiKey, logs) {
   // 動的 import:API キーを使う人だけが SDK(CDN)を読み込む
   let aiModule;
   try {
-    aiModule = await import("./ai.js");
+    aiModule = await import("./ai.js?v=4");
   } catch (error) {
     console.error(error);
     showError("AI モジュールの読み込みに失敗しました。ネットワーク接続を確認してください。");
@@ -309,25 +333,37 @@ function saveLogs(logs) {
   localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(logs));
 }
 
-// 記録方式ごとの入力欄を組み立てる
+// 記録方式ごとの入力欄(すべて選択式)を組み立てる
 function fieldsHtml(track) {
   if (track === "cardio") {
     return (
-      `<input type="number" class="f-min" min="0" step="1" placeholder="時間(分)">` +
-      `<input type="number" class="f-dist" min="0" step="0.1" placeholder="距離km(任意)">`
+      `<select class="f-min" aria-label="時間">${optionsHtml(numRange(5, 120, 5), 20, (v) => `${v}分`)}</select>` +
+      `<select class="f-dist" aria-label="距離"><option value="">距離なし</option>${optionsHtml(numRange(0.5, 20, 0.5), "", (v) => `${v}km`)}</select>`
     );
   }
   if (track === "time") {
     return (
-      `<input type="number" class="f-sec" min="0" step="5" placeholder="時間(秒)">` +
-      `<input type="number" class="f-sets" min="1" max="20" placeholder="セット">`
+      `<select class="f-sec" aria-label="時間(秒)">${optionsHtml(numRange(10, 300, 10), 30, (v) => `${v}秒`)}</select>` +
+      `<select class="f-sets" aria-label="セット">${optionsHtml(numRange(1, 10), 3, (v) => `${v}セット`)}</select>`
     );
   }
   return (
-    `<input type="number" class="f-weight" min="0" step="0.5" placeholder="重量kg">` +
-    `<input type="number" class="f-sets" min="1" max="20" placeholder="セット">` +
-    `<input type="number" class="f-reps" min="1" max="200" placeholder="回数">`
+    `<select class="f-weight" aria-label="重量">${optionsHtml(WEIGHT_CHOICES, 0, weightLabel)}</select>` +
+    `<select class="f-sets" aria-label="セット">${optionsHtml(numRange(1, 10), 3, (v) => `${v}セット`)}</select>` +
+    `<select class="f-reps" aria-label="回数">${optionsHtml(numRange(1, 30), 10, (v) => `${v}回`)}</select>`
   );
+}
+
+// 種目名の選択リスト(部位ごとにグループ化+自由入力)
+function nameSelectHtml() {
+  let html = `<select class="log-name" aria-label="種目"><option value="">種目を選択…</option>`;
+  for (const group of exercisesByMuscle()) {
+    html += `<optgroup label="${group.label}">`;
+    for (const name of group.names) html += `<option value="${name}">${name}</option>`;
+    html += `</optgroup>`;
+  }
+  html += `<option value="__custom__">✏️ その他(自由入力)</option></select>`;
+  return html;
 }
 
 function addLogRow() {
@@ -339,23 +375,34 @@ function addLogRow() {
     `<option value="time">🧘 体幹・キープ</option>` +
     `<option value="cardio">🏃 有酸素</option>` +
     `</select>` +
-    `<input type="text" class="log-name" list="exercise-names" placeholder="種目名(例: ベンチプレス)">` +
+    nameSelectHtml() +
+    `<input type="text" class="log-name-custom" list="exercise-names" placeholder="種目名を入力" hidden>` +
     `<span class="log-fields">${fieldsHtml("weight")}</span>` +
     `<button type="button" class="row-delete" aria-label="この行を削除">✕</button>`;
 
   const trackSel = row.querySelector(".log-track");
-  const nameInput = row.querySelector(".log-name");
+  const nameSel = row.querySelector(".log-name");
+  const customInput = row.querySelector(".log-name-custom");
   const fieldsBox = row.querySelector(".log-fields");
-  const setTrack = (track) => { fieldsBox.innerHTML = fieldsHtml(track); };
+  const setTrack = (track) => {
+    if (track !== trackSel.value) trackSel.value = track;
+    fieldsBox.innerHTML = fieldsHtml(track);
+  };
 
   trackSel.addEventListener("change", () => setTrack(trackSel.value));
-  // 種目名がデータベースの種目に一致したら、記録方式を自動で切り替える
-  nameInput.addEventListener("change", () => {
-    const t = getExerciseTrack(nameInput.value.trim());
-    if (t !== trackSel.value) {
-      trackSel.value = t;
-      setTrack(t);
+  // 種目を選んだら、記録方式(筋トレ/キープ/有酸素)を自動で切り替える
+  nameSel.addEventListener("change", () => {
+    const custom = nameSel.value === "__custom__";
+    customInput.hidden = !custom;
+    if (custom) {
+      customInput.focus();
+      return;
     }
+    if (nameSel.value) setTrack(getExerciseTrack(nameSel.value));
+  });
+  customInput.addEventListener("change", () => {
+    const t = getExerciseTrack(customInput.value.trim());
+    setTrack(t);
   });
   row.querySelector(".row-delete").addEventListener("click", () => row.remove());
   $("#log-entries").appendChild(row);
@@ -412,7 +459,10 @@ function onLogSubmit(event) {
   const entries = [...document.querySelectorAll("#log-entries .log-row")]
     .map((row) => {
       const track = row.querySelector(".log-track").value;
-      const name = row.querySelector(".log-name").value.trim();
+      const selected = row.querySelector(".log-name").value;
+      const name = selected === "__custom__"
+        ? row.querySelector(".log-name-custom").value.trim()
+        : selected;
       const val = (cls) => row.querySelector(cls)?.value ?? "";
       if (track === "cardio") {
         return { name, track, minutes: val(".f-min") || "0", distance: val(".f-dist") };
@@ -424,7 +474,7 @@ function onLogSubmit(event) {
     })
     .filter((e) => e.name.length > 0);
   if (entries.length === 0) {
-    errorBox.textContent = "少なくとも1つ、種目名を入力してください。";
+    errorBox.textContent = "少なくとも1つ、種目を選択してください。";
     return;
   }
 
@@ -444,11 +494,29 @@ function setupLogSection() {
     option.value = name;
     datalist.appendChild(option);
   }
-  $("#log-date").value = new Date().toISOString().slice(0, 10);
+  const dateOf = (daysAgo) => {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    return d.toISOString().slice(0, 10);
+  };
+  $("#log-date").value = dateOf(0);
+  // 「今日」「昨日」のワンタップ指定
+  document.querySelectorAll(".date-quick [data-days-ago]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      $("#log-date").value = dateOf(parseInt(btn.dataset.daysAgo, 10));
+    })
+  );
   addLogRow();
   $("#log-add-row").addEventListener("click", () => addLogRow());
   $("#log-form").addEventListener("submit", onLogSubmit);
   renderLogList();
+}
+
+// 体重・身長・年齢をタップで選べるセレクトにする
+function setupProfileSelects() {
+  fillSelect($("#weight"), numRange(30, 150), 65, (v) => `${v}kg`);
+  fillSelect($("#height"), numRange(130, 210), 170, (v) => `${v}cm`);
+  fillSelect($("#age"), numRange(10, 90), 30, (v) => `${v}歳`);
 }
 
 // ---------- 設定モーダル ----------
@@ -486,6 +554,7 @@ function setupSettings() {
 // ---------- 初期化 ----------
 
 buildEquipmentCheckboxes();
+setupProfileSelects();
 setupSettings();
 setupLogSection();
 updateModeIndicator();

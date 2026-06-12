@@ -271,6 +271,16 @@ export function allExerciseNames() {
   return EXERCISES.map((e) => e.name);
 }
 
+// 記録フォームの選択リスト用に、部位ごとにグループ化した種目名を返す
+export function exercisesByMuscle() {
+  const order = ["chest", "back", "legs", "shoulders", "arms", "core", "cardio"];
+  const labels = { chest: "胸", back: "背中", legs: "脚", shoulders: "肩", arms: "腕", core: "体幹", cardio: "有酸素" };
+  return order.map((m) => ({
+    label: labels[m],
+    names: EXERCISES.filter((e) => e.muscle === m).map((e) => e.name),
+  }));
+}
+
 const MUSCLE_LABELS = {
   chest: "胸", back: "背中", legs: "脚",
   shoulders: "肩", arms: "腕", core: "体幹", cardio: "有酸素",

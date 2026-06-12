@@ -314,7 +314,15 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 
 /* ---------- トレーニング記録 ---------- */
 
-.log-date-field { max-width: 220px; margin-bottom: 12px; }
+.log-date-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.log-date-field { max-width: 220px; }
+.date-quick { display: flex; gap: 8px; padding-bottom: 4px; }
 
 .log-row {
   display: flex;
@@ -328,12 +336,14 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .log-row input,
 .log-row select { min-width: 0; }
 .log-track { flex: 0 0 auto; }
-.log-name { flex: 1 1 160px; }
+.log-name,
+.log-name-custom { flex: 1 1 160px; }
 .log-fields { display: flex; flex-wrap: wrap; gap: 8px; flex: 2 1 240px; min-width: 0; }
 /* width: 0 + flex-grow で行幅を等分する。
    iOS Safari は入力欄の固有幅(約150px)を min-width: 0 だけでは縮めず、
    3欄合計が画面幅を超えてページ全体が縮小表示される原因になっていた */
-.log-fields input { flex: 1 1 0; width: 0; min-width: 0; }
+.log-fields input,
+.log-fields select { flex: 1 1 0; width: 0; min-width: 0; }
 
 .row-delete {
   background: transparent;
@@ -391,7 +401,8 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 }
 
 @media (max-width: 560px) {
-  .log-name { flex-basis: 100%; }
+  .log-name,
+  .log-name-custom { flex-basis: 100%; }
   .log-fields { flex-basis: 100%; }
 }
 
