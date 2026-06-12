@@ -26,32 +26,6 @@ export const EQUIPMENT = {
   mc_rowing: "ローイングエルゴメーター",
 };
 
-// 各器具・施設の絵文字アイコン(一覧から素早く見つけるための視覚的な目印)
-export const EQUIPMENT_ICONS = {
-  barbell: "🏋️",
-  dumbbell: "💪",
-  kettlebell: "🔔",
-  machine: "🧰",
-  mc_chest_press: "🪑",
-  mc_pec_fly: "🦋",
-  mc_lat_pulldown: "⬇️",
-  mc_seated_row: "🚣",
-  mc_shoulder_press: "🆙",
-  mc_leg_press: "🦵",
-  mc_leg_extension: "🦿",
-  mc_leg_curl: "🦵",
-  mc_smith: "🏗️",
-  mc_abdominal: "🔻",
-  cable: "🔌",
-  pullup_bar: "🧗",
-  bench: "🛋️",
-  band: "🎗️",
-  pool: "🏊",
-  treadmill: "🏃",
-  bike: "🚴",
-  mc_rowing: "🚣",
-};
-
 // 「マシン一式」を選んだときに使えるとみなす個別マシン
 export const MACHINE_KEYS = [
   "mc_chest_press", "mc_pec_fly", "mc_lat_pulldown", "mc_seated_row",
@@ -281,7 +255,7 @@ export function exercisesByMuscle() {
   }));
 }
 
-const MUSCLE_LABELS = {
+export const MUSCLE_LABELS = {
   chest: "胸", back: "背中", legs: "脚",
   shoulders: "肩", arms: "腕", core: "体幹", cardio: "有酸素",
 };
@@ -456,25 +430,27 @@ export function generatePlan(profile, logs = [], now = new Date()) {
   const analysis = analyzeLogs(logs, now);
   const knownNames = new Set(Object.keys(analysis?.lastRecordByName ?? {}));
   const cardio = params.cardioMin ? pickCardio(selectedSet, levelNum, knownNames) : null;
+  // 特に鍛えたい部位(有酸素は対象外)
+  const focus = new Set((profile.focus ?? []).filter((m) => m !== "cardio"));
+  const isFullBody = profile.frequency <= 2;
 
   const days = split.days.map((day) => {
-    // 以前鍛えていたのに14日以上空いている部位を、その日のメニューの先頭(=疲れていない状態)に回す。
-    // 記録に一度も出てこない部位は対象外(通常のコンパウンド優先の順序を保つ)。
+    // 並べ替えの優先度: 強化部位 > しばらく空いている部位 > 通常順。
+    // 強化部位・空き部位は疲れていない前半に配置する。
     let muscles = day.muscles;
-    if (analysis) {
-      const stale = new Set(
-        analysis.neglectedMuscles.filter((m) => m in analysis.muscleLastDays)
-      );
-      if (stale.size > 0) {
-        muscles = [...muscles].sort((a, b) => (stale.has(b) ? 1 : 0) - (stale.has(a) ? 1 : 0));
-      }
+    const stale = new Set(
+      (analysis?.neglectedMuscles ?? []).filter((m) => m in (analysis?.muscleLastDays ?? {}))
+    );
+    if (focus.size > 0 || stale.size > 0) {
+      const rank = (m) => (focus.has(m) ? 2 : 0) + (stale.has(m) ? 1 : 0);
+      muscles = [...muscles].sort((a, b) => rank(b) - rank(a));
     }
 
     const used = new Set();
     const exercises = [];
-    for (const muscle of muscles) {
+    const pushExercise = (muscle) => {
       const ex = pickExercise(muscle, selectedSet, levelNum, used, knownNames);
-      if (!ex) continue;
+      if (!ex) return;
       const p = resolveParams(ex, params, levelNum);
       const record = analysis?.lastRecordByName[ex.name];
       exercises.push({
@@ -484,7 +460,16 @@ export function generatePlan(profile, logs = [], now = new Date()) {
         reps: p.reps,
         rest: p.rest,
         note: record ? progressionNote(record) : null,
+        focused: focus.has(muscle),
       });
+    };
+    for (const muscle of muscles) pushExercise(muscle);
+    // 強化部位はその日に1種目追加する(全身法の日は対象部位が
+    // メニューに無くても追加し、確実に週内で鍛えられるようにする)
+    for (const m of focus) {
+      if ((day.muscles.includes(m) || isFullBody) && exercises.length < 8) {
+        pushExercise(m);
+      }
     }
     const cardioRecord = cardio ? analysis?.lastRecordByName[cardio.name] : null;
     return {
@@ -525,6 +510,7 @@ export function generatePlan(profile, logs = [], now = new Date()) {
     bmi,
     splitName: split.name,
     repScheme: params.scheme,
+    focusLabels: [...focus].map((m) => MUSCLE_LABELS[m] ?? m),
     days,
     advice,
     historySummary,

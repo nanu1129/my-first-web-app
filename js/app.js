@@ -1,8 +1,9 @@
 // UI の配線:フォーム入力 → メニュー生成(Claude / 内蔵ロジック)→ 描画
 import {
   generatePlan, allExerciseNames, exercisesByMuscle, getExerciseTrack,
-  EQUIPMENT, EQUIPMENT_ICONS, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS,
-} from "./planner.js?v=6";
+  EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS, MUSCLE_LABELS,
+} from "./planner.js?v=7";
+import { EQUIPMENT_SVG } from "./icons.js?v=7";
 
 const STORAGE_KEY_LOGS = "workout_logs";
 
@@ -75,7 +76,7 @@ function buildEquipmentCheckboxes() {
       const icon = document.createElement("span");
       icon.className = "equip-icon";
       icon.setAttribute("aria-hidden", "true");
-      icon.textContent = EQUIPMENT_ICONS[key] ?? "";
+      icon.innerHTML = EQUIPMENT_SVG[key] ?? "";
       const text = document.createElement("span");
       text.className = "equip-text";
       text.textContent = EQUIPMENT[key];
@@ -134,6 +135,7 @@ function readProfile() {
     goal: $("#goal").value,
     level: $("#level").value,
     frequency: parseInt($("#frequency").value, 10),
+    focus: [...document.querySelectorAll("#focus-chips .focus-chip.active")].map((b) => b.dataset.muscle),
     equipment: [...document.querySelectorAll('input[name="equipment"]:checked')].map((cb) => cb.value),
   };
 }
@@ -155,6 +157,10 @@ function renderBuiltinPlan(plan) {
     html += `<p class="rep-scheme">💡 ${escapeHtml(plan.repScheme)}</p>`;
   }
 
+  if (plan.focusLabels?.length > 0) {
+    html += `<p class="focus-note">🎯 強化部位: ${escapeHtml(plan.focusLabels.join("・"))} — ★の種目を前半に配置し、1種目追加しています</p>`;
+  }
+
   if (plan.historySummary) {
     html += `<div class="history-summary"><strong>📒 記録の反映</strong><ul>`;
     for (const line of plan.historySummary) html += `<li>${escapeHtml(line)}</li>`;
@@ -166,7 +172,8 @@ function renderBuiltinPlan(plan) {
     html += `<table><thead><tr><th>種目</th><th>セット</th><th>回数</th><th>休憩</th></tr></thead><tbody>`;
     for (const ex of day.exercises) {
       const note = ex.note ? `<br><small class="ex-note">${escapeHtml(ex.note)}</small>` : "";
-      html += `<tr><td>${escapeHtml(ex.name)}${note}</td><td>${ex.sets}</td><td>${escapeHtml(ex.reps)}</td><td>${escapeHtml(ex.rest)}</td></tr>`;
+      const star = ex.focused ? `<span class="focus-star">★</span> ` : "";
+      html += `<tr><td>${star}${escapeHtml(ex.name)}${note}</td><td>${ex.sets}</td><td>${escapeHtml(ex.reps)}</td><td>${escapeHtml(ex.rest)}</td></tr>`;
     }
     html += `</tbody></table>`;
     if (day.cardio) {
@@ -470,6 +477,25 @@ function setupLogSection() {
   renderLogList();
 }
 
+// 「特に鍛えたい部位」のタップ選択チップ
+function setupFocusChips() {
+  const box = $("#focus-chips");
+  for (const [muscle, label] of Object.entries(MUSCLE_LABELS)) {
+    if (muscle === "cardio") continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "focus-chip";
+    btn.dataset.muscle = muscle;
+    btn.textContent = label;
+    btn.setAttribute("aria-pressed", "false");
+    btn.addEventListener("click", () => {
+      const active = btn.classList.toggle("active");
+      btn.setAttribute("aria-pressed", String(active));
+    });
+    box.appendChild(btn);
+  }
+}
+
 // 体重・身長・年齢をタップで選べるセレクトにする
 function setupProfileSelects() {
   fillSelect($("#weight"), numRange(30, 150), 65, (v) => `${v}kg`);
@@ -481,5 +507,6 @@ function setupProfileSelects() {
 
 buildEquipmentCheckboxes();
 setupProfileSelects();
+setupFocusChips();
 setupLogSection();
 $("#menu-form").addEventListener("submit", onGenerate);
