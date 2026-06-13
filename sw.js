@@ -1,17 +1,17 @@
 // オフライン対応の Service Worker。
 // アプリ更新時は CACHE のバージョン(v?)を上げると古いキャッシュを破棄する。
-const CACHE = "workout-v11";
+const CACHE = "workout-v12";
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=11",
+  "./style.css?v=12",
   "./manifest.webmanifest",
   "./icon.svg",
-  "./js/app.js?v=11",
-  "./js/planner.js?v=11",
-  "./js/icons.js?v=11",
-  "./js/stats.js?v=11",
-  "./js/charts.js?v=11",
+  "./js/app.js?v=12",
+  "./js/planner.js?v=12",
+  "./js/icons.js?v=12",
+  "./js/stats.js?v=12",
+  "./js/charts.js?v=12",
 ];
 
 self.addEventListener("install", (e) => {

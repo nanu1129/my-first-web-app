@@ -3,12 +3,12 @@ import {
   generatePlan, allExerciseNames, exerciseChoices, getExerciseTrack, getDistanceUnit,
   alternativeExercise, alternativeCardio, adjustPlanVolume, shortenPlan, estimate1RM,
   EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS, MUSCLE_LABELS,
-} from "./planner.js?v=11";
-import { EQUIPMENT_SVG } from "./icons.js?v=11";
+} from "./planner.js?v=12";
+import { EQUIPMENT_SVG } from "./icons.js?v=12";
 import {
   summarize, badges, calendar, trackedWeightExercises, exerciseSeries, bodyweightSeries,
-} from "./stats.js?v=11";
-import { lineChartSVG } from "./charts.js?v=11";
+} from "./stats.js?v=12";
+import { lineChartSVG } from "./charts.js?v=12";
 
 const STORAGE_KEY_LOGS = "workout_logs";
 const STORAGE_KEY_PROFILE = "workout_profile";
