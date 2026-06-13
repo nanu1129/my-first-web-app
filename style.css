@@ -471,3 +471,104 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
   .logo-en { font-size: 2.4rem; }
   .panel { padding: 18px 14px; }
 }
+
+/* ---------- 進捗・可視化 ---------- */
+.sub-title { font-size: 0.95rem; font-weight: 700; color: var(--text); margin: 22px 0 8px; }
+
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.badge-chip {
+  font-size: 0.82rem;
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+}
+.badge-chip.got { background: rgba(200, 240, 74, 0.12); color: var(--accent); border-color: var(--accent); }
+.badge-chip.locked { color: var(--text-dim); opacity: 0.55; }
+
+.calendar { font-size: 0.8rem; }
+.cal-head, .cal-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-head { margin-bottom: 4px; }
+.cal-head span { text-align: center; color: var(--text-dim); font-size: 0.72rem; }
+.cal-row { margin-bottom: 4px; }
+.cal-cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+.cal-cell.rest { background: var(--bg-elevated); color: var(--text-dim); }
+.cal-cell.done { background: var(--accent); }
+.cal-cell.future { background: transparent; border: 1px dashed var(--line); }
+.cal-cell.today { outline: 2px solid var(--ai); outline-offset: -2px; }
+
+.chart-select { margin-bottom: 8px; }
+.chart-box { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+.line-chart { width: 100%; height: auto; display: block; }
+.chart-empty { color: var(--text-dim); font-size: 0.85rem; text-align: center; padding: 20px 0; margin: 0; }
+
+.bw-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.bw-form select { flex: 0 1 auto; }
+
+/* ---------- バックアップ ---------- */
+.backup-desc { font-size: 0.85rem; color: var(--text-dim); margin: 0 0 12px; }
+.backup-btns { display: flex; flex-wrap: wrap; gap: 10px; }
+.backup-msg { font-size: 0.85rem; margin: 10px 0 0; min-height: 1em; }
+.backup-msg.ok { color: var(--accent); }
+.backup-msg.error { color: var(--danger); }
+
+/* ---------- ウォームアップ/フォーム解説 ---------- */
+.prep { margin: 8px 0; font-size: 0.88rem; }
+.prep summary { cursor: pointer; color: var(--text-dim); font-weight: 700; }
+.prep ul { margin: 8px 0 4px; padding-left: 20px; }
+.prep li { margin: 3px 0; color: var(--text-dim); }
+
+.info-btn, .rest-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--text-dim);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.info-btn:hover, .rest-btn:hover { color: var(--accent); border-color: var(--accent); }
+.ex-tip { color: var(--text-dim); }
+.tip-row td { background: rgba(124, 196, 255, 0.05); }
+
+/* ---------- 休憩タイマー(フローティング) ---------- */
+.rest-timer {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 10px 18px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.rest-timer-label { font-size: 0.8rem; color: var(--text-dim); }
+.rest-timer-time { font-family: "Bebas Neue", sans-serif; font-size: 1.8rem; color: var(--accent); line-height: 1; min-width: 64px; text-align: center; }
+.rest-timer-actions { display: flex; gap: 6px; }
+.rest-mini {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+.rest-mini:hover { border-color: var(--accent); }

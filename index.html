@@ -5,10 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AIワークアウトプランナー | あなた専用の筋トレメニュー</title>
   <meta name="description" content="体重・身長・目的・使える器具から、AIがあなたに最適な1週間の筋トレメニューを提案します。">
+  <meta name="theme-color" content="#14161b">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ワークアウト">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <header class="site-header">
@@ -109,6 +116,42 @@
     </section>
     <datalist id="exercise-names"></datalist>
 
+    <section class="panel" id="progress-section" hidden>
+      <h2 class="panel-title">進捗・記録の可視化</h2>
+
+      <div id="streak-cards" class="summary-cards"></div>
+      <div id="badges" class="badges"></div>
+
+      <h3 class="sub-title">トレーニングカレンダー(直近8週)</h3>
+      <div id="calendar" class="calendar"></div>
+
+      <h3 class="sub-title">種目の重量推移</h3>
+      <select id="chart-exercise" class="chart-select" aria-label="グラフに表示する種目"></select>
+      <div id="exercise-chart" class="chart-box"></div>
+
+      <h3 class="sub-title">体重の推移</h3>
+      <form id="bodyweight-form" class="bw-form">
+        <select id="bw-date-quick" aria-label="日付">
+          <option value="0">今日</option>
+          <option value="1">昨日</option>
+        </select>
+        <select id="bw-value" aria-label="体重"></select>
+        <button type="submit" class="secondary-btn">体重を記録</button>
+      </form>
+      <div id="bodyweight-chart" class="chart-box"></div>
+    </section>
+
+    <section class="panel" id="backup-section">
+      <h2 class="panel-title">データのバックアップ <small>(記録はこの端末内にのみ保存されています)</small></h2>
+      <p class="backup-desc">機種変更やブラウザのデータ削除に備えて、記録をファイルに保存・復元できます。</p>
+      <div class="backup-btns">
+        <button type="button" id="export-btn" class="secondary-btn">⬇ データを書き出す</button>
+        <button type="button" id="import-btn" class="secondary-btn">⬆ データを読み込む</button>
+        <input type="file" id="import-file" accept="application/json" hidden>
+      </div>
+      <p id="backup-msg" class="backup-msg"></p>
+    </section>
+
     <section id="result-section" class="panel" hidden>
       <div class="result-header">
         <h2 class="panel-title">あなたの1週間メニュー</h2>
@@ -121,6 +164,15 @@
     <p>本アプリの提案は一般的なフィットネス情報であり、医療アドバイスではありません。持病のある方は医師に相談してください。</p>
   </footer>
 
-  <script type="module" src="js/app.js?v=9"></script>
+  <div id="rest-timer" class="rest-timer" hidden>
+    <span class="rest-timer-label">休憩</span>
+    <span id="rest-timer-time" class="rest-timer-time">0:00</span>
+    <div class="rest-timer-actions">
+      <button type="button" id="rest-add" class="rest-mini">+15秒</button>
+      <button type="button" id="rest-close" class="rest-mini">終了</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js?v=10"></script>
 </body>
 </html>
