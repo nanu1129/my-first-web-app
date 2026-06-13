@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
   <header class="site-header">
@@ -165,16 +165,18 @@
   </footer>
 
   <div id="rest-timer" class="rest-timer" hidden>
-    <span class="rest-timer-label">休憩</span>
-    <span id="rest-timer-time" class="rest-timer-time">0:00</span>
+    <div class="rest-timer-main">
+      <span class="rest-timer-label">休憩タイマー</span>
+      <span id="rest-timer-time" class="rest-timer-time">0:00</span>
+    </div>
     <div class="rest-timer-actions">
       <button type="button" id="rest-add" class="rest-mini">+15秒</button>
       <button type="button" id="rest-add-min" class="rest-mini">+1分</button>
       <button type="button" id="rest-reset" class="rest-mini">リセット</button>
-      <button type="button" id="rest-close" class="rest-mini">終了</button>
+      <button type="button" id="rest-close" class="rest-mini rest-close">終了</button>
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=11"></script>
+  <script type="module" src="js/app.js?v=12"></script>
 </body>
 </html>

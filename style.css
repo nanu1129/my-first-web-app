@@ -546,29 +546,49 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1
 .rest-timer {
   position: fixed;
   left: 50%;
-  bottom: 20px;
+  /* iOS のホームバー(セーフエリア)分を加味して、画面下に隠れないようにする */
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
   transform: translateX(-50%);
   z-index: 50;
+  width: min(340px, calc(100vw - 24px));
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
-  background: var(--bg-panel);
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  padding: 10px 18px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  background: rgba(29, 32, 38, 0.96);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
 }
-.rest-timer-label { font-size: 0.8rem; color: var(--text-dim); }
-.rest-timer-time { font-family: "Bebas Neue", sans-serif; font-size: 1.8rem; color: var(--accent); line-height: 1; min-width: 64px; text-align: center; }
-.rest-timer-actions { display: flex; gap: 6px; }
+.rest-timer-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rest-timer-label { font-size: 0.85rem; font-weight: 700; color: var(--text-dim); }
+.rest-timer-time {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 2.6rem;
+  color: var(--accent);
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.rest-timer-actions { display: flex; gap: 8px; }
 .rest-mini {
+  flex: 1;
   background: var(--bg-elevated);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 5px 12px;
-  font-size: 0.8rem;
+  border-radius: 8px;
+  padding: 10px 4px;
+  font-size: 0.82rem;
   font-family: inherit;
   cursor: pointer;
 }
-.rest-mini:hover { border-color: var(--accent); }
+.rest-mini:hover { border-color: var(--accent); color: var(--accent); }
+.rest-mini:active { background: var(--line); }
+.rest-close { color: var(--text-dim); }
