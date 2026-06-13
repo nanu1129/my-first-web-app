@@ -1,12 +1,18 @@
 // UI の配線:フォーム入力 → メニュー生成(Claude / 内蔵ロジック)→ 描画
 import {
   generatePlan, allExerciseNames, exerciseChoices, getExerciseTrack, getDistanceUnit,
-  alternativeExercise, alternativeCardio, adjustPlanVolume, shortenPlan,
+  alternativeExercise, alternativeCardio, adjustPlanVolume, shortenPlan, estimate1RM,
   EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS, MUSCLE_LABELS,
-} from "./planner.js?v=9";
-import { EQUIPMENT_SVG } from "./icons.js?v=9";
+} from "./planner.js?v=10";
+import { EQUIPMENT_SVG } from "./icons.js?v=10";
+import {
+  summarize, badges, calendar, trackedWeightExercises, exerciseSeries, bodyweightSeries,
+} from "./stats.js?v=10";
+import { lineChartSVG } from "./charts.js?v=10";
 
 const STORAGE_KEY_LOGS = "workout_logs";
+const STORAGE_KEY_PROFILE = "workout_profile";
+const STORAGE_KEY_BODYWEIGHT = "bodyweight_logs";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -181,13 +187,27 @@ function renderBuiltinPlan(plan) {
 
   for (const [i, day] of plan.days.entries()) {
     html += `<section class="day-block"><h3>${escapeHtml(day.title)}</h3>`;
+
+    if (day.warmup?.length) {
+      html += `<details class="prep"><summary>🔥 ウォームアップ</summary><ul>`;
+      for (const w of day.warmup) html += `<li>${escapeHtml(w)}</li>`;
+      html += `</ul></details>`;
+    }
+
     html += `<table><thead><tr><th>種目</th><th>セット</th><th>回数</th><th>休憩</th></tr></thead><tbody>`;
-    for (const ex of day.exercises) {
+    for (const [j, ex] of day.exercises.entries()) {
       const note = ex.note ? `<br><small class="ex-note">${escapeHtml(ex.note)}</small>` : "";
       const star = ex.focused ? `<span class="focus-star">★</span> ` : "";
-      const j = day.exercises.indexOf(ex);
       const swap = `<button type="button" class="swap-btn" data-day="${i}" data-ex="${j}" aria-label="別の種目に替える" title="別の種目に替える">↻</button>`;
-      html += `<tr><td>${star}${escapeHtml(ex.name)} ${swap}${note}</td><td>${ex.sets}</td><td>${escapeHtml(ex.reps)}</td><td>${escapeHtml(ex.rest)}</td></tr>`;
+      const info = ex.tip ? `<button type="button" class="info-btn" data-day="${i}" data-ex="${j}" aria-label="やり方を見る" title="やり方を見る">ⓘ</button>` : "";
+      const restSec = parseRestSeconds(ex.rest);
+      const restBtn = restSec
+        ? `<button type="button" class="rest-btn" data-sec="${restSec}" aria-label="休憩タイマー" title="休憩タイマー開始">⏱</button>`
+        : "";
+      const tipRow = ex.tip
+        ? `<tr class="tip-row" data-tip-for="${i}-${j}" hidden><td colspan="4"><small class="ex-tip">💡 ${escapeHtml(ex.tip)}</small></td></tr>`
+        : "";
+      html += `<tr><td>${star}${escapeHtml(ex.name)} ${swap}${info}</td><td>${ex.sets}</td><td>${escapeHtml(ex.reps)}</td><td>${escapeHtml(ex.rest)} ${restBtn}</td></tr>${tipRow}`;
     }
     html += `</tbody></table>`;
     if (day.cardio) {
@@ -195,6 +215,13 @@ function renderBuiltinPlan(plan) {
       const cswap = `<button type="button" class="swap-btn cardio-swap" data-day="${i}" aria-label="別の有酸素に替える" title="別の有酸素に替える">↻</button>`;
       html += `<p class="cardio-note">🏃 有酸素:${escapeHtml(day.cardio.name)} ${escapeHtml(day.cardio.duration)} ${cswap}${cnote}</p>`;
     }
+
+    if (day.cooldown?.length) {
+      html += `<details class="prep"><summary>🧘 クールダウン・ストレッチ</summary><ul>`;
+      for (const c of day.cooldown) html += `<li>${escapeHtml(c)}</li>`;
+      html += `</ul></details>`;
+    }
+
     html += `<button type="button" class="secondary-btn day-record-btn" data-day="${i}">📝 この日をやったので記録する</button>`;
     html += `</section>`;
   }
@@ -268,10 +295,96 @@ function runBuiltin(profile, logs) {
         render();
       })
     );
+
+    // やり方(フォーム解説)の開閉
+    content.querySelectorAll(".info-btn").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const row = content.querySelector(`[data-tip-for="${btn.dataset.day}-${btn.dataset.ex}"]`);
+        if (row) row.hidden = !row.hidden;
+      })
+    );
+
+    // 休憩タイマー開始
+    content.querySelectorAll(".rest-btn").forEach((btn) =>
+      btn.addEventListener("click", () => startRestTimer(parseInt(btn.dataset.sec, 10)))
+    );
   };
 
   render();
   showResultSection();
+}
+
+// ---------- 休憩タイマー ----------
+
+// "90秒" "2〜3分" "45〜60秒" 等から秒数(範囲は短い方)を取り出す
+function parseRestSeconds(text) {
+  const t = String(text);
+  const nums = t.match(/\d+/g)?.map(Number);
+  if (!nums || nums.length === 0) return 0;
+  const v = nums[0];
+  return t.includes("分") ? v * 60 : v;
+}
+
+let restInterval = null;
+let restRemain = 0;
+
+function paintRest() {
+  const m = Math.floor(restRemain / 60);
+  const s = restRemain % 60;
+  $("#rest-timer-time").textContent = `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function stopRestTimer() {
+  if (restInterval) clearInterval(restInterval);
+  restInterval = null;
+  $("#rest-timer").hidden = true;
+}
+
+function beep() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 880;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+    osc.onended = () => ctx.close();
+  } catch { /* 無音でも問題なし */ }
+}
+
+function startRestTimer(sec) {
+  restRemain = sec;
+  $("#rest-timer").hidden = false;
+  paintRest();
+  if (restInterval) clearInterval(restInterval);
+  restInterval = setInterval(() => {
+    restRemain--;
+    if (restRemain <= 0) {
+      paintRest();
+      clearInterval(restInterval);
+      restInterval = null;
+      beep();
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      $("#rest-timer-time").textContent = "完了!";
+      setTimeout(() => { $("#rest-timer").hidden = true; }, 2500);
+      return;
+    }
+    paintRest();
+  }, 1000);
+}
+
+function setupRestTimer() {
+  $("#rest-close").addEventListener("click", stopRestTimer);
+  $("#rest-add").addEventListener("click", () => {
+    restRemain += 15;
+    if (!restInterval) startRestTimer(restRemain);
+    else paintRest();
+  });
 }
 
 function onGenerate(event) {
@@ -287,7 +400,39 @@ function onGenerate(event) {
     return;
   }
 
+  saveProfile(profile);
   runBuiltin(profile, loadLogs());
+}
+
+// ---------- プロフィールの記憶 ----------
+
+function saveProfile(profile) {
+  localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
+}
+
+// 保存済みプロフィールをフォームに復元する
+function restoreProfile() {
+  let p;
+  try {
+    p = JSON.parse(localStorage.getItem(STORAGE_KEY_PROFILE) ?? "null");
+  } catch {
+    p = null;
+  }
+  if (!p) return;
+  const setVal = (id, v) => { const el = $(id); if (el != null && v != null) el.value = v; };
+  selectNearest($("#weight"), p.weight);
+  selectNearest($("#height"), p.height);
+  selectNearest($("#age"), p.age);
+  setVal("#gender", p.gender);
+  setVal("#goal", p.goal);
+  setVal("#level", p.level);
+  setVal("#frequency", String(p.frequency));
+  for (const m of p.focus ?? []) {
+    const chip = document.querySelector(`#focus-chips .focus-chip[data-muscle="${m}"]`);
+    if (chip) { chip.classList.add("active"); chip.setAttribute("aria-pressed", "true"); }
+  }
+  const equip = new Set(p.equipment ?? []);
+  document.querySelectorAll('input[name="equipment"]').forEach((cb) => { cb.checked = equip.has(cb.value); });
 }
 
 // ---------- トレーニング記録 ----------
@@ -466,7 +611,9 @@ function entrySummary(e) {
     return `${e.name} ${e.seconds || 0}秒×${e.sets || 1}セット`;
   }
   const w = parseFloat(e.weight) > 0 ? `${e.weight}kg×` : "";
-  return `${e.name} ${w}${e.reps || 1}回×${e.sets || 1}セット`;
+  const orm = estimate1RM(e.weight, e.reps);
+  const ormText = orm ? `(推定1RM ${orm}kg)` : "";
+  return `${e.name} ${w}${e.reps || 1}回×${e.sets || 1}セット${ormText}`;
 }
 
 function renderLogList() {
@@ -491,6 +638,7 @@ function renderLogList() {
       const id = e.target.closest(".log-item").dataset.id;
       saveLogs(loadLogs().filter((l) => String(l.id) !== id));
       renderLogList();
+      renderProgress();
     })
   );
 }
@@ -539,6 +687,7 @@ function onLogSubmit(event) {
   $("#log-entries").innerHTML = "";
   addLogRow();
   renderLogList();
+  renderProgress();
 }
 
 function setupLogSection() {
@@ -593,10 +742,191 @@ function setupProfileSelects() {
   fillSelect($("#age"), numRange(10, 90), 30, (v) => `${v}歳`);
 }
 
+// ---------- 体重記録 ----------
+
+function loadBodyweight() {
+  try {
+    const bw = JSON.parse(localStorage.getItem(STORAGE_KEY_BODYWEIGHT) ?? "[]");
+    return Array.isArray(bw) ? bw : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBodyweight(bw) {
+  localStorage.setItem(STORAGE_KEY_BODYWEIGHT, JSON.stringify(bw));
+}
+
+function setupBodyweight() {
+  fillSelect($("#bw-value"), numRange(30, 150, 0.5), 65, (v) => `${v}kg`);
+  $("#bodyweight-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const d = new Date();
+    d.setDate(d.getDate() - parseInt($("#bw-date-quick").value, 10));
+    const date = d.toISOString().slice(0, 10);
+    const weight = $("#bw-value").value;
+    const bw = loadBodyweight().filter((b) => b.date !== date); // 同日は上書き
+    bw.push({ date, weight });
+    saveBodyweight(bw);
+    renderProgress();
+  });
+}
+
+// ---------- 進捗・可視化 ----------
+
+function renderProgress() {
+  const logs = loadLogs();
+  const section = $("#progress-section");
+  const bw = loadBodyweight();
+  // 記録も体重も無ければ非表示
+  if (logs.length === 0 && bw.length === 0) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  // サマリーカード
+  const s = summarize(logs);
+  $("#streak-cards").innerHTML =
+    card("総トレーニング", s.total, "回") +
+    card("連続週", s.weekStreak, "週") +
+    card("今週", s.thisWeek, "回");
+
+  // バッジ
+  $("#badges").innerHTML = badges(logs)
+    .map((b) =>
+      `<span class="badge-chip ${b.ok ? "got" : "locked"}" title="${escapeHtml(b.need)}">` +
+      `${b.icon} ${escapeHtml(b.label)}</span>`
+    )
+    .join("");
+
+  // カレンダー
+  renderCalendar(calendar(logs, 8));
+
+  // 種目の重量推移(セレクト+グラフ)
+  const sel = $("#chart-exercise");
+  const names = trackedWeightExercises(logs);
+  const prev = sel.value;
+  if (names.length === 0) {
+    sel.innerHTML = `<option value="">記録がありません</option>`;
+    $("#exercise-chart").innerHTML = `<p class="chart-empty">重量を記録するとグラフが表示されます</p>`;
+  } else {
+    sel.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+    if (names.includes(prev)) sel.value = prev;
+    drawExerciseChart(sel.value);
+  }
+
+  // 体重推移
+  const bwSeries = bodyweightSeries(bw);
+  $("#bodyweight-chart").innerHTML = bwSeries.length
+    ? lineChartSVG(bwSeries, { color: "#7cc4ff", unit: "kg" })
+    : `<p class="chart-empty">体重を記録すると推移が表示されます</p>`;
+}
+
+function card(label, value, unit) {
+  return `<div class="card"><span class="card-label">${escapeHtml(label)}</span>` +
+    `<span class="card-value">${value}</span><span class="card-sub">${escapeHtml(unit)}</span></div>`;
+}
+
+function drawExerciseChart(name) {
+  const series = exerciseSeries(loadLogs(), name);
+  // 重量と推定1RM の2系統のうち、重量を表示(1RMはツールチップ的に最終点ラベルへ)
+  $("#exercise-chart").innerHTML = series.length
+    ? lineChartSVG(series.map((p) => ({ date: p.date, value: p.weight })), { color: "#c8f04a", unit: "kg" })
+    : `<p class="chart-empty">この種目の記録がありません</p>`;
+}
+
+function renderCalendar(grid) {
+  const dows = ["月", "火", "水", "木", "金", "土", "日"];
+  let html = `<div class="cal-head">${dows.map((d) => `<span>${d}</span>`).join("")}</div>`;
+  for (const row of grid) {
+    html += `<div class="cal-row">`;
+    for (const cell of row) {
+      const cls = cell.future ? "future" : cell.count > 0 ? "done" : "rest";
+      const today = cell.today ? " today" : "";
+      const title = `${cell.date}${cell.count > 0 ? ` (${cell.count}件)` : ""}`;
+      html += `<span class="cal-cell ${cls}${today}" title="${title}">${cell.count > 0 ? cell.count : ""}</span>`;
+    }
+    html += `</div>`;
+  }
+  $("#calendar").innerHTML = html;
+}
+
+// ---------- データのバックアップ ----------
+
+function setupBackup() {
+  $("#export-btn").addEventListener("click", () => {
+    const data = {
+      app: "ai-workout-planner",
+      exportedAt: new Date().toISOString(),
+      logs: loadLogs(),
+      bodyweight: loadBodyweight(),
+      profile: JSON.parse(localStorage.getItem(STORAGE_KEY_PROFILE) ?? "null"),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `workout-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    backupMsg("データを書き出しました。", false);
+  });
+
+  $("#import-btn").addEventListener("click", () => $("#import-file").click());
+  $("#import-file").addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data || !Array.isArray(data.logs)) throw new Error("形式が正しくありません");
+        if (!confirm("現在の記録を読み込んだデータで置き換えます。よろしいですか?")) return;
+        saveLogs(data.logs);
+        if (Array.isArray(data.bodyweight)) saveBodyweight(data.bodyweight);
+        if (data.profile) localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(data.profile));
+        renderLogList();
+        renderProgress();
+        restoreProfile();
+        backupMsg(`記録 ${data.logs.length} 件を読み込みました。`, false);
+      } catch (err) {
+        backupMsg(`読み込みに失敗しました: ${err.message}`, true);
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+function backupMsg(text, isError) {
+  const el = $("#backup-msg");
+  el.textContent = text;
+  el.className = "backup-msg" + (isError ? " error" : " ok");
+}
+
+// ---------- Service Worker(オフライン対応) ----------
+
+function registerServiceWorker() {
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => { /* オフライン非対応でも動作する */ });
+    });
+  }
+}
+
 // ---------- 初期化 ----------
 
 buildEquipmentCheckboxes();
 setupProfileSelects();
 setupFocusChips();
+restoreProfile();
 setupLogSection();
+setupBodyweight();
+setupBackup();
+setupRestTimer();
+$("#chart-exercise").addEventListener("change", (e) => drawExerciseChart(e.target.value));
 $("#menu-form").addEventListener("submit", onGenerate);
+renderProgress();
+registerServiceWorker();
