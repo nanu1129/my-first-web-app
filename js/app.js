@@ -3,12 +3,12 @@ import {
   generatePlan, allExerciseNames, exerciseChoices, getExerciseTrack, getDistanceUnit,
   alternativeExercise, alternativeCardio, adjustPlanVolume, shortenPlan, estimate1RM,
   EQUIPMENT, EQUIPMENT_GROUPS, PRESETS, MACHINE_KEYS, MUSCLE_LABELS,
-} from "./planner.js?v=10";
-import { EQUIPMENT_SVG } from "./icons.js?v=10";
+} from "./planner.js?v=11";
+import { EQUIPMENT_SVG } from "./icons.js?v=11";
 import {
   summarize, badges, calendar, trackedWeightExercises, exerciseSeries, bodyweightSeries,
-} from "./stats.js?v=10";
-import { lineChartSVG } from "./charts.js?v=10";
+} from "./stats.js?v=11";
+import { lineChartSVG } from "./charts.js?v=11";
 
 const STORAGE_KEY_LOGS = "workout_logs";
 const STORAGE_KEY_PROFILE = "workout_profile";
@@ -327,6 +327,7 @@ function parseRestSeconds(text) {
 
 let restInterval = null;
 let restRemain = 0;
+let restInitial = 0; // リセット時に戻す初期秒数
 
 function paintRest() {
   const m = Math.floor(restRemain / 60);
@@ -338,6 +339,33 @@ function stopRestTimer() {
   if (restInterval) clearInterval(restInterval);
   restInterval = null;
   $("#rest-timer").hidden = true;
+}
+
+// カウントダウンの中身(秒)を進めるループ。すでに動いていれば何もしない。
+function tickRest() {
+  if (restInterval) return;
+  restInterval = setInterval(() => {
+    restRemain--;
+    if (restRemain <= 0) {
+      restRemain = 0;
+      clearInterval(restInterval);
+      restInterval = null;
+      beep();
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      $("#rest-timer-time").textContent = "完了!";
+      setTimeout(() => { if (restRemain === 0) $("#rest-timer").hidden = true; }, 2500);
+      return;
+    }
+    paintRest();
+  }, 1000);
+}
+
+// 残り時間に delta 秒を足して(必要なら)再開する
+function addRest(delta) {
+  restRemain = Math.max(0, restRemain + delta);
+  $("#rest-timer").hidden = false;
+  paintRest();
+  if (restRemain > 0) tickRest();
 }
 
 function beep() {
@@ -358,32 +386,26 @@ function beep() {
 }
 
 function startRestTimer(sec) {
+  restInitial = sec;
   restRemain = sec;
   $("#rest-timer").hidden = false;
   paintRest();
   if (restInterval) clearInterval(restInterval);
-  restInterval = setInterval(() => {
-    restRemain--;
-    if (restRemain <= 0) {
-      paintRest();
-      clearInterval(restInterval);
-      restInterval = null;
-      beep();
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      $("#rest-timer-time").textContent = "完了!";
-      setTimeout(() => { $("#rest-timer").hidden = true; }, 2500);
-      return;
-    }
-    paintRest();
-  }, 1000);
+  restInterval = null;
+  tickRest();
 }
 
 function setupRestTimer() {
   $("#rest-close").addEventListener("click", stopRestTimer);
-  $("#rest-add").addEventListener("click", () => {
-    restRemain += 15;
-    if (!restInterval) startRestTimer(restRemain);
-    else paintRest();
+  $("#rest-add").addEventListener("click", () => addRest(15));
+  $("#rest-add-min").addEventListener("click", () => addRest(60));
+  // リセット: 開始時の秒数に戻して再カウント
+  $("#rest-reset").addEventListener("click", () => {
+    if (restInterval) clearInterval(restInterval);
+    restInterval = null;
+    restRemain = restInitial;
+    paintRest();
+    if (restRemain > 0) tickRest();
   });
 }
 
