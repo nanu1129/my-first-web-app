@@ -1,10 +1,10 @@
 // オフライン対応の Service Worker。
 // アプリ更新時は CACHE のバージョン(v?)を上げると古いキャッシュを破棄する。
-const CACHE = "workout-v12";
+const CACHE = "workout-v13";
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=12",
+  "./style.css?v=13",
   "./manifest.webmanifest",
   "./icon.svg",
   "./js/app.js?v=12",
