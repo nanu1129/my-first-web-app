@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>応用情報 学習ノート | 応用情報技術者試験 対策</title>
+  <meta name="description" content="応用情報技術者試験の学習サイト。教材で学び、一問一答で確認し、過去問で仕上げる段階式カリキュラム。模擬試験・暗記カード・弱点分析つき。">
+  <meta name="theme-color" content="#f6f5f1">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Zen+Old+Mincho:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="logo" href="#" id="logo-link">
+        <span class="logo-mark">応</span>
+        <span class="logo-text">応用情報 学習ノート<small>応用情報技術者試験 対策</small></span>
+      </a>
+      <nav class="tabs" id="main-nav">
+        <button class="tab is-active" data-nav="home">学習</button>
+        <button class="tab" data-nav="exam">模擬試験</button>
+        <button class="tab" data-nav="cards">用語カード</button>
+        <button class="tab" data-nav="stats">成績</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ホーム: コースマップ -->
+    <section class="view" id="view-home"></section>
+
+    <!-- ユニット学習(教材) -->
+    <section class="view" id="view-lesson" hidden></section>
+
+    <!-- クイズ(一問一答 / 過去問演習 / 模試 共通) -->
+    <section class="view" id="view-quiz" hidden></section>
+
+    <!-- 模擬試験の設定 -->
+    <section class="view" id="view-exam" hidden></section>
+
+    <!-- 用語カード -->
+    <section class="view" id="view-cards" hidden></section>
+
+    <!-- 成績 -->
+    <section class="view" id="view-stats" hidden></section>
+  </main>
+
+  <footer class="site-footer">
+    <p>過去問演習・模擬試験の問題の出典: IPA 独立行政法人 情報処理推進機構「応用情報技術者試験 午前 過去問題」。
+      本サイトは学習用の非公式教材であり、収録した過去問の文言は原文と一部異なる場合があります。</p>
+    <p>学習の記録はこの端末のブラウザ内(localStorage)にのみ保存されます。</p>
+  </footer>
+
+  <!-- データ -->
+  <script src="data/parts.js?v=1"></script>
+  <script src="data/lessons-basics.js?v=1"></script>
+  <script src="data/lessons-computer.js?v=1"></script>
+  <script src="data/lessons-database.js?v=1"></script>
+  <script src="data/lessons-network.js?v=1"></script>
+  <script src="data/lessons-security.js?v=1"></script>
+  <script src="data/lessons-dev.js?v=1"></script>
+  <script src="data/lessons-management.js?v=1"></script>
+  <script src="data/lessons-strategy.js?v=1"></script>
+  <script src="data/questions-tech.js?v=1"></script>
+  <script src="data/questions-other.js?v=1"></script>
+  <script src="data/terms.js?v=1"></script>
+  <!-- アプリ -->
+  <script src="js/storage.js?v=1"></script>
+  <script src="js/quiz.js?v=1"></script>
+  <script src="js/course.js?v=1"></script>
+  <script src="js/exam.js?v=1"></script>
+  <script src="js/cards.js?v=1"></script>
+  <script src="js/stats.js?v=1"></script>
+  <script src="js/app.js?v=1"></script>
+</body>
+</html>
