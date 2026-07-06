@@ -170,6 +170,7 @@ const Course = (() => {
 
     $lesson().querySelector('[data-home]').addEventListener('click', App.goHome);
     document.getElementById('lesson-to-check').addEventListener('click', () => startCheck(unit, part));
+    ArtPlayer.init($lesson());
     App.show('lesson');
     window.scrollTo(0, 0);
   }
@@ -186,7 +187,8 @@ const Course = (() => {
       ? `<div class="points-box"><p class="points-label">POINT</p>
            <ul>${sec.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`
       : '';
-    return `<section class="lesson-section"><h3>${esc(sec.h)}</h3>${paras}${table}${points}</section>`;
+    const art = sec.art ? ArtPlayer.figureHtml(sec.art) : '';
+    return `<section class="lesson-section"><h3>${esc(sec.h)}</h3>${paras}${art}${table}${points}</section>`;
   }
 
   // ---------- ユニット確認テスト ----------
