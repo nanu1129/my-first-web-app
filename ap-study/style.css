@@ -221,6 +221,41 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .lesson-table th, .lesson-table td { border: 1px solid var(--line); padding: 7px 12px; text-align: left; }
 .lesson-table th { background: var(--surface-2); font-weight: 700; white-space: nowrap; }
 
+/* 図解・アニメ図解 */
+.art {
+  margin: 6px 0 16px; background: var(--surface-2); border-radius: 12px;
+  padding: 16px 16px 14px; position: relative;
+}
+.art-tag {
+  position: absolute; top: -10px; left: 14px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 10.5px; font-weight: 900; letter-spacing: .06em;
+  padding: 3px 12px; border-radius: 999px;
+}
+.art.is-anime { margin-top: 18px; }
+.art-svg { width: 100%; height: auto; display: block; }
+.art-svg text { font-family: 'Noto Sans JP', sans-serif; }
+.art-caption {
+  font-size: 12.5px; color: var(--ink-2); text-align: center;
+  margin-top: 10px; min-height: 1.6em; line-height: 1.6;
+}
+.art-controls {
+  display: flex; gap: 8px; justify-content: center; align-items: center;
+  margin-top: 10px; flex-wrap: wrap;
+}
+.art-btn {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 14px; font-size: 12.5px; font-weight: 700; color: var(--ink-2);
+}
+.art-btn:hover { color: var(--ink); }
+.art-btn.play {
+  background: var(--accent); color: var(--accent-ink); border-color: transparent;
+  padding: 6px 20px; min-width: 88px;
+}
+.art-dots { display: inline-flex; gap: 6px; margin-left: 6px; }
+.art-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--line); padding: 0; }
+.art-dot.on { background: var(--accent); }
+
 .lesson-cta {
   margin-top: 32px; padding-top: 22px; border-top: 1px dashed var(--line);
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
