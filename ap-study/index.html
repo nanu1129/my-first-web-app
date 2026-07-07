@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Zen+Old+Mincho:wght@700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <header class="site-header">
@@ -21,8 +21,9 @@
       </a>
       <nav class="tabs" id="main-nav">
         <button class="tab is-active" data-nav="home">学習</button>
-        <button class="tab" data-nav="exam">模擬試験</button>
-        <button class="tab" data-nav="cards">用語カード</button>
+        <button class="tab" data-nav="practice">実践</button>
+        <button class="tab" data-nav="exam">模試</button>
+        <button class="tab" data-nav="cards">カード</button>
         <button class="tab" data-nav="stats">成績</button>
       </nav>
     </div>
@@ -37,6 +38,9 @@
 
     <!-- クイズ(一問一答 / 過去問演習 / 模試 共通) -->
     <section class="view" id="view-quiz" hidden></section>
+
+    <!-- 実践トレーニング(計算ドリル/トレース/午後演習) -->
+    <section class="view" id="view-practice" hidden></section>
 
     <!-- 模擬試験の設定 -->
     <section class="view" id="view-exam" hidden></section>
@@ -67,15 +71,20 @@
   <script src="data/questions-tech.js?v=1"></script>
   <script src="data/questions-other.js?v=1"></script>
   <script src="data/terms.js?v=1"></script>
+  <script src="data/afternoon.js?v=1"></script>
   <!-- アプリ -->
-  <script src="js/storage.js?v=1"></script>
-  <script src="js/quiz.js?v=1"></script>
+  <script src="js/storage.js?v=2"></script>
+  <script src="js/quiz.js?v=2"></script>
   <script src="js/art.js?v=1"></script>
   <script src="js/art2.js?v=1"></script>
   <script src="js/course.js?v=2"></script>
   <script src="js/exam.js?v=1"></script>
   <script src="js/cards.js?v=1"></script>
-  <script src="js/stats.js?v=1"></script>
-  <script src="js/app.js?v=1"></script>
+  <script src="js/practice.js?v=1"></script>
+  <script src="js/drill.js?v=1"></script>
+  <script src="js/trace.js?v=1"></script>
+  <script src="js/afternoon.js?v=1"></script>
+  <script src="js/stats.js?v=2"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>
