@@ -27,6 +27,8 @@ const Stats = (() => {
       .sort((a, b) => a.rate - b.rate)[0];
 
     const history = Store.history();
+    const wrongIds = Store.wrongIds();
+    const wrongQs = AP.questions.filter((q) => wrongIds.includes(q.qid));
 
     $view().innerHTML = `
       <h2 class="view-title">成績</h2>
@@ -47,6 +49,16 @@ const Stats = (() => {
             <span>⚠ <b>${esc(weak.part.name)}</b> が苦手のようです(正答率 ${Math.round(weak.rate * 100)}%)。教材から復習しましょう。</span>
             <button class="btn btn-primary" id="weak-review" data-part="${weak.part.id}">この分野を復習</button>
           </div>` : ''}
+      </div>
+
+      <div class="panel">
+        <h3>間違えた問題の復習</h3>
+        <p class="panel-note">過去問演習・模擬試験で間違えた問題は自動でここに溜まります。正解し直すとリストから消えます。</p>
+        ${wrongQs.length ? `
+          <div class="weak-callout" style="background:var(--accent-soft)">
+            <span>📌 復習待ちの問題が <b style="color:var(--accent)">${wrongQs.length}問</b> あります。</span>
+            <button class="btn btn-primary" id="review-start">復習を始める</button>
+          </div>` : '<p class="chart-empty">復習待ちの問題はありません。間違えた問題があるとここに表示されます。</p>'}
       </div>
 
       <div class="panel">
@@ -76,6 +88,25 @@ const Stats = (() => {
         requestAnimationFrame(() => {
           const el = document.getElementById(`part-${partId}`);
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+    }
+    const reviewBtn = document.getElementById('review-start');
+    if (reviewBtn) {
+      reviewBtn.addEventListener('click', () => {
+        Quiz.start({
+          title: '復習: 間違えた問題',
+          questions: Quiz.shuffle(wrongQs),
+          mode: 'practice',
+          passRate: 0.6,
+          backLabel: '成績へ戻る',
+          onBack: () => App.navigate('stats'),
+          resultNote: (r) => (r.pass
+            ? '正解できた問題は復習リストから消えました。'
+            : 'まだ苦手が残っています。解説を読んでもう一周しましょう。'),
+          onFinish: (r) => {
+            Store.addHistory({ kind: '復習', label: `間違えた問題 ${r.total}問`, score: r.score, total: r.total, pass: r.pass });
+          },
         });
       });
     }

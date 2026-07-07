@@ -112,6 +112,7 @@ const Quiz = (() => {
     const correct = i === q.answer;
     state.answers.push({ picked: i, correct });
     if (q.partId) Store.recordAnswer(q.partId, correct);
+    if (q.qid) Store.markWrong(q.qid, !correct); // 復習リストの追加/解除
 
     if (cfg.mode === 'mock') {
       next();

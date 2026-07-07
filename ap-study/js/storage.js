@@ -8,6 +8,8 @@ const Store = (() => {
     answers: {},   // partId -> { correct, total } 全解答の累積(弱点分析用)
     cards: {},     // termKey -> true(覚えた)
     history: [],   // { kind, label, score, total, pass, at }
+    wrong: [],     // 間違えた過去問の qid(正解し直すと消える)
+    cases: {},     // 午後演習 caseId -> { cleared, best(%), at }
   });
 
   let cache = null;
@@ -85,6 +87,33 @@ const Store = (() => {
       const d = load();
       if (known) d.cards[key] = true;
       else delete d.cards[key];
+      save();
+    },
+
+    // --- 復習リスト(間違えた過去問) ---
+    wrongIds() {
+      return load().wrong || [];
+    },
+    markWrong(qid, wrong) {
+      const d = load();
+      d.wrong = d.wrong || [];
+      if (wrong && !d.wrong.includes(qid)) d.wrong.push(qid);
+      if (!wrong) d.wrong = d.wrong.filter((x) => x !== qid);
+      save();
+    },
+
+    // --- 午後演習 ---
+    caseState(caseId) {
+      return load().cases[caseId] || null;
+    },
+    setCaseResult(caseId, percent, cleared) {
+      const d = load();
+      const prev = d.cases[caseId] || { cleared: false, best: 0 };
+      d.cases[caseId] = {
+        cleared: prev.cleared || cleared,
+        best: Math.max(prev.best, percent),
+        at: Date.now(),
+      };
       save();
     },
 
