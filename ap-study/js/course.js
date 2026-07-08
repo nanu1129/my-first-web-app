@@ -161,6 +161,7 @@ const Course = (() => {
         <span class="lesson-part-tag">${esc(part.name)}</span>
         <h2 class="lesson-title">${esc(unit.title)}</h2>
         <p class="lesson-meta">読了目安 約${unit.minutes}分 ・ 確認テスト ${unit.checks.length}問(80%で合格)${cleared ? ' ・ ✓ 完了済み' : ''}</p>
+        ${unit.story ? `<div class="story-box"><span class="sb-icon">💬</span><p><span class="sb-label">たとえると…</span>${esc(unit.story)}</p></div>` : ''}
         ${unit.sections.map(renderSection).join('')}
         <div class="lesson-cta">
           <p>読み終えたら、一問一答で理解をチェックしましょう。<br>${Math.ceil(unit.checks.length * (AP.PASS_RATE))}問以上の正解でユニット完了です。</p>
@@ -171,6 +172,7 @@ const Course = (() => {
     $lesson().querySelector('[data-home]').addEventListener('click', App.goHome);
     document.getElementById('lesson-to-check').addEventListener('click', () => startCheck(unit, part));
     ArtPlayer.init($lesson());
+    Widgets.init($lesson());
     App.show('lesson');
     window.scrollTo(0, 0);
   }
@@ -188,7 +190,8 @@ const Course = (() => {
            <ul>${sec.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`
       : '';
     const art = sec.art ? ArtPlayer.figureHtml(sec.art) : '';
-    return `<section class="lesson-section"><h3>${esc(sec.h)}</h3>${paras}${art}${table}${points}</section>`;
+    const widget = sec.widget ? Widgets.html(sec.widget) : '';
+    return `<section class="lesson-section"><h3>${esc(sec.h)}</h3>${paras}${art}${widget}${table}${points}</section>`;
   }
 
   // ---------- ユニット確認テスト ----------

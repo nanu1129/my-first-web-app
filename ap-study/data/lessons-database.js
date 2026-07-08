@@ -6,6 +6,7 @@ AP.lessons.push({
       id: 'database-1',
       title: '関係モデルと正規化',
       minutes: 9,
+      story: '友だちの住所を連絡網のあちこちのページに書いてしまうと、引っ越しされたとき全部を書き直すことに…。「1か所にまとめて、他からは出席番号で参照する」ように整理するのが正規化です。',
       sections: [
         {
           h: '関係データベースの基礎',
@@ -74,9 +75,11 @@ AP.lessons.push({
       id: 'database-2',
       title: 'SQL',
       minutes: 10,
+      story: 'SQLは「データベースへの注文書」。ファミレスで「和食メニューの中から、500円以下のものを、値段順に見せて」と頼むように、決まった書き方でデータを注文します。',
       sections: [
         {
           h: 'SELECT文の基本',
+          art: 'sql-anatomy',
           body: 'データの検索には SELECT 文を使います。基本形は「SELECT 列 FROM 表 WHERE 条件」です。\n\n集計にはGROUP BY句と集合関数(COUNT, SUM, AVG, MAX, MIN)を使います。グループ化した後の絞込みは WHERE ではなく HAVING 句で行う点が頻出ポイントです。並べ替えは ORDER BY(ASC: 昇順 / DESC: 降順)です。\n\n重複行を除くには DISTINCT を指定します。',
           points: [
             'WHERE: 行の絞込み(グループ化の前)',
@@ -141,6 +144,7 @@ AP.lessons.push({
       id: 'database-3',
       title: 'トランザクションと障害回復',
       minutes: 9,
+      story: '銀行振込は「Aさんから引き落とす」と「Bさんに入金する」がセット。もし片方だけで止まったら大事故です。だから「全部やりきるか、全部なかったことにするか」の二択にする——これがトランザクションの約束(原子性)です。',
       sections: [
         {
           h: 'トランザクションとACID特性',
