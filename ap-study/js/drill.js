@@ -254,7 +254,7 @@ const Drill = (() => {
     Store.recordAnswer(current.partId, ok);
     const fb = `
       <div class="feedback ${ok ? 'ok' : 'ng'}">
-        <p class="feedback-head">${ok ? '正解!' : `不正解… 正解は「${esc(current.ans)}${esc(current.unit || '')}」`}</p>
+        <p class="feedback-head">${ok ? '正解!この調子!' : `残念、不正解… 正解は「${esc(current.ans)}${esc(current.unit || '')}」`}</p>
         <p class="feedback-exp">${esc(current.exp)}</p>
       </div>`;
     const typed = input.value;

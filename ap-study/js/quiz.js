@@ -128,7 +128,7 @@ const Quiz = (() => {
     const last = idx + 1 >= cfg.questions.length;
     document.getElementById('quiz-feedback').innerHTML = `
       <div class="feedback ${correct ? 'ok' : 'ng'}">
-        <p class="feedback-head">${correct ? '正解!' : `不正解… 正解は「${KEYS[q.answer]}」`}</p>
+        <p class="feedback-head">${correct ? '正解!この調子!' : `残念、不正解… 正解は「${KEYS[q.answer]}」。解説を読んで整理しよう`}</p>
         <p class="feedback-exp">${esc(q.exp || '')}</p>
       </div>`;
     const nextWrap = $view().querySelector('.quiz-next');
@@ -195,7 +195,7 @@ const Quiz = (() => {
              <div class="review-item">
                <p class="rv-q">${esc(q.q)}</p>
                <p><span class="rv-a">正解: ${KEYS[q.answer]} ${esc(q.choices[q.answer])}</span>
-               ${a ? ` / <span class="rv-your">あなた: ${KEYS[a.picked]}</span>` : ' / <span class="rv-your">未回答</span>'}</p>
+               ${a ? ` / <span class="rv-your">自分の解答: ${KEYS[a.picked]}</span>` : ' / <span class="rv-your">未回答</span>'}</p>
                <p class="rv-exp">${esc(q.exp || '')}</p>
              </div>`).join('')}
          </div>`
@@ -207,7 +207,7 @@ const Quiz = (() => {
         <div class="quiz-result">
           <p class="result-verdict ${r.pass ? 'pass' : 'fail'}">${esc(passLabel)}</p>
           <p class="score-big">${r.score}<small> / ${r.total} 問正解(${r.percent}%)</small></p>
-          <p class="result-sub">${esc(cfg.resultNote ? cfg.resultNote(r) : '')}${r.timeUp ? ' ⏰ 時間切れで終了しました。' : ''}</p>
+          <p class="result-sub">${esc(cfg.resultNote ? cfg.resultNote(r) : '')}${r.timeUp ? '(時間切れで終了しました)' : ''}</p>
           ${breakdown}
           <div class="btn-row" style="justify-content:center">
             <button class="btn btn-primary" id="result-back">${esc(cfg.backLabel || '戻る')}</button>

@@ -3,6 +3,12 @@ const Course = (() => {
   const $home = () => document.getElementById('view-home');
   const $lesson = () => document.getElementById('view-lesson');
 
+  // ストロークアイコン(マナビットDS: 絵文字の代わりに線画SVG)
+  const IC = {
+    check: '<svg class="ic" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11"/></svg>',
+    lock: '<svg class="ic" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  };
+
   function esc(s) {
     const div = document.createElement('div');
     div.textContent = s;
@@ -80,13 +86,13 @@ const Course = (() => {
       const st = Store.unitState(u.id);
       return `
         <button class="unit-row ${cleared ? 'is-done' : ''} ${isNext ? 'is-next' : ''}" data-unit="${u.id}">
-          <span class="unit-badge">${cleared ? '✓' : i + 1}</span>
+          <span class="unit-badge">${cleared ? IC.check : i + 1}</span>
           <span class="unit-row-main">
             <span class="unit-row-title">${esc(u.title)}</span><br>
             <span class="unit-row-sub">教材 約${u.minutes}分 + 一問一答${u.checks.length}問${
               st && !cleared ? ` ・ 前回 ${st.best}/${st.total}` : ''}</span>
           </span>
-          <span class="unit-row-cta">${cleared ? '完了 ・ 復習する' : isNext ? '学習する →' : ''}</span>
+          <span class="unit-row-cta">${cleared ? '完了・復習する' : isNext ? '学習する →' : ''}</span>
         </button>`;
     }).join('');
 
@@ -97,7 +103,7 @@ const Course = (() => {
       const remain = prog.total - prog.done;
       examRow = `
         <div class="part-exam-row">
-          <span class="unit-badge">🔒</span>
+          <span class="unit-badge">${IC.lock}</span>
           <span class="part-exam-main">
             <span class="part-exam-title">過去問演習(${qs.length}問)</span><br>
             <span class="part-exam-sub">あと${remain}ユニットで解放されます</span>
@@ -106,7 +112,7 @@ const Course = (() => {
     } else if (examState && examState.cleared) {
       examRow = `
         <button class="part-exam-row is-cleared" data-part="${part.id}">
-          <span class="unit-badge">★</span>
+          <span class="unit-badge">${IC.check}</span>
           <span class="part-exam-main">
             <span class="part-exam-title">過去問クリア済み!(ベスト ${examState.best}%)</span><br>
             <span class="part-exam-sub">もう一度挑戦して記録を更新しよう</span>
@@ -160,8 +166,8 @@ const Course = (() => {
       <article class="lesson-paper">
         <span class="lesson-part-tag">${esc(part.name)}</span>
         <h2 class="lesson-title">${esc(unit.title)}</h2>
-        <p class="lesson-meta">読了目安 約${unit.minutes}分 ・ 確認テスト ${unit.checks.length}問(80%で合格)${cleared ? ' ・ ✓ 完了済み' : ''}</p>
-        ${unit.story ? `<div class="story-box"><span class="sb-icon">💬</span><p><span class="sb-label">たとえると…</span>${esc(unit.story)}</p></div>` : ''}
+        <p class="lesson-meta">読了目安 約${unit.minutes}分 ・ 確認テスト ${unit.checks.length}問(80%で合格)${cleared ? ' ・ 完了済み' : ''}</p>
+        ${unit.story ? `<div class="story-box"><p><span class="sb-label">たとえると…</span>${esc(unit.story)}</p></div>` : ''}
         ${unit.sections.map(renderSection).join('')}
         <div class="lesson-cta">
           <p>読み終えたら、一問一答で理解をチェックしましょう。<br>${Math.ceil(unit.checks.length * (AP.PASS_RATE))}問以上の正解でユニット完了です。</p>

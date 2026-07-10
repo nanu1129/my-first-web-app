@@ -49,7 +49,7 @@ const Widgets = (() => {
               ${lamps.map(([name, v]) => `
                 <div class="w-lamp ${v ? 'lit' : ''}">
                   <span class="wl-name">${name}</span>
-                  <span class="wl-val">${v ? '💡 1' : '0'}</span>
+                  <span class="wl-val">${v}</span>
                 </div>`).join('')}
             </div>
             <p class="widget-note">AND=両方1のとき / OR=どちらかが1 / XOR=2つが「違う」とき。全部の組合せ(4通り)を試すと真理値表が頭に入ります。</p>`;
@@ -108,7 +108,7 @@ const Widgets = (() => {
               <span class="w-slider-val">鍵=${shift}</span>
               <input type="range" min="1" max="25" value="${shift}" id="w-caesar-range">
             </div>
-            <div class="w-out">🔒 ${enc(text, shift) || '(文字を入力してね)'}</div>
+            <div class="w-out">暗号文: ${enc(text, shift) || '(文字を入力してね)'}</div>
             <p class="widget-note">
               同じ「鍵(ずらす数)」を知っている人だけが元に戻せる = これが<b>共通鍵暗号</b>の原型です。
               ただし26通り試せば破られてしまうので、実際のAESなどは桁違いに複雑な計算でこれを行っています。</p>`;
@@ -136,7 +136,7 @@ const Widgets = (() => {
   function html(id) {
     if (!REG[id]) return '';
     return `<div class="widget" data-widget="${id}">
-      <span class="widget-tag">🖐 さわって学ぶ</span>
+      <span class="widget-tag">さわって学ぶ</span>
       <div class="widget-body"></div>
     </div>`;
   }

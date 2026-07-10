@@ -63,8 +63,8 @@ const Cards = (() => {
       </div>
       <p class="card-counter">${idx + 1} / ${deck.length} 枚 ・ 覚えた用語 ${knownCount} / ${AP.terms.length}</p>`
       : `<div class="cards-empty">
-           <p style="font-size:32px">🎉</p>
-           <p>この条件のカードはすべて「覚えた」になっています。</p>
+           <p style="font-size:18px;font-weight:700;font-family:var(--font-display);color:var(--ok)">ぜんぶ覚えた!</p>
+           <p>この条件のカードはすべて「覚えた」になっています。おつかれさま。</p>
          </div>`;
 
     // 用語一覧
