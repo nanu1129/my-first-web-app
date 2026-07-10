@@ -46,7 +46,7 @@ const Stats = (() => {
         ${totals.t ? chartSvg(answers) : '<p class="chart-empty">まだ解答がありません。ホームの学習マップから始めましょう。</p>'}
         ${weak ? `
           <div class="weak-callout">
-            <span>⚠ <b>${esc(weak.part.name)}</b> が苦手のようです(正答率 ${Math.round(weak.rate * 100)}%)。教材から復習しましょう。</span>
+            <span><span class="pill pill-ng">弱点</span> <b>${esc(weak.part.name)}</b> が苦手みたい(正答率 ${Math.round(weak.rate * 100)}%)。教材から復習してみよう。</span>
             <button class="btn btn-primary" id="weak-review" data-part="${weak.part.id}">この分野を復習</button>
           </div>` : ''}
       </div>
@@ -56,7 +56,7 @@ const Stats = (() => {
         <p class="panel-note">過去問演習・模擬試験で間違えた問題は自動でここに溜まります。正解し直すとリストから消えます。</p>
         ${wrongQs.length ? `
           <div class="weak-callout" style="background:var(--accent-soft)">
-            <span>📌 復習待ちの問題が <b style="color:var(--accent)">${wrongQs.length}問</b> あります。</span>
+            <span><span class="pill pill-accent">復習</span> 復習待ちの問題が <b style="color:var(--accent)">${wrongQs.length}問</b> あります。</span>
             <button class="btn btn-primary" id="review-start">復習を始める</button>
           </div>` : '<p class="chart-empty">復習待ちの問題はありません。間違えた問題があるとここに表示されます。</p>'}
       </div>

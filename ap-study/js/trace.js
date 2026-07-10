@@ -125,7 +125,7 @@ const Trace = (() => {
         <p class="q-text" style="font-size:14px">${esc(ex.desc)}</p>
         <div class="trace-code">${code}</div>
         <div class="trace-vars">${vars}</div>
-        ${step.note && !needAsk ? `<p class="trace-note">💡 ${esc(step.note)}</p>` : ''}
+        ${step.note && !needAsk ? `<p class="trace-note"><b>ヒント:</b> ${esc(step.note)}</p>` : ''}
         ${needAsk ? `
           <div class="drill-input-row">
             <span class="drill-unit">この行の実行後、<b>${esc(step.ask)}</b> の値は?</span>

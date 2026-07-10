@@ -1,58 +1,102 @@
 /* ============ 応用情報 学習ノート ============ */
 
+/* ==== マナビット デザインシステム トークン ====
+   出典: claude.ai/design「マナビット Design System」tokens/*.css
+   ライト = 無指定、ダーク = [data-theme="dark"](OS設定にも追従) */
 :root {
-  --bg: #f6f5f1;
-  --surface: #ffffff;
-  --surface-2: #efede7;
-  --ink: #26241f;
-  --ink-2: #5c584f;
-  --ink-3: #8b867a;
-  --line: #e3e0d8;
-  --accent: #4655c4;
-  --accent-ink: #ffffff;
-  --accent-soft: #eceefb;
-  --ok: #2e7d4f;
-  --ok-soft: #e7f3ec;
-  --ng: #b3402e;
-  --ng-soft: #f9ece9;
-  --gold: #a07c2c;
-  --gold-soft: #f6efdc;
-  --shadow: 0 1px 2px rgba(38, 36, 31, .05), 0 8px 24px rgba(38, 36, 31, .06);
-  --radius: 14px;
+  --bg: #FAF9F6;            /* surface-app */
+  --surface: #FFFFFF;       /* surface-card */
+  --surface-2: #F4F2ED;     /* surface-subtle */
+  --ink: #33313B;           /* text-body */
+  --ink-2: #6E6B78;         /* text-secondary */
+  --ink-3: #9B98A2;         /* text-muted */
+  --line: #E3E0D8;          /* border-default */
+  --accent: #467CA8;
+  --accent-strong: #3A6A93;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #E9F1F7;
+  --ok: #3A9068;
+  --ok-soft: #E7F4EC;
+  --ng: #C25E5E;
+  --ng-soft: #F9EAEA;
+  --gold: #B98A3E;          /* caution */
+  --gold-soft: #F7F0DF;
+  --hover-tint: rgba(70, 124, 168, 0.07);
+  --focus-ring: 0 0 0 3px rgba(70, 124, 168, 0.28);
+  --shadow: 0 1px 3px rgba(51, 49, 59, 0.06);
+  --shadow-raised: 0 4px 14px rgba(51, 49, 59, 0.10);
+  --radius: 14px;           /* カード */
+  --radius-btn: 10px;       /* ボタン */
+  --radius-input: 8px;      /* 入力欄・タグ */
+  --font-display: 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', sans-serif;
+  --font-body: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', sans-serif;
+  --font-mono: 'M PLUS 1 Code', 'SFMono-Regular', Consolas, monospace;
+  --content-max: 760px;
+}
+[data-theme="dark"] {
+  --bg: #1F1E25;
+  --surface: #2B2A33;
+  --surface-2: #34333D;
+  --ink: #ECEAF0;
+  --ink-2: #ABA8B5;
+  --ink-3: #8B8894;
+  --line: #45444F;
+  --accent: #7FA9D4;
+  --accent-strong: #93B9DC;
+  --accent-ink: #17242F;
+  --accent-soft: #33414F;
+  --ok: #6FBE94;
+  --ok-soft: #2C3E35;
+  --ng: #D98A8A;
+  --ng-soft: #443031;
+  --gold: #D3AC66;
+  --gold-soft: #423A29;
+  --hover-tint: rgba(127, 169, 212, 0.10);
+  --focus-ring: 0 0 0 3px rgba(127, 169, 212, 0.32);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.30);
+  --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.40);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #191a1e;
-    --surface: #22242a;
-    --surface-2: #2a2c33;
-    --ink: #e8e6e1;
-    --ink-2: #b0ada5;
-    --ink-3: #7d7a72;
-    --line: #34363e;
-    --accent: #8d9bf0;
-    --accent-ink: #14152e;
-    --accent-soft: #2b2e46;
-    --ok: #6fbe91;
-    --ok-soft: #223529;
-    --ng: #e08a76;
-    --ng-soft: #3c2822;
-    --gold: #d4b06a;
-    --gold-soft: #383021;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --bg: #1F1E25;
+    --surface: #2B2A33;
+    --surface-2: #34333D;
+    --ink: #ECEAF0;
+    --ink-2: #ABA8B5;
+    --ink-3: #8B8894;
+    --line: #45444F;
+    --accent: #7FA9D4;
+    --accent-strong: #93B9DC;
+    --accent-ink: #17242F;
+    --accent-soft: #33414F;
+    --ok: #6FBE94;
+    --ok-soft: #2C3E35;
+    --ng: #D98A8A;
+    --ng-soft: #443031;
+    --gold: #D3AC66;
+    --gold-soft: #423A29;
+    --hover-tint: rgba(127, 169, 212, 0.10);
+    --focus-ring: 0 0 0 3px rgba(127, 169, 212, 0.32);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.30);
+    --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.40);
   }
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
-  font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', sans-serif;
+  font-family: var(--font-body);
   background: var(--bg);
   color: var(--ink);
-  line-height: 1.75;
+  line-height: 1.7;
   font-size: 15px;
+  letter-spacing: .02em;
 }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
 img, svg { max-width: 100%; }
+h1, h2, h3, .logo-text { font-family: var(--font-display); }
+:where(button, input, select):focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.ic { width: 1em; height: 1em; vertical-align: -0.12em; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- ヘッダ ---------- */
 .site-header {
@@ -69,7 +113,7 @@ img, svg { max-width: 100%; }
 .logo-mark {
   width: 38px; height: 38px; border-radius: 10px;
   background: var(--accent); color: var(--accent-ink);
-  font-family: 'Zen Old Mincho', serif; font-weight: 900; font-size: 20px;
+  font-family: var(--font-display); font-weight: 900; font-size: 20px;
   display: grid; place-items: center; flex: none;
 }
 .logo-text { font-weight: 900; font-size: 16px; line-height: 1.25; letter-spacing: .02em; }
@@ -82,6 +126,14 @@ img, svg { max-width: 100%; }
 }
 .tab:hover { color: var(--ink); }
 .tab.is-active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+.theme-btn {
+  width: 36px; height: 36px; border-radius: 999px; flex: none;
+  display: grid; place-items: center; color: var(--ink-2);
+  border: 1px solid var(--line); background: var(--surface);
+}
+.theme-btn:hover { color: var(--ink); background: var(--hover-tint); }
+.theme-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- レイアウト ---------- */
 main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
@@ -134,7 +186,7 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
   width: 100%; display: flex; align-items: center; gap: 12px; text-align: left;
   padding: 11px 12px; border-radius: 10px; transition: background .15s;
 }
-.unit-row:hover { background: var(--surface-2); }
+.unit-row:hover { background: var(--hover-tint); }
 .unit-badge {
   width: 26px; height: 26px; border-radius: 999px; flex: none;
   display: grid; place-items: center; font-size: 12px; font-weight: 900;
@@ -171,12 +223,13 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 /* ---------- ボタン ---------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 11px 22px; border-radius: 999px; font-weight: 700; font-size: 14px;
-  transition: transform .1s, box-shadow .15s, background .15s;
+  padding: 11px 22px; border-radius: var(--radius-btn); font-weight: 700; font-size: 14px;
+  font-family: var(--font-display);
+  transition: transform .12s cubic-bezier(.22,1,.36,1), box-shadow .2s, background .2s;
 }
 .btn:active { transform: scale(.98); }
 .btn-primary { background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow); }
-.btn-primary:hover { filter: brightness(1.06); }
+.btn-primary:hover { background: var(--accent-strong); }
 .btn-ghost { background: var(--surface-2); color: var(--ink-2); }
 .btn-ghost:hover { color: var(--ink); }
 .btn[disabled] { opacity: .45; cursor: not-allowed; }
@@ -190,13 +243,14 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .lesson-paper {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); padding: 28px clamp(18px, 4vw, 40px) 34px;
+  max-width: var(--content-max); margin: 0 auto;
 }
 .lesson-part-tag {
   display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em;
   color: var(--accent); background: var(--accent-soft);
   padding: 3px 10px; border-radius: 999px; margin-bottom: 10px;
 }
-.lesson-title { font-size: 24px; font-weight: 900; font-family: 'Zen Old Mincho', serif; line-height: 1.4; }
+.lesson-title { font-size: 24px; font-weight: 900; font-family: var(--font-display); line-height: 1.4; }
 .lesson-meta { font-size: 12px; color: var(--ink-3); margin: 6px 0 8px; }
 
 .lesson-section { margin-top: 26px; }
@@ -204,7 +258,7 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
   font-size: 16.5px; font-weight: 900; margin-bottom: 10px;
   padding-left: 12px; border-left: 4px solid var(--accent); line-height: 1.5;
 }
-.lesson-section p { margin-bottom: 12px; font-size: 14.5px; }
+.lesson-section p { margin-bottom: 12px; font-size: 15.5px; line-height: 1.9; }
 
 .points-box {
   background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; margin-top: 4px;
@@ -318,7 +372,7 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .result-verdict { font-size: 13px; font-weight: 900; letter-spacing: .14em; color: var(--ink-3); }
 .result-verdict.pass { color: var(--ok); }
 .result-verdict.fail { color: var(--ng); }
-.score-big { font-size: 52px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1.2; margin: 6px 0 2px; }
+.score-big { font-size: 52px; font-weight: 700; font-family: var(--font-display); font-variant-numeric: tabular-nums; line-height: 1.2; margin: 6px 0 2px; }
 .score-big small { font-size: 18px; color: var(--ink-3); font-weight: 700; }
 .result-sub { color: var(--ink-2); font-size: 13.5px; margin-bottom: 20px; }
 .result-breakdown {
@@ -377,7 +431,7 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 }
 .card-face.back { transform: rotateY(180deg); }
 .card-face .cf-label { font-size: 10.5px; font-weight: 900; letter-spacing: .16em; color: var(--ink-3); }
-.card-face .cf-term { font-size: 24px; font-weight: 900; font-family: 'Zen Old Mincho', serif; }
+.card-face .cf-term { font-size: 24px; font-weight: 900; font-family: var(--font-display); }
 .card-face .cf-def { font-size: 14px; color: var(--ink-2); line-height: 1.8; }
 .card-face .cf-hint { font-size: 11.5px; color: var(--ink-3); margin-top: 6px; }
 .card-face .cf-part { font-size: 11px; color: var(--accent); font-weight: 700; }
@@ -405,7 +459,7 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
   box-shadow: var(--shadow); padding: 16px 18px;
 }
 .stat-tile .st-label { font-size: 11.5px; color: var(--ink-3); font-weight: 700; }
-.stat-tile .st-value { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1.35; }
+.stat-tile .st-value { font-size: 26px; font-weight: 700; font-family: var(--font-display); font-variant-numeric: tabular-nums; line-height: 1.35; }
 .stat-tile .st-value small { font-size: 13px; color: var(--ink-3); font-weight: 700; }
 
 .panel {
@@ -439,6 +493,14 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .danger-zone { text-align: center; margin-top: 26px; }
 .danger-zone button { font-size: 12px; color: var(--ink-3); text-decoration: underline; }
 .danger-zone button:hover { color: var(--ng); }
+
+/* ピルバッジ(状態表示。絵文字の代わり) */
+.pill {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; vertical-align: 1px;
+}
+.pill-ng { background: var(--ng); color: #fff; }
+.pill-accent { background: var(--accent); color: var(--accent-ink); }
 
 /* たとえ話ボックス */
 .story-box {
@@ -506,7 +568,7 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 }
 .w-text:focus { outline: none; border-color: var(--accent); }
 .w-out {
-  font-family: ui-monospace, monospace; font-size: 16px; font-weight: 700; letter-spacing: .12em;
+  font-family: var(--font-mono); font-size: 16px; font-weight: 700; letter-spacing: .12em;
   background: var(--surface); border-radius: 10px; padding: 10px 14px; margin-top: 8px;
   overflow-x: auto; white-space: nowrap;
 }
@@ -540,7 +602,7 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 /* アルゴリズムトレース */
 .trace-code {
   background: var(--surface-2); border-radius: 11px; padding: 12px 8px; margin: 10px 0 14px;
-  font-family: ui-monospace, 'Cascadia Code', 'Menlo', monospace; font-size: 13px; overflow-x: auto;
+  font-family: var(--font-mono); font-size: 13px; overflow-x: auto;
 }
 .trace-line { display: flex; gap: 10px; padding: 4px 10px; border-radius: 7px; white-space: pre-wrap; }
 @media (max-width: 560px) { .trace-code { font-size: 12px; } }
@@ -565,9 +627,11 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .case-paper {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); padding: 22px clamp(16px, 3.5vw, 30px);
+  max-width: var(--content-max); margin: 0 auto;
 }
+.case-paper + .q-card { max-width: var(--content-max); margin-left: auto; margin-right: auto; }
 .case-intro { font-size: 13px; color: var(--ink-2); font-weight: 700; margin: 8px 0 12px; }
-.case-text { font-size: 14px; margin-bottom: 10px; line-height: 1.9; }
+.case-text { font-size: 15px; margin-bottom: 10px; line-height: 1.9; }
 
 /* ---------- フッタ ---------- */
 .site-footer {

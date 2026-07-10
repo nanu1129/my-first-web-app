@@ -90,7 +90,7 @@ const Afternoon = (() => {
     Store.recordAnswer(cs.partId, ok);
     paint(`
       <div class="feedback ${ok ? 'ok' : 'ng'}">
-        <p class="feedback-head">${ok ? '正解!' : `不正解… 正解は「${KEYS[q.answer]}」`}</p>
+        <p class="feedback-head">${ok ? '正解!この調子!' : `残念、不正解… 正解は「${KEYS[q.answer]}」。本文に根拠があるので探してみよう`}</p>
         <p class="feedback-exp">${esc(q.exp)}</p>
       </div>`);
   }

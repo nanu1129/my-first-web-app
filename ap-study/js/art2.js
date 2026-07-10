@@ -21,11 +21,11 @@
       if (step === 1) {
         s += box(70, 115, 90, 40, '平文', { fs: 12 });
         s += arrow(165, 135, 215, 135, { col: C.acc, label: 'Bの公開鍵で暗号化', dy: -12, lfs: 10.5 });
-        s += box(225, 115, 100, 40, '🔒 暗号文', { fill: C.accSoft, stroke: C.acc, col: C.acc, fs: 12 });
+        s += box(225, 115, 100, 40, '暗号文', { fill: C.accSoft, stroke: C.acc, col: C.acc, fs: 12 });
         s += arrow(330, 135, 420, 135, { col: C.ink3, label: '送信(盗聴されても読めない)', dy: 26, lfs: 10.5 });
       }
       if (step === 2) {
-        s += box(225, 115, 100, 40, '🔒 暗号文', { fill: C.accSoft, stroke: C.acc, col: C.acc, fs: 12 });
+        s += box(225, 115, 100, 40, '暗号文', { fill: C.accSoft, stroke: C.acc, col: C.acc, fs: 12 });
         s += arrow(330, 135, 385, 135, { col: C.gold, label: 'Bの秘密鍵で復号', dy: 30, lfs: 10.5 });
         s += box(395, 115, 90, 40, '平文', { fill: C.okSoft, stroke: C.ok, col: C.ok, fs: 12 });
         s += txt(280, 185, '復号できるのは秘密鍵を持つB本人だけ = 機密性の確保', { fs: 12, col: C.ok, w: 700 });
