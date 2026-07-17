@@ -98,8 +98,10 @@ const Course = (() => {
 
     const qs = questionsOf(part.id);
     const examState = Store.partExamState(part.id);
+    // 一度クリア済みなら、ユニット追加でロックに戻さない
+    const accessible = prog.unlocked || !!examState;
     let examRow;
-    if (!prog.unlocked) {
+    if (!accessible) {
       const remain = prog.total - prog.done;
       examRow = `
         <div class="part-exam-row">

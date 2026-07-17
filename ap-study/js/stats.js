@@ -5,8 +5,8 @@ const Stats = (() => {
   // ---- 合格予測モデル(午前シミュレーション) ----
   // このサイトの教材が各分野の頻出論点をカバーしている割合(推定)
   const COVERAGE = {
-    basics: 0.55, computer: 0.55, database: 0.65, network: 0.65,
-    security: 0.70, dev: 0.60, management: 0.70, strategy: 0.50,
+    basics: 0.70, computer: 0.70, database: 0.75, network: 0.75,
+    security: 0.80, dev: 0.70, management: 0.70, strategy: 0.65,
   };
 
   // 分野ごとの期待正解数を計算して合計スコア(100点満点)を返す
