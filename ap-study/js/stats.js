@@ -2,6 +2,39 @@
 const Stats = (() => {
   const $view = () => document.getElementById('view-stats');
 
+  // ---- 合格予測モデル(午前シミュレーション) ----
+  // このサイトの教材が各分野の頻出論点をカバーしている割合(推定)
+  const COVERAGE = {
+    basics: 0.55, computer: 0.55, database: 0.65, network: 0.65,
+    security: 0.70, dev: 0.60, management: 0.70, strategy: 0.50,
+  };
+
+  // 分野ごとの期待正解数を計算して合計スコア(100点満点)を返す
+  function forecast(answers) {
+    const parts = AP.parts.map((p) => {
+      const n = Math.round((AP.examWeights[p.id] || 0) * 80); // 本試験での出題数
+      const a = answers[p.id] || { correct: 0, total: 0 };
+      // 実測正答率。データが少ない分野は「勘(25%)」寄りに控えめに見積もる
+      const acc = (a.correct + 1) / (a.total + 4);
+      const cov = COVERAGE[p.id] || 0.6;
+      // 未収録論点は 勘25% + 実力に応じた上積み
+      const unc = 0.25 + 0.125 * acc;
+      const expected = n * (cov * acc + (1 - cov) * unc);
+      return { part: p, n, expected, acc, samples: a.total };
+    });
+    const totalExpected = parts.reduce((s, x) => s + x.expected, 0);
+    const score = Math.round((totalExpected / 80) * 100);
+    return { parts, score };
+  }
+
+  function forecastComment(score, totalAnswers) {
+    if (totalAnswers < 20) return 'まだ解答データが少ないので、精度は低めの参考値です。学習を進めるほど正確になります。';
+    if (score >= 70) return '安全圏が見えてきました。模試で時間配分も仕上げていこう。';
+    if (score >= 60) return '合格ライン前後です。復習リストの取りこぼしを減らして安全圏へ。';
+    if (score >= 50) return 'あと少しで合格圏。正答率の低い分野を教材から復習してみよう。';
+    return 'まだ伸びしろたっぷり。学習マップを順番に進めていこう。';
+  }
+
   function esc(s) {
     const div = document.createElement('div');
     div.textContent = s;
@@ -29,6 +62,7 @@ const Stats = (() => {
     const history = Store.history();
     const wrongIds = Store.wrongIds();
     const wrongQs = AP.questions.filter((q) => wrongIds.includes(q.qid));
+    const fc = forecast(answers);
 
     $view().innerHTML = `
       <h2 class="view-title">成績</h2>
@@ -38,6 +72,29 @@ const Stats = (() => {
         <div class="stat-tile"><p class="st-label">総解答数</p><p class="st-value">${totals.t}<small> 問</small></p></div>
         <div class="stat-tile"><p class="st-label">総合正答率</p><p class="st-value">${totals.t ? rate + '%' : '—'}</p></div>
         <div class="stat-tile"><p class="st-label">完了ユニット</p><p class="st-value">${doneUnits}<small> / ${allUnits}</small></p></div>
+      </div>
+
+      <div class="panel">
+        <h3>合格予測(午前シミュレーション)</h3>
+        <p class="panel-note">これまでの分野別正答率と、本サイトの出題カバー範囲をもとにした「いま本番の午前を受けたら」の推定です。学習の目安としてどうぞ。</p>
+        <div class="forecast-row">
+          <p class="forecast-score">${fc.score}<small> 点 / 100</small></p>
+          <div class="forecast-main">
+            <div class="meter">
+              <div class="meter-fill ${fc.score >= 60 ? 'is-pass' : ''}" style="width:${Math.min(100, fc.score)}%"></div>
+              <div class="meter-mark" style="left:60%"><span>合格ライン 60</span></div>
+            </div>
+            <p class="forecast-comment">${forecastComment(fc.score, totals.t)}</p>
+          </div>
+        </div>
+        <div class="forecast-parts">
+          ${fc.parts.map((x) => `
+            <div class="fp-row">
+              <span class="fp-name">${esc(x.part.name)}</span>
+              <span class="fp-num">${x.expected.toFixed(1)} / ${x.n}問</span>
+              <span class="fp-note">${x.samples < 5 ? 'データ少' : `実測 ${Math.round((x.acc) * 100)}%`}</span>
+            </div>`).join('')}
+        </div>
       </div>
 
       <div class="panel">
