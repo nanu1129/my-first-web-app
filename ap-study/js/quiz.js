@@ -31,6 +31,8 @@ const Quiz = (() => {
       answers: [], // { picked, correct }
       startedAt: Date.now(),
       remainSec: config.timeLimitSec || 0,
+      recall: Store.pref('recall', false),
+      revealed: false,
     };
     App.show('quiz');
     if (config.timeLimitSec) startTimer();
@@ -80,18 +82,31 @@ const Quiz = (() => {
   function renderQuestion() {
     const { cfg, idx } = state;
     const q = cfg.questions[idx];
+    // 想起モード(模試以外): 選択肢を隠し、答えを思い出してから開く
+    const recall = state.recall && cfg.mode !== 'mock';
+    const hidden = recall && !state.revealed;
+    const toggle = cfg.mode !== 'mock'
+      ? `<button class="recall-toggle ${state.recall ? 'on' : ''}" id="recall-toggle" role="switch" aria-checked="${state.recall}">
+           <span class="rt-dot"></span>想起モード</button>`
+      : '';
+
     $view().innerHTML = `
       <div class="quiz-shell">
         ${header()}
         <div class="q-card">
-          ${q.source ? `<p class="q-source">${esc(q.source)}</p>` : ''}
+          <div class="q-card-top">${q.source ? `<span class="q-source">${esc(q.source)}</span>` : '<span></span>'}${toggle}</div>
           <p class="q-text">${esc(q.q)}</p>
-          <div class="choices">
-            ${q.choices.map((c, i) => `
-              <button class="choice" data-i="${i}">
-                <span class="choice-key">${KEYS[i]}</span><span>${esc(c)}</span>
-              </button>`).join('')}
-          </div>
+          ${hidden
+            ? `<div class="recall-prompt">
+                 <p>答えを頭に思い浮かべてから、選択肢を開こう。<br><span class="rp-sub">思い出そうとするほど記憶に定着します。</span></p>
+                 <button class="btn btn-primary" id="recall-reveal">選択肢を見る</button>
+               </div>`
+            : `<div class="choices">
+                ${q.choices.map((c, i) => `
+                  <button class="choice" data-i="${i}">
+                    <span class="choice-key">${KEYS[i]}</span><span>${esc(c)}</span>
+                  </button>`).join('')}
+              </div>`}
           <div id="quiz-feedback"></div>
         </div>
         <div class="quiz-next">
@@ -101,6 +116,14 @@ const Quiz = (() => {
 
     $view().querySelectorAll('.choice').forEach((btn) => {
       btn.addEventListener('click', () => pick(Number(btn.dataset.i)));
+    });
+    const reveal = document.getElementById('recall-reveal');
+    if (reveal) reveal.addEventListener('click', () => { state.revealed = true; renderQuestion(); });
+    const tg = document.getElementById('recall-toggle');
+    if (tg) tg.addEventListener('click', () => {
+      state.recall = !state.recall;
+      Store.setPref('recall', state.recall);
+      renderQuestion();
     });
     document.getElementById('quiz-quit').addEventListener('click', quit);
   }
@@ -112,7 +135,11 @@ const Quiz = (() => {
     const correct = i === q.answer;
     state.answers.push({ picked: i, correct });
     if (q.partId) Store.recordAnswer(q.partId, correct);
-    if (q.qid) Store.markWrong(q.qid, !correct); // 復習リストの追加/解除
+    if (q.qid) {
+      Store.markWrong(q.qid, !correct); // 復習リストの追加/解除
+      Store.srsReview(q.qid, correct);  // 間隔反復スケジュール更新
+    }
+    Store.studyTick();                  // 学習ストリーク・今日の学習数
 
     if (cfg.mode === 'mock') {
       next();
@@ -126,11 +153,31 @@ const Quiz = (() => {
       else if (bi === i && !correct) btn.classList.add('is-wrong');
     });
     const last = idx + 1 >= cfg.questions.length;
+    const reasons = !correct
+      ? `<div class="reason-box">
+           <span class="reason-label">なぜ間違えた?(記録して弱点を分析)</span>
+           <div class="reason-chips">
+             <button class="reason-chip" data-r="careless">ケアレスミス</button>
+             <button class="reason-chip" data-r="knowledge">知識不足</button>
+             <button class="reason-chip" data-r="guess">あてずっぽう</button>
+           </div>
+         </div>`
+      : '';
     document.getElementById('quiz-feedback').innerHTML = `
       <div class="feedback ${correct ? 'ok' : 'ng'}">
         <p class="feedback-head">${correct ? '正解!この調子!' : `残念、不正解… 正解は「${KEYS[q.answer]}」。解説を読んで整理しよう`}</p>
         <p class="feedback-exp">${esc(q.exp || '')}</p>
+        ${reasons}
       </div>`;
+    $view().querySelectorAll('.reason-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        Store.addReason(chip.dataset.r);
+        const box = chip.closest('.reason-box');
+        box.querySelectorAll('.reason-chip').forEach((c) => { c.classList.remove('on'); c.disabled = true; });
+        chip.classList.add('on');
+        box.querySelector('.reason-label').textContent = '記録しました。次に活かそう。';
+      });
+    });
     const nextWrap = $view().querySelector('.quiz-next');
     nextWrap.innerHTML = `<button class="btn btn-primary" id="quiz-next-btn">${last ? '結果を見る' : '次の問題へ'}</button>`;
     const btn = document.getElementById('quiz-next-btn');
@@ -140,6 +187,7 @@ const Quiz = (() => {
 
   function next() {
     state.idx += 1;
+    state.revealed = false;
     if (state.idx >= state.cfg.questions.length) finish(false);
     else renderQuestion();
   }

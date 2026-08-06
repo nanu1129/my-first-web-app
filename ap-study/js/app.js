@@ -50,8 +50,19 @@ const App = (() => {
   }
 
   function init() {
-    // 過去問に復習リスト用の安定IDを付与
+    // すべての問題に安定IDを付与(復習リスト・間隔反復で使用)
     AP.questions.forEach((q, i) => { q.qid = `${q.partId}-${i}`; });
+    AP.lessons.forEach((l) => {
+      l.units.forEach((u) => {
+        u.checks.forEach((c, i) => {
+          c.qid = `chk-${u.id}-${i}`;
+          c.partId = l.partId;
+        });
+      });
+    });
+    // 間隔反復・今日の復習で使う全問題の一覧
+    const checks = AP.lessons.flatMap((l) => l.units.flatMap((u) => u.checks));
+    AP.allQuestions = AP.questions.concat(checks);
     initTheme();
 
     document.querySelectorAll('#main-nav .tab').forEach((t) => {

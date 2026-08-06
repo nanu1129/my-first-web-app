@@ -472,6 +472,83 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .chart-svg text { font-family: 'Noto Sans JP', sans-serif; }
 .chart-empty { color: var(--ink-3); font-size: 13px; padding: 18px 0; }
 
+/* ===== 学習効率機能 ===== */
+
+/* デイリーストリップ(ストリーク・目標・今日の復習) */
+.daily-strip {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px;
+}
+.daily-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px 18px; text-align: left;
+  display: flex; flex-direction: column; gap: 4px; justify-content: center; min-height: 84px;
+}
+.daily-num { font-family: var(--font-display); font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.daily-num small { font-size: 14px; color: var(--ink-3); margin-left: 2px; }
+.daily-label { font-size: 12px; color: var(--ink-2); }
+.daily-card.streak .daily-num { color: var(--gold); }
+.daily-goal-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.daily-goal-select {
+  font: inherit; font-size: 12px; color: var(--ink-2); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 2px 6px;
+}
+.daily-goal-bar { height: 8px; border-radius: 999px; background: var(--surface-2); margin: 8px 0 5px; }
+.daily-goal-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width .4s cubic-bezier(.22,1,.36,1); }
+.daily-goal-fill.done { background: var(--ok); }
+.daily-goal-count { font-size: 11.5px; color: var(--ink-3); }
+.daily-card.review { transition: border-color .15s, background .15s; }
+.daily-card.review.has-due { border-color: var(--accent); cursor: pointer; }
+.daily-card.review.has-due .daily-num { color: var(--accent); }
+.daily-card.review.has-due:hover { background: var(--hover-tint); }
+.daily-card.review:disabled { opacity: .7; cursor: default; }
+@media (max-width: 640px) {
+  .daily-strip { grid-template-columns: 1fr 1fr; }
+  .daily-card.goal { grid-column: 1 / -1; order: -1; }
+}
+
+/* 想起モード */
+.q-card-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; min-height: 26px; }
+.recall-toggle {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  font-size: 12px; font-weight: 700; color: var(--ink-3);
+  border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px 4px 6px;
+}
+.recall-toggle .rt-dot {
+  width: 16px; height: 16px; border-radius: 999px; background: var(--line); position: relative; transition: background .15s;
+}
+.recall-toggle.on { color: var(--accent); border-color: var(--accent); }
+.recall-toggle.on .rt-dot { background: var(--accent); }
+.recall-toggle.on .rt-dot::after {
+  content: ''; position: absolute; inset: 3px; border-radius: 999px; background: var(--accent-ink);
+}
+.recall-prompt {
+  text-align: center; padding: 26px 16px; background: var(--surface-2); border-radius: 12px;
+  margin: 6px 0; display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+.recall-prompt p { font-size: 14px; font-weight: 700; line-height: 1.7; }
+.recall-prompt .rp-sub { font-size: 12px; font-weight: 400; color: var(--ink-2); }
+
+/* 間違い理由タグ */
+.reason-box { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.reason-label { font-size: 12px; font-weight: 700; color: var(--ink-2); display: block; margin-bottom: 8px; }
+.reason-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.reason-chip {
+  font-size: 12.5px; font-weight: 700; color: var(--ink-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; background: var(--surface);
+}
+.reason-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.reason-chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.reason-chip:disabled:not(.on) { opacity: .4; }
+
+/* 間違いの内訳(成績) */
+.reason-stats { display: flex; flex-direction: column; gap: 9px; margin-bottom: 12px; }
+.rs-row { display: flex; align-items: center; gap: 12px; }
+.rs-name { font-size: 12.5px; color: var(--ink-2); width: 90px; flex: none; }
+.rs-bar { flex: 1; height: 12px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.rs-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.rs-num { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; width: 96px; text-align: right; flex: none; }
+.rs-advice { font-size: 12.5px; color: var(--ink-2); line-height: 1.7; }
+
 /* 合格予測メーター */
 .forecast-row { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .forecast-score {

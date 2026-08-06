@@ -63,6 +63,7 @@ const Course = (() => {
           </div>
         </div>
       </div>
+      ${renderDailyStrip()}
       ${AP.parts.map(renderPartCard).join('')}`;
 
     // イベント
@@ -71,6 +72,63 @@ const Course = (() => {
     });
     $home().querySelectorAll('.part-exam-row.is-unlocked, .part-exam-row.is-cleared').forEach((row) => {
       row.addEventListener('click', () => startPartExam(row.dataset.part));
+    });
+    const reviewBtn = document.getElementById('daily-review-btn');
+    if (reviewBtn) reviewBtn.addEventListener('click', startReview);
+    const goalSel = document.getElementById('daily-goal');
+    if (goalSel) goalSel.addEventListener('change', () => {
+      Store.setGoal(Number(goalSel.value));
+      renderHome();
+    });
+  }
+
+  // ---------- デイリーストリップ(ストリーク・今日の目標・今日の復習) ----------
+  function renderDailyStrip() {
+    const s = Store.streakInfo();
+    const dueCount = Store.srsDue((AP.allQuestions || []).map((q) => q.qid)).length;
+    const goalPct = Math.min(100, Math.round((s.todayCount / s.goal) * 100));
+    const goalDone = s.todayCount >= s.goal;
+    const goalOptions = [10, 20, 30, 50]
+      .map((n) => `<option value="${n}" ${n === s.goal ? 'selected' : ''}>${n}問</option>`).join('');
+
+    return `
+      <div class="daily-strip">
+        <div class="daily-card streak">
+          <span class="daily-num">${s.current}<small>日</small></span>
+          <span class="daily-label">連続学習${s.longest > s.current ? ` ・ 最長${s.longest}日` : ''}</span>
+        </div>
+        <div class="daily-card goal">
+          <div class="daily-goal-head">
+            <span class="daily-label">今日の目標</span>
+            <select id="daily-goal" class="daily-goal-select" aria-label="1日の目標問題数">${goalOptions}</select>
+          </div>
+          <div class="daily-goal-bar"><div class="daily-goal-fill ${goalDone ? 'done' : ''}" style="width:${goalPct}%"></div></div>
+          <span class="daily-goal-count">${s.todayCount} / ${s.goal} 問${goalDone ? ' ・ 達成!' : ''}</span>
+        </div>
+        <button class="daily-card review ${dueCount ? 'has-due' : ''}" id="daily-review-btn" ${dueCount ? '' : 'disabled'}>
+          <span class="daily-num">${dueCount}<small>問</small></span>
+          <span class="daily-label">${dueCount ? '今日の復習 →' : '復習はいまなし'}</span>
+        </button>
+      </div>`;
+  }
+
+  function startReview() {
+    const dueIds = new Set(Store.srsDue((AP.allQuestions || []).map((q) => q.qid)));
+    const qs = Quiz.shuffle(AP.allQuestions.filter((q) => dueIds.has(q.qid)));
+    if (!qs.length) return;
+    Quiz.start({
+      title: '今日の復習(間隔反復)',
+      questions: qs,
+      mode: 'practice',
+      passRate: 0.6,
+      backLabel: '学習マップへ',
+      onBack: App.goHome,
+      resultNote: (r) => (r.pass
+        ? 'よく覚えていました。正解した問題は次の出題がぐっと先になります。'
+        : '間違えた問題は明日また出てきます。忘れる前に定着させよう。'),
+      onFinish: (r) => {
+        Store.addHistory({ kind: '間隔反復の復習', label: `今日の復習 ${r.total}問`, score: r.score, total: r.total, pass: r.pass });
+      },
     });
   }
 

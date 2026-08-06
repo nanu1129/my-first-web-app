@@ -118,6 +118,35 @@ const Stats = (() => {
           </div>` : '<p class="chart-empty">復習待ちの問題はありません。間違えた問題があるとここに表示されます。</p>'}
       </div>
 
+      ${(() => {
+        const rc = Store.reasonCounts();
+        const total = (rc.careless || 0) + (rc.knowledge || 0) + (rc.guess || 0);
+        if (!total) return '';
+        const labels = { careless: 'ケアレスミス', knowledge: '知識不足', guess: 'あてずっぽう' };
+        const advice = {
+          careless: '問題文を落ち着いて読み直す習慣を。特に「正しくないものはどれか」に注意。',
+          knowledge: '該当分野の教材に戻るのが近道。あわせて間隔反復で定着を。',
+          guess: '消去法で選択肢を2つまで絞る練習を。用語カードも効果的。',
+        };
+        const top = ['careless', 'knowledge', 'guess'].sort((a, b) => (rc[b] || 0) - (rc[a] || 0))[0];
+        return `
+          <div class="panel">
+            <h3>間違いの内訳</h3>
+            <p class="panel-note">一問一答・過去問で「なぜ間違えたか」を記録した集計です。傾向に合った対策を。</p>
+            <div class="reason-stats">
+              ${['careless', 'knowledge', 'guess'].map((k) => {
+                const pct = Math.round(((rc[k] || 0) / total) * 100);
+                return `<div class="rs-row">
+                  <span class="rs-name">${labels[k]}</span>
+                  <span class="rs-bar"><span class="rs-fill" style="width:${pct}%"></span></span>
+                  <span class="rs-num">${rc[k] || 0}件 (${pct}%)</span>
+                </div>`;
+              }).join('')}
+            </div>
+            <p class="rs-advice"><span class="pill pill-accent">アドバイス</span> ${advice[top]}</p>
+          </div>`;
+      })()}
+
       <div class="panel">
         <h3>学習履歴</h3>
         <p class="panel-note">直近${Math.min(history.length, 10)}件</p>
