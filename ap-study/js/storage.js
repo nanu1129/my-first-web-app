@@ -10,7 +10,19 @@ const Store = (() => {
     history: [],   // { kind, label, score, total, pass, at }
     wrong: [],     // 間違えた過去問の qid(正解し直すと消える)
     cases: {},     // 午後演習 caseId -> { cleared, best(%), at }
+    srs: {},       // qid -> { reps, interval(日), due(ms) } 間隔反復スケジュール
+    streak: {},    // { current, longest, lastDay 'YYYY-MM-DD', todayCount, goal }
+    reasons: {},   // { careless, knowledge, guess } 間違い理由の集計
+    prefs: {},     // { recall: bool, ... } 設定
   });
+
+  // 間隔反復の間隔(日)。正解を重ねるほど次回が遠くなる
+  const SRS_STEPS = [1, 3, 7, 16, 35, 60];
+  const DAY = 86400000;
+  const ymd = (t) => {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
 
   let cache = null;
 
@@ -114,6 +126,87 @@ const Store = (() => {
         best: Math.max(prev.best, percent),
         at: Date.now(),
       };
+      save();
+    },
+
+    // --- 間隔反復(SRS) ---
+    // 解答結果を受けて次回の出題日をスケジュール
+    srsReview(qid, correct) {
+      if (!qid) return;
+      const d = load();
+      const s = d.srs[qid] || { reps: 0, interval: 0, due: 0 };
+      if (correct) {
+        const idx = Math.min(s.reps, SRS_STEPS.length - 1);
+        s.interval = SRS_STEPS[idx];
+        s.reps += 1;
+      } else {
+        s.reps = 0;
+        s.interval = 1; // 明日また出す
+      }
+      s.due = Date.now() + s.interval * DAY;
+      d.srs[qid] = s;
+      save();
+    },
+    // 与えたqid群のうち、復習期限が来ている(過去に一度解いた)ものを返す
+    srsDue(qids) {
+      const d = load();
+      const now = Date.now();
+      return qids.filter((id) => d.srs[id] && d.srs[id].due <= now);
+    },
+
+    // --- 学習ストリーク・今日の目標 ---
+    studyTick() {
+      const d = load();
+      const s = d.streak;
+      const today = ymd(Date.now());
+      if (s.lastDay !== today) {
+        const yesterday = ymd(Date.now() - DAY);
+        s.current = (s.lastDay === yesterday) ? (s.current || 0) + 1 : 1;
+        s.longest = Math.max(s.longest || 0, s.current);
+        s.lastDay = today;
+        s.todayCount = 0;
+      }
+      s.todayCount = (s.todayCount || 0) + 1;
+      save();
+    },
+    streakInfo() {
+      const s = load().streak;
+      const today = ymd(Date.now());
+      const yesterday = ymd(Date.now() - DAY);
+      // 今日か昨日まで続いていれば継続中、それ以外は途切れ
+      const alive = s.lastDay === today || s.lastDay === yesterday;
+      return {
+        current: alive ? (s.current || 0) : 0,
+        longest: s.longest || 0,
+        todayCount: s.lastDay === today ? (s.todayCount || 0) : 0,
+        goal: s.goal || 20,
+        studiedToday: s.lastDay === today,
+      };
+    },
+    setGoal(n) {
+      const d = load();
+      d.streak.goal = n;
+      save();
+    },
+
+    // --- 間違い理由の集計 ---
+    addReason(reason) {
+      const d = load();
+      d.reasons[reason] = (d.reasons[reason] || 0) + 1;
+      save();
+    },
+    reasonCounts() {
+      return load().reasons;
+    },
+
+    // --- 設定 ---
+    pref(key, def) {
+      const v = load().prefs[key];
+      return v === undefined ? def : v;
+    },
+    setPref(key, val) {
+      const d = load();
+      d.prefs[key] = val;
       save();
     },
 
