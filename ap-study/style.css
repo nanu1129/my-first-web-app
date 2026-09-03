@@ -472,6 +472,84 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .chart-svg text { font-family: 'Noto Sans JP', sans-serif; }
 .chart-empty { color: var(--ink-3); font-size: 13px; padding: 18px 0; }
 
+/* ===== 学習計画(試験日から逆算) ===== */
+.plan-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 20px 22px; margin-bottom: 16px;
+}
+.plan-head { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.plan-count { flex: none; text-align: center; }
+.plan-count .pc-label { display: block; font-size: 11px; color: var(--ink-3); font-weight: 700; }
+.plan-count .pc-num {
+  font-family: var(--font-display); font-size: 38px; font-weight: 700; color: var(--accent);
+  line-height: 1.1; font-variant-numeric: tabular-nums;
+}
+.plan-count .pc-num small { font-size: 14px; color: var(--ink-3); margin-left: 2px; }
+.plan-head-main { flex: 1; min-width: 200px; }
+.plan-phase { font-size: 13px; color: var(--ink-2); line-height: 1.8; }
+.plan-track { font-size: 12.5px; font-weight: 700; margin-top: 4px; }
+.plan-track.ahead { color: var(--ok); }
+.plan-track.ontrack { color: var(--ink-2); }
+.plan-track.behind { color: var(--ng); }
+.plan-date { flex: none; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ink-3); font-weight: 700; }
+.plan-date input {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--radius-input); padding: 6px 10px;
+}
+.plan-date input:focus { outline: none; border-color: var(--accent); }
+
+.phase-bar { display: flex; gap: 6px; margin: 16px 0 8px; position: relative; }
+.phase-seg {
+  flex: 1; background: var(--surface-2); border-radius: 9px; padding: 9px 12px;
+  border: 1.5px solid transparent;
+}
+.phase-seg.is-now { border-color: var(--accent); background: var(--accent-soft); }
+.phase-seg.is-past { opacity: .6; }
+.phase-seg .ps-name { display: block; font-size: 12px; font-weight: 700; }
+.phase-seg.is-now .ps-name { color: var(--accent); }
+.phase-seg .ps-date { font-size: 10.5px; color: var(--ink-3); }
+.phase-now { position: absolute; top: -7px; bottom: -7px; width: 2px; background: var(--gold); pointer-events: none; }
+.phase-now span {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  font-size: 10px; color: var(--gold); font-weight: 700; white-space: nowrap;
+}
+
+.plan-pace {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--ink-2); font-weight: 700;
+  border-top: 1px dashed var(--line); padding-top: 13px; margin-top: 14px;
+}
+.plan-pace .pill { background: var(--surface-2); color: var(--ink-3); }
+.btn-mini {
+  font-size: 11.5px; font-weight: 700; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 999px; padding: 3px 12px; margin-left: auto;
+}
+.btn-mini:hover { background: var(--accent); color: var(--accent-ink); }
+
+.task-list { margin-top: 14px; }
+.task-head { font-size: 12px; font-weight: 700; color: var(--ink-3); margin-bottom: 8px; letter-spacing: .04em; }
+.task-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 11px 14px; border-radius: 10px; background: var(--surface-2); margin-bottom: 7px;
+  border: 1.5px solid transparent; transition: border-color .15s, background .15s;
+}
+.task-row:hover { border-color: var(--accent); background: var(--hover-tint); }
+.tr-check {
+  width: 18px; height: 18px; border-radius: 999px; border: 2px solid var(--ink-3);
+  flex: none; opacity: .5;
+}
+.task-row:hover .tr-check { border-color: var(--accent); opacity: 1; }
+.tr-main { flex: 1; }
+.tr-label { font-size: 13.5px; font-weight: 700; }
+.tr-sub { font-size: 11.5px; color: var(--ink-3); }
+.tr-cta { color: var(--accent); font-weight: 700; flex: none; }
+
+@media (max-width: 560px) {
+  .phase-bar { flex-direction: column; }
+  .phase-now { display: none; }
+  .plan-date { width: 100%; }
+}
+
 /* ===== 学習効率機能 ===== */
 
 /* デイリーストリップ(ストリーク・目標・今日の復習) */

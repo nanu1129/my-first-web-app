@@ -63,6 +63,7 @@ const Course = (() => {
           </div>
         </div>
       </div>
+      ${renderPlanCard()}
       ${renderDailyStrip()}
       ${AP.parts.map(renderPartCard).join('')}`;
 
@@ -80,6 +81,87 @@ const Course = (() => {
       Store.setGoal(Number(goalSel.value));
       renderHome();
     });
+    const examInput = document.getElementById('exam-date');
+    if (examInput) examInput.addEventListener('change', () => {
+      if (examInput.value) { Plan.setExamDate(examInput.value); renderHome(); }
+    });
+    const applyPace = document.getElementById('apply-pace');
+    if (applyPace) applyPace.addEventListener('click', () => {
+      Store.setGoal(Number(applyPace.dataset.n));
+      renderHome();
+    });
+    $home().querySelectorAll('.task-row').forEach((row) => {
+      row.addEventListener('click', () => runTask(row.dataset.act, row.dataset.id));
+    });
+  }
+
+  // ---------- 学習計画(試験日から逆算) ----------
+  function renderPlanCard() {
+    const p = Plan.compute();
+    const pctElapsed = Math.min(100, Math.round((p.elapsed / p.totalDays) * 100));
+    const trackText = {
+      ahead: `予定より ${p.diff}ユニット 先行しています。この調子!`,
+      ontrack: '計画どおりのペースです。',
+      behind: `予定より ${-p.diff}ユニット 遅れ気味。1日のペースを少し上げよう。`,
+    }[p.onTrack];
+
+    const segs = p.phases.map((ph, i) => {
+      return `<div class="phase-seg ${i === p.phaseIdx ? 'is-now' : ''} ${i < p.phaseIdx ? 'is-past' : ''}">
+          <span class="ps-name">${i + 1}. ${esc(ph.name)}</span>
+          <span class="ps-date">〜${p.jp(ph.end)}</span>
+        </div>`;
+    }).join('');
+
+    const tasks = p.tasks || [];
+    return `
+      <div class="plan-card">
+        <div class="plan-head">
+          <div class="plan-count">
+            <span class="pc-label">試験まで</span>
+            <span class="pc-num">${p.daysLeft}<small>日</small></span>
+          </div>
+          <div class="plan-head-main">
+            <p class="plan-phase"><span class="pill pill-accent">いま ${esc(p.phase.name)}</span> ${esc(p.phase.desc)}</p>
+            <p class="plan-track ${p.onTrack}">${esc(trackText)}</p>
+          </div>
+          <label class="plan-date">
+            <span>試験日</span>
+            <input type="date" id="exam-date" value="${p.examStr}">
+          </label>
+        </div>
+        <div class="phase-bar">${segs}
+          <div class="phase-now" style="left:${pctElapsed}%"><span>今日</span></div>
+        </div>
+        <div class="plan-pace">
+          <span class="pill">目標ペース</span> ${esc(p.paceLabel)} ・ 1日 約${p.recommended}問
+          <button class="btn-mini" id="apply-pace" data-n="${nearestGoal(p.recommended)}">今日の目標に設定</button>
+        </div>
+        <div class="task-list">
+          <p class="task-head">今日やること</p>
+          ${tasks.length ? tasks.map((t) => `
+            <button class="task-row" data-act="${t.act}" ${t.id ? `data-id="${t.id}"` : ''}>
+              <span class="tr-check"></span>
+              <span class="tr-main"><span class="tr-label">${esc(t.label)}</span><br>
+                <span class="tr-sub">${esc(t.sub)}</span></span>
+              <span class="tr-cta">→</span>
+            </button>`).join('')
+            : '<p class="chart-empty">今日のノルマは達成済みです。おつかれさま。</p>'}
+        </div>
+      </div>`;
+  }
+
+  // 目標セレクタ(10/20/30/50)のうち推奨値に最も近いもの
+  function nearestGoal(n) {
+    return [10, 20, 30, 50].reduce((a, b) => (Math.abs(b - n) < Math.abs(a - n) ? b : a));
+  }
+
+  function runTask(act, id) {
+    if (act === 'review') return startReview();
+    if (act === 'unit') return openLesson(id);
+    if (act === 'part') return startPartExam(id);
+    if (act === 'drill') { App.navigate('practice'); return Drill.render(); }
+    if (act === 'mock') return App.navigate('exam');
+    if (act === 'case') { App.navigate('practice'); return Afternoon.renderMenu(); }
   }
 
   // ---------- デイリーストリップ(ストリーク・今日の目標・今日の復習) ----------
