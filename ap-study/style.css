@@ -135,6 +135,24 @@ h1, h2, h3, .logo-text { font-family: var(--font-display); }
 .theme-btn:hover { color: var(--ink); background: var(--hover-tint); }
 .theme-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
+/* ---------- 端末間同期 ---------- */
+.header-tools { display: flex; align-items: center; gap: 8px; }
+.sync-wrap { position: relative; }
+.theme-btn.is-on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.sync-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: 268px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow-raised); padding: 15px 16px; text-align: left;
+}
+.sync-panel[hidden] { display: none; }
+.sync-title { font-size: 13px; font-weight: 700; font-family: var(--font-display); margin-bottom: 5px; }
+.sync-note { font-size: 11.5px; color: var(--ink-2); line-height: 1.75; word-break: break-all; }
+.sync-actions { display: flex; gap: 8px; margin-top: 11px; flex-wrap: wrap; }
+.sync-actions .btn-mini { margin-left: 0; }
+.btn-mini.ghost { color: var(--ink-2); border-color: var(--line); }
+.btn-mini.ghost:hover { background: var(--surface-2); color: var(--ink); }
+.btn-mini:disabled { opacity: .55; cursor: default; }
+
 /* ---------- レイアウト ---------- */
 main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .view[hidden] { display: none; }

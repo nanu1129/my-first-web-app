@@ -4,7 +4,10 @@ const App = (() => {
   // ナビタブに対応する画面(lesson/quiz は home 配下の扱い)
   const NAV_OF = { home: 'home', lesson: 'home', quiz: null, practice: 'practice', exam: 'exam', cards: 'cards', stats: 'stats' };
 
+  let currentView = 'home';
+
   function show(view) {
+    currentView = view;
     VIEWS.forEach((v) => {
       document.getElementById(`view-${v}`).hidden = v !== view;
     });
@@ -72,10 +75,36 @@ const App = (() => {
       e.preventDefault();
       goHome();
     });
+    // 端末間同期(未設定なら何もしない)
+    const syncBtn = document.getElementById('sync-btn');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', (e) => { e.stopPropagation(); Sync.togglePanel(); });
+      // パネルの外側をクリックしたら閉じる。
+      // パネル内のボタンは押した直後に再描画されて DOM から外れるため、
+      // クリック時点の経路(composedPath)で内外を判定する。
+      document.addEventListener('click', (e) => {
+        const panel = document.getElementById('sync-panel');
+        if (!panel || panel.hidden) return;
+        const wrap = document.querySelector('.sync-wrap');
+        const path = e.composedPath ? e.composedPath() : [];
+        if (path.includes(wrap) || wrap.contains(e.target)) return;
+        panel.hidden = true;
+      });
+    }
+    Sync.init();
+
     goHome();
+  }
+
+  // 同期でデータが更新されたとき、表示中の画面を描き直す
+  function refresh() {
+    if (currentView === 'home') Course.renderHome();
+    else if (currentView === 'stats') Stats.render();
+    else if (currentView === 'cards') Cards.render();
+    else if (currentView === 'exam') Exam.render();
   }
 
   document.addEventListener('DOMContentLoaded', init);
 
-  return { show, goHome, navigate };
+  return { show, goHome, navigate, refresh };
 })();

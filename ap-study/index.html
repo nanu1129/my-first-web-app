@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=M+PLUS+1+Code:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header class="site-header">
@@ -19,7 +19,13 @@
         <span class="logo-mark">マ</span>
         <span class="logo-text">マナビット<small>応用情報技術者試験 対策</small></span>
       </a>
-      <button class="theme-btn" id="theme-toggle" aria-label="ライト/ダークテーマの切替え" title="テーマ切替え"></button>
+      <div class="header-tools">
+        <div class="sync-wrap">
+          <button class="theme-btn" id="sync-btn" aria-label="端末間の同期" title="端末間の同期"></button>
+          <div class="sync-panel" id="sync-panel" hidden></div>
+        </div>
+        <button class="theme-btn" id="theme-toggle" aria-label="ライト/ダークテーマの切替え" title="テーマ切替え"></button>
+      </div>
       <nav class="tabs" id="main-nav">
         <button class="tab is-active" data-nav="home">学習</button>
         <button class="tab" data-nav="practice">実践</button>
@@ -56,7 +62,7 @@
   <footer class="site-footer">
     <p>過去問演習・模擬試験の問題の出典: IPA 独立行政法人 情報処理推進機構「応用情報技術者試験 午前 過去問題」。
       本サイトは学習用の非公式教材であり、収録した過去問の文言は原文と一部異なる場合があります。</p>
-    <p>学習の記録はこの端末のブラウザ内(localStorage)にのみ保存されます。</p>
+    <p>学習の記録は端末内(localStorage)に保存されます。ヘッダの同期ボタンからGoogleでログインすると、PCとスマホなど複数の端末で共有できます。</p>
   </footer>
 
   <!-- データ -->
@@ -76,7 +82,9 @@
   <script src="data/terms.js?v=1"></script>
   <script src="data/afternoon.js?v=1"></script>
   <!-- アプリ -->
-  <script src="js/storage.js?v=3"></script>
+  <script src="js/firebase-config.js?v=1"></script>
+  <script src="js/storage.js?v=4"></script>
+  <script src="js/sync.js?v=1"></script>
   <script src="js/quiz.js?v=4"></script>
   <script src="js/art.js?v=2"></script>
   <script src="js/art2.js?v=3"></script>
@@ -91,6 +99,6 @@
   <script src="js/trace.js?v=2"></script>
   <script src="js/afternoon.js?v=2"></script>
   <script src="js/stats.js?v=6"></script>
-  <script src="js/app.js?v=4"></script>
+  <script src="js/app.js?v=5"></script>
 </body>
 </html>
