@@ -1,4 +1,4 @@
-// コースマップ(ホーム)・教材表示・ユニット完了/過去問解放ロジック
+// コースマップ(ホーム)・教材表示・ユニット完了/本番レベル演習の解放ロジック
 const Course = (() => {
   const $home = () => document.getElementById('view-home');
   const $lesson = () => document.getElementById('view-lesson');
@@ -45,8 +45,8 @@ const Course = (() => {
     $home().innerHTML = `
       <div class="hero">
         <div>
-          <h2>教材で学ぶ → 一問一答 → 過去問で仕上げる</h2>
-          <p>ユニットの一問一答に80%以上で合格すると完了。パートの全ユニットを終えると過去問演習が解放されます。</p>
+          <h2>教材で学ぶ → 一問一答 → 本番レベル演習で仕上げる</h2>
+          <p>ユニットの一問一答に80%以上で合格すると完了。パートの全ユニットを終えると、本試験レベルの演習が解放されます。</p>
         </div>
         <div class="hero-progress">
           <svg class="donut" viewBox="0 0 74 74" role="img" aria-label="全体の進捗 ${pct}%">
@@ -59,7 +59,7 @@ const Course = (() => {
           </svg>
           <div class="hero-progress-text">
             ユニット <strong>${doneUnits} / ${allUnits}</strong> 完了<br>
-            過去問クリア <strong>${clearedExams} / ${AP.parts.length}</strong> パート
+            本番レベル演習クリア <strong>${clearedExams} / ${AP.parts.length}</strong> パート
           </div>
         </div>
       </div>
@@ -127,6 +127,7 @@ const Course = (() => {
           <label class="plan-date">
             <span>試験日</span>
             <input type="date" id="exam-date" value="${p.examStr}">
+            <a class="plan-ipa" href="https://www.ipa.go.jp/shiken/" target="_blank" rel="noopener">試験日程を確認(IPA)</a>
           </label>
         </div>
         <div class="phase-bar">${segs}
@@ -247,7 +248,7 @@ const Course = (() => {
         <div class="part-exam-row">
           <span class="unit-badge">${IC.lock}</span>
           <span class="part-exam-main">
-            <span class="part-exam-title">過去問演習(${qs.length}問)</span><br>
+            <span class="part-exam-title">本番レベル演習(${qs.length}問)</span><br>
             <span class="part-exam-sub">あと${remain}ユニットで解放されます</span>
           </span>
         </div>`;
@@ -256,7 +257,7 @@ const Course = (() => {
         <button class="part-exam-row is-cleared" data-part="${part.id}">
           <span class="unit-badge">${IC.check}</span>
           <span class="part-exam-main">
-            <span class="part-exam-title">過去問クリア済み!(ベスト ${examState.best}%)</span><br>
+            <span class="part-exam-title">本番レベル演習クリア済み!(ベスト ${examState.best}%)</span><br>
             <span class="part-exam-sub">もう一度挑戦して記録を更新しよう</span>
           </span>
         </button>`;
@@ -265,7 +266,7 @@ const Course = (() => {
         <button class="part-exam-row is-unlocked" data-part="${part.id}">
           <span class="unit-badge">!</span>
           <span class="part-exam-main">
-            <span class="part-exam-title">過去問演習が解放されました(${qs.length}問)</span><br>
+            <span class="part-exam-title">本番レベル演習が解放されました(${qs.length}問)</span><br>
             <span class="part-exam-sub">正答率60%以上でパートクリア${examState ? ` ・ 前回 ${examState.best}%` : ''}</span>
           </span>
         </button>`;
@@ -362,12 +363,12 @@ const Course = (() => {
     });
   }
 
-  // ---------- パート過去問演習 ----------
+  // ---------- パート別 本番レベル演習 ----------
   function startPartExam(partId) {
     const part = partOf(partId);
     const qs = Quiz.shuffle(questionsOf(partId));
     Quiz.start({
-      title: `過去問演習: ${part.name}`,
+      title: `本番レベル演習: ${part.name}`,
       questions: qs,
       mode: 'practice',
       passRate: 0.6,
@@ -379,7 +380,7 @@ const Course = (() => {
         : '合格ラインは本試験と同じ60%です。見直して再挑戦しましょう。'),
       onFinish: (r) => {
         Store.setPartExamResult(partId, r.percent, r.pass);
-        Store.addHistory({ kind: '過去問演習', label: part.name, score: r.score, total: r.total, pass: r.pass });
+        Store.addHistory({ kind: '本番レベル演習', label: part.name, score: r.score, total: r.total, pass: r.pass });
       },
     });
   }

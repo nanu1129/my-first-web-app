@@ -61,12 +61,13 @@ const Stats = (() => {
 
     const history = Store.history();
     const wrongIds = Store.wrongIds();
-    const wrongQs = AP.questions.filter((q) => wrongIds.includes(q.qid));
+    const wrongSet = new Set(wrongIds);
+    const wrongQs = (AP.allQuestions || AP.questions).filter((q) => wrongSet.has(q.qid));
     const fc = forecast(answers);
 
     $view().innerHTML = `
       <h2 class="view-title">成績</h2>
-      <p class="view-lead">これまでの解答をもとに、分野別の正答率と学習履歴を表示します(この端末のブラウザに保存)。</p>
+      <p class="view-lead">これまでの解答をもとに、分野別の正答率と学習履歴を表示します(同期を設定すると全端末の合計になります)。</p>
 
       <div class="stat-tiles">
         <div class="stat-tile"><p class="st-label">総解答数</p><p class="st-value">${totals.t}<small> 問</small></p></div>
@@ -99,7 +100,7 @@ const Stats = (() => {
 
       <div class="panel">
         <h3>分野別正答率</h3>
-        <p class="panel-note">一問一答・過去問演習・模擬試験のすべての解答の累積です。</p>
+        <p class="panel-note">一問一答・本番レベル演習・模擬試験など、すべての解答の累積です。</p>
         ${totals.t ? chartSvg(answers) : '<p class="chart-empty">まだ解答がありません。ホームの学習マップから始めましょう。</p>'}
         ${weak ? `
           <div class="weak-callout">
@@ -110,7 +111,7 @@ const Stats = (() => {
 
       <div class="panel">
         <h3>間違えた問題の復習</h3>
-        <p class="panel-note">過去問演習・模擬試験で間違えた問題は自動でここに溜まります。正解し直すとリストから消えます。</p>
+        <p class="panel-note">一問一答・本番レベル演習・模擬試験で間違えた問題は自動でここに溜まります。正解し直すとリストから消えます。</p>
         ${wrongQs.length ? `
           <div class="weak-callout" style="background:var(--accent-soft)">
             <span><span class="pill pill-accent">復習</span> 復習待ちの問題が <b style="color:var(--accent)">${wrongQs.length}問</b> あります。</span>
@@ -132,7 +133,7 @@ const Stats = (() => {
         return `
           <div class="panel">
             <h3>間違いの内訳</h3>
-            <p class="panel-note">一問一答・過去問で「なぜ間違えたか」を記録した集計です。傾向に合った対策を。</p>
+            <p class="panel-note">一問一答・本番レベル演習で「なぜ間違えたか」を記録した集計です。傾向に合った対策を。</p>
             <div class="reason-stats">
               ${['careless', 'knowledge', 'guess'].map((k) => {
                 const pct = Math.round(((rc[k] || 0) / total) * 100);
@@ -160,6 +161,18 @@ const Stats = (() => {
                 <span class="hi-date">${fmtDate(h.at)}</span>
               </div>`).join('')}
           </div>` : '<p class="chart-empty">まだ履歴がありません。</p>'}
+      </div>
+
+      <div class="panel">
+        <h3>データのバックアップ</h3>
+        <p class="panel-note">学習データをファイルに書き出して保管したり、別の端末で読み込んだりできます。
+          読み込みは今のデータを消さずに<b>統合</b>します(クリア状況や解答数は二重に数えられません)。</p>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="backup-export">ファイルに書き出す</button>
+          <button class="btn btn-ghost" id="backup-import">ファイルから読み込む</button>
+          <input type="file" id="backup-file" accept="application/json,.json" hidden>
+        </div>
+        <p class="backup-msg" id="backup-msg" role="status"></p>
       </div>
 
       <div class="danger-zone">
@@ -196,6 +209,13 @@ const Stats = (() => {
         });
       });
     }
+    document.getElementById('backup-export').addEventListener('click', exportBackup);
+    const fileInput = document.getElementById('backup-file');
+    document.getElementById('backup-import').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (f) importBackup(f);
+    });
     document.getElementById('reset-all').addEventListener('click', () => {
       if (confirm('学習の進捗・成績・カードの記録をすべて削除します。よろしいですか?')) {
         Store.resetAll();
@@ -246,6 +266,39 @@ const Stats = (() => {
     const rr = Math.min(r, w / 2);
     return `M${x},${y} H${x + w - rr} A${rr},${rr} 0 0 1 ${x + w},${y + rr}
       V${y + h - rr} A${rr},${rr} 0 0 1 ${x + w - rr},${y + h} H${x} Z`;
+  }
+
+  function backupMsg(text, ok) {
+    const el = document.getElementById('backup-msg');
+    if (el) { el.textContent = text; el.className = `backup-msg ${ok ? 'ok' : 'ng'}`; }
+  }
+
+  function exportBackup() {
+    const d = new Date();
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const blob = new Blob([JSON.stringify(Store.snapshot(), null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `manabit-backup-${ymd}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    backupMsg(`「${a.download}」を書き出しました。`, true);
+  }
+
+  function importBackup(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        Store.importState(JSON.parse(reader.result));
+        render();
+        backupMsg('読み込みました。今のデータと統合しています。', true);
+      } catch (e) {
+        backupMsg(`読み込めませんでした: ${e.message}`, false);
+      }
+    };
+    reader.readAsText(file);
   }
 
   return { render };

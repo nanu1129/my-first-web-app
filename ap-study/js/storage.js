@@ -199,6 +199,17 @@ const Store = (() => {
     },
     mergeStates,
     onChange(fn) { listeners.push(fn); },
+    // バックアップファイルの読み込み: 現在のデータに統合する(上書きしない)
+    importState(obj) {
+      if (!obj || typeof obj !== 'object' || !(obj.units || obj.counters || obj.answers)) {
+        throw new Error('マナビットのバックアップファイルではありません');
+      }
+      const incoming = Object.assign(defaults(), JSON.parse(JSON.stringify(obj)));
+      if (obj.v === undefined) incoming.v = 1;
+      migrate(incoming);
+      this.applyState(mergeStates(incoming, this.snapshot()));
+      save(); // 同期が有効なら、統合結果をクラウドにも反映する
+    },
 
     // --- ユニット進捗 ---
     unitState(unitId) { return load().units[unitId] || null; },
@@ -218,7 +229,7 @@ const Store = (() => {
       save();
     },
 
-    // --- パート過去問 ---
+    // --- パート別 本番レベル演習 ---
     partExamState(partId) { return load().partExams[partId] || null; },
     setPartExamResult(partId, percent, cleared) {
       const d = load();

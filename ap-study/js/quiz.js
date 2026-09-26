@@ -1,4 +1,4 @@
-// クイズエンジン: 一問一答 / パート過去問 / 模擬試験 で共通利用
+// クイズエンジン: 一問一答 / 本番レベル演習 / 模擬試験 で共通利用
 const Quiz = (() => {
   const KEYS = ['ア', 'イ', 'ウ', 'エ'];
   let state = null;
@@ -21,10 +21,25 @@ const Quiz = (() => {
     return a;
   }
 
+  // 選択肢の並びを出題ごとにシャッフルした問題を返す(正解位置の偏り・位置の暗記を防ぐ)。
+  // 数値だけの選択肢は本試験と同じく小さい順のまま残す。
+  function isNumericChoices(choices) {
+    return choices.every((c) => /^[−\-]?[\d.,]+\s*(倍|回|通り|秒|ビット|ナノ秒|万円|百万円|台|%|個|日|MIPS)?$/.test(String(c).trim()));
+  }
+  function withShuffledChoices(q) {
+    if (!q.choices || q.fixedOrder || isNumericChoices(q.choices)) return q;
+    const order = shuffle(q.choices.map((_, i) => i));
+    return Object.assign({}, q, {
+      choices: order.map((i) => q.choices[i]),
+      answer: order.indexOf(q.answer),
+    });
+  }
+
   // config: { title, questions, mode: 'check'|'practice'|'mock',
   //           passRate, timeLimitSec, backLabel, onBack, onFinish }
   function start(config) {
     stopTimer();
+    config = Object.assign({}, config, { questions: config.questions.map(withShuffledChoices) });
     state = {
       cfg: config,
       idx: 0,
@@ -110,6 +125,7 @@ const Quiz = (() => {
           <div id="quiz-feedback"></div>
         </div>
         <div class="quiz-next">
+          <span class="kbd-hint">キーボード: 1〜4キーで解答 ・ Enterキーで次へ</span>
           <button class="btn btn-ghost" id="quiz-quit">${esc(cfg.backLabel || 'やめる')}</button>
         </div>
       </div>`;
@@ -146,7 +162,7 @@ const Quiz = (() => {
       return;
     }
 
-    // 即時フィードバック(一問一答・過去問演習)
+    // 即時フィードバック(一問一答・本番レベル演習)
     $view().querySelectorAll('.choice').forEach((btn, bi) => {
       btn.disabled = true;
       if (bi === q.answer) btn.classList.add('is-correct');
@@ -274,5 +290,10 @@ const Quiz = (() => {
     });
   }
 
-  return { start, shuffle, KEYS };
+  // 表示中の問題(テスト・デバッグ用)
+  function current() {
+    return state ? state.cfg.questions[state.idx] : null;
+  }
+
+  return { start, shuffle, withShuffledChoices, current, KEYS };
 })();

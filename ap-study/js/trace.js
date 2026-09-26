@@ -165,6 +165,7 @@ const Trace = (() => {
     asked += 1;
     if (ok) correct += 1;
     Store.recordAnswer('basics', ok);
+    Store.studyTick();
     answered = true;
     paint(`
       <div class="feedback ${ok ? 'ok' : 'ng'}">
