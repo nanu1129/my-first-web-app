@@ -4,13 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>マナビット | 応用情報技術者試験の学習サイト</title>
-  <meta name="description" content="応用情報技術者試験の学習サイト「マナビット」。教材で学び、一問一答で確認し、過去問で仕上げる段階式カリキュラム。模擬試験・暗記カード・弱点分析つき。">
+  <meta name="description" content="応用情報技術者試験の学習サイト「マナビット」。教材で学び、一問一答で確認し、本番レベル演習で仕上げる段階式カリキュラム。模擬試験・午後演習・暗記カード・間隔反復・学習計画つき。">
   <meta name="theme-color" content="#FAF9F6">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="マナビット">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=M+PLUS+1+Code:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <header class="site-header">
@@ -43,7 +46,7 @@
     <!-- ユニット学習(教材) -->
     <section class="view" id="view-lesson" hidden></section>
 
-    <!-- クイズ(一問一答 / 過去問演習 / 模試 共通) -->
+    <!-- クイズ(一問一答 / 本番レベル演習 / 模試 共通) -->
     <section class="view" id="view-quiz" hidden></section>
 
     <!-- 実践トレーニング(計算ドリル/トレース/午後演習) -->
@@ -60,8 +63,8 @@
   </main>
 
   <footer class="site-footer">
-    <p>過去問演習・模擬試験の問題の出典: IPA 独立行政法人 情報処理推進機構「応用情報技術者試験 午前 過去問題」。
-      本サイトは学習用の非公式教材であり、収録した過去問の文言は原文と一部異なる場合があります。</p>
+    <p>本番レベル演習・模擬試験の問題は、IPA(独立行政法人 情報処理推進機構)応用情報技術者試験の午前試験の出題傾向をもとに作成した学習用のオリジナル問題です。
+      本物の過去問題と解答は <a href="https://www.ipa.go.jp/shiken/" target="_blank" rel="noopener">IPA 公式サイト</a> で公開されています。本サイトはIPAとは関係のない非公式の学習教材です。</p>
     <p>学習の記録は端末内(localStorage)に保存されます。ヘッダの同期ボタンからGoogleでログインすると、PCとスマホなど複数の端末で共有できます。</p>
   </footer>
 
@@ -77,28 +80,31 @@
   <script src="data/lessons-strategy.js?v=3"></script>
   <script src="data/lessons-more1.js?v=1"></script>
   <script src="data/lessons-more2.js?v=1"></script>
-  <script src="data/questions-tech.js?v=1"></script>
-  <script src="data/questions-other.js?v=1"></script>
+  <script src="data/questions-tech.js?v=2"></script>
+  <script src="data/questions-other.js?v=2"></script>
+  <script src="data/questions-more.js?v=1"></script>
   <script src="data/terms.js?v=1"></script>
-  <script src="data/afternoon.js?v=1"></script>
+  <script src="data/terms-more.js?v=1"></script>
+  <script src="data/afternoon.js?v=2"></script>
+  <script src="data/afternoon-more.js?v=1"></script>
   <!-- アプリ -->
   <script src="js/firebase-config.js?v=1"></script>
-  <script src="js/storage.js?v=4"></script>
+  <script src="js/storage.js?v=5"></script>
   <script src="js/sync.js?v=1"></script>
-  <script src="js/quiz.js?v=4"></script>
+  <script src="js/quiz.js?v=5"></script>
   <script src="js/art.js?v=2"></script>
   <script src="js/art2.js?v=3"></script>
   <script src="js/art3.js?v=1"></script>
   <script src="js/widgets.js?v=2"></script>
-  <script src="js/plan.js?v=1"></script>
-  <script src="js/course.js?v=7"></script>
-  <script src="js/exam.js?v=1"></script>
+  <script src="js/plan.js?v=2"></script>
+  <script src="js/course.js?v=8"></script>
+  <script src="js/exam.js?v=2"></script>
   <script src="js/cards.js?v=2"></script>
-  <script src="js/practice.js?v=2"></script>
-  <script src="js/drill.js?v=2"></script>
-  <script src="js/trace.js?v=2"></script>
-  <script src="js/afternoon.js?v=2"></script>
-  <script src="js/stats.js?v=6"></script>
-  <script src="js/app.js?v=5"></script>
+  <script src="js/practice.js?v=3"></script>
+  <script src="js/drill.js?v=3"></script>
+  <script src="js/trace.js?v=3"></script>
+  <script src="js/afternoon.js?v=3"></script>
+  <script src="js/stats.js?v=7"></script>
+  <script src="js/app.js?v=6"></script>
 </body>
 </html>

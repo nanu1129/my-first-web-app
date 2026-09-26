@@ -13,7 +13,7 @@ const Exam = (() => {
     const total = AP.questions.length;
     $view().innerHTML = `
       <h2 class="view-title">模擬試験</h2>
-      <p class="view-lead">全分野の過去問から本試験の配分比でランダムに出題します。制限時間つき・採点は最後にまとめて行います(合格ライン60%)。</p>
+      <p class="view-lead">全分野の本番レベル問題から、本試験の分野配分に合わせてランダムに出題します。制限時間つき・採点は最後にまとめて行います(合格ライン60%)。</p>
       <div class="exam-options">
         ${PLANS.map((p, i) => `
           <button class="exam-option" data-plan="${i}">
@@ -21,7 +21,8 @@ const Exam = (() => {
             <p class="eo-desc">${p.desc}</p>
           </button>`).join('')}
       </div>
-      <p class="exam-note">収録過去問: ${total}問(IPA 応用情報技術者試験 午前 過去問題より)。途中でやめると採点されません。</p>`;
+      <p class="exam-note">収録問題: ${total}問(午前試験の頻出テーマをもとに作成した演習問題)。途中でやめると採点されません。
+        本物の過去問題は <a href="https://www.ipa.go.jp/shiken/" target="_blank" rel="noopener">IPA 公式サイト</a> で公開されています。仕上げに解いておきましょう。</p>`;
 
     $view().querySelectorAll('.exam-option').forEach((btn) => {
       btn.addEventListener('click', () => start(PLANS[Number(btn.dataset.plan)]));

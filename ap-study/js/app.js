@@ -92,8 +92,36 @@ const App = (() => {
       });
     }
     Sync.init();
+    initKeyboard();
+
+    // オフライン対応(対応ブラウザのみ。https または localhost で有効)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
 
     goHome();
+  }
+
+  // キーボード操作: 1〜4キーで選択肢を選ぶ / Enterキーで「次へ」「選択肢を見る」
+  function initKeyboard() {
+    document.addEventListener('keydown', (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const view = document.querySelector('main .view:not([hidden])');
+      if (!view) return;
+      const idx = ['1', '2', '3', '4'].indexOf(e.key);
+      if (idx >= 0) {
+        const choices = view.querySelectorAll('.choice:not([disabled])');
+        if (choices[idx]) { e.preventDefault(); choices[idx].click(); }
+        return;
+      }
+      // ボタンにフォーカスがあるときはブラウザ標準の Enter 動作に任せる(二重実行防止)
+      if (e.key === 'Enter' && tag !== 'BUTTON' && tag !== 'A') {
+        const btn = view.querySelector('#recall-reveal, #quiz-next-btn, #case-next, #drill-next, #trace-next');
+        if (btn) { e.preventDefault(); btn.click(); }
+      }
+    });
   }
 
   // 同期でデータが更新されたとき、表示中の画面を描き直す

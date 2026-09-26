@@ -380,7 +380,12 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .feedback.ok .feedback-head { color: var(--ok); }
 .feedback.ng .feedback-head { color: var(--ng); }
 .feedback-exp { font-size: 13.5px; color: var(--ink-2); }
-.quiz-next { margin-top: 18px; display: flex; justify-content: flex-end; }
+.quiz-next { margin-top: 18px; display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+.kbd-hint { margin-right: auto; font-size: 11.5px; color: var(--ink-3); }
+@media (hover: none), (pointer: coarse) { .kbd-hint { display: none; } }
+.backup-msg { font-size: 12.5px; margin-top: 10px; min-height: 1em; font-weight: 700; }
+.backup-msg.ok { color: var(--ok); }
+.backup-msg.ng { color: var(--ng); }
 
 /* クイズ結果 */
 .quiz-result {
@@ -515,6 +520,8 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
   border: 1px solid var(--line); border-radius: var(--radius-input); padding: 6px 10px;
 }
 .plan-date input:focus { outline: none; border-color: var(--accent); }
+.plan-ipa { font-size: 11px; font-weight: 700; color: var(--accent); text-decoration: none; }
+.plan-ipa:hover { text-decoration: underline; }
 
 .phase-bar { display: flex; gap: 6px; margin: 16px 0 8px; position: relative; }
 .phase-seg {
@@ -708,6 +715,47 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 }
 .pill-ng { background: var(--ng); color: #fff; }
 .pill-accent { background: var(--accent); color: var(--accent-ink); }
+
+.pill-ok { background: var(--ok); color: #fff; }
+
+/* 午後演習: 記述式 */
+.case-code {
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.75;
+  background: var(--surface-2); border-radius: 10px; padding: 12px 14px; margin: 4px 0 12px;
+  white-space: pre-wrap; overflow-x: auto;
+}
+.write-box { margin-top: 6px; }
+.write-input {
+  width: 100%; font: inherit; font-size: 15px; line-height: 1.7; color: var(--ink);
+  background: var(--surface-2); border: 1.5px solid var(--line); border-radius: var(--radius-input);
+  padding: 10px 12px; resize: vertical;
+}
+.write-input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.write-input[readonly] { opacity: .85; }
+.write-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.write-count { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; font-weight: 700; }
+.write-count.over { color: var(--ng); }
+.model-box { margin-top: 14px; background: var(--accent-soft); border-radius: 12px; padding: 14px 16px; }
+.model-label { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .06em; }
+.model-text { font-size: 15px; font-weight: 700; margin-top: 3px; line-height: 1.7; }
+.kw-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.kw {
+  font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+  background: var(--surface); color: var(--ink-2); border: 1px solid var(--line);
+}
+.kw.hit { background: var(--ok); color: #fff; border-color: var(--ok); }
+.grade-box { margin-top: 14px; }
+.grade-label { font-size: 12.5px; color: var(--ink-2); font-weight: 700; margin-bottom: 8px; }
+.grade-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.grade-btn {
+  flex: 1; min-width: 110px; padding: 10px 12px; border-radius: var(--radius-btn);
+  font-weight: 700; font-size: 13px; border: 1.5px solid var(--line); background: var(--surface);
+}
+.grade-btn.ok:hover { border-color: var(--ok); color: var(--ok); }
+.grade-btn.mid:hover { border-color: var(--gold); color: var(--gold); }
+.grade-btn.ng:hover { border-color: var(--ng); color: var(--ng); }
+.feedback.mid { background: var(--gold-soft); }
+.feedback.mid .feedback-head { color: var(--gold); }
 
 /* たとえ話ボックス */
 .story-box {

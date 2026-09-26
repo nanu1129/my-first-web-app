@@ -252,6 +252,7 @@ const Drill = (() => {
     session.asked += 1;
     if (ok) { session.correct += 1; session.streak += 1; } else { session.streak = 0; }
     Store.recordAnswer(current.partId, ok);
+    Store.studyTick();
     const fb = `
       <div class="feedback ${ok ? 'ok' : 'ng'}">
         <p class="feedback-head">${ok ? '正解!この調子!' : `残念、不正解… 正解は「${esc(current.ans)}${esc(current.unit || '')}」`}</p>

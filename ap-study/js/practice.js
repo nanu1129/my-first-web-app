@@ -24,7 +24,7 @@ const Practice = (() => {
         </button>
         <button class="practice-card" data-go="afternoon">
           <span class="pc-title">午後演習(ケーススタディ)</span>
-          <span class="pc-desc">本番の午後試験風の長文シナリオを読み、設問に答える演習。セキュリティ・DB・ネットワークの3題。</span>
+          <span class="pc-desc">本番の午後試験風の長文シナリオを読み、選択式と記述式の設問に答える演習。セキュリティ(必須)・DB・ネットワーク・PM・経営戦略・アルゴリズムの${AP.cases.length}題。</span>
           <span class="pc-cta">${clearedCases} / ${AP.cases.length} 題クリア →</span>
         </button>
       </div>`;

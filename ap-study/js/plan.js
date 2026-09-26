@@ -58,7 +58,7 @@ const Plan = (() => {
     const bEnd = new Date(start.getTime() + Math.round(totalDays * 0.8) * DAY);
     const phases = [
       { key: 'input', name: '基礎固め', desc: '教材と一問一答で全ユニットを一周', end: aEnd },
-      { key: 'drill', name: '演習期', desc: '過去問演習と計算ドリルで解く力をつける', end: bEnd },
+      { key: 'drill', name: '演習期', desc: '本番レベル演習と計算ドリルで解く力をつける', end: bEnd },
       { key: 'final', name: '仕上げ', desc: '模試・午後演習・復習ゼロ化で本番に備える', end: exam },
     ];
     const phaseIdx = today >= bEnd ? 2 : (today >= aEnd ? 1 : 0);
@@ -96,7 +96,7 @@ const Plan = (() => {
       });
     }
     if (phaseIdx >= 1 && nextPart) {
-      tasks.push({ act: 'part', id: nextPart.id, label: `過去問演習: ${nextPart.name}`, sub: '正答率60%以上でクリア' });
+      tasks.push({ act: 'part', id: nextPart.id, label: `本番レベル演習: ${nextPart.name}`, sub: '正答率60%以上でクリア' });
     }
     if (phaseIdx >= 1) {
       tasks.push({ act: 'drill', label: '計算ドリル 10問', sub: '数値が変わっても解ける状態に' });
