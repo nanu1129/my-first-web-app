@@ -422,21 +422,39 @@ const Course = (() => {
     window.scrollTo(0, 0);
   }
 
+  function renderTable(t) {
+    return `${t.cap ? `<p class="lesson-table-cap">${esc(t.cap)}</p>` : ''}
+      <div class="lesson-table-wrap"><table class="lesson-table ${t.stack ? 'is-stack' : ''}">
+        <thead><tr>${t.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${t.rows.map((r) => `<tr>${r.map((c, i) => `<td data-label="${esc(t.head[i] || '')}">${esc(c).replace(/\n/g, '<br>')}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`;
+  }
+
+  // 例題: 問題だけを見せ、考えてから答えを開く
+  function renderExample(ex) {
+    return `<div class="example-box">
+        <p class="example-label">例題</p>
+        <p class="example-q">${esc(ex.q)}</p>
+        <details>
+          <summary>考えてから、解き方と答えを見る</summary>
+          ${ex.steps ? `<ol class="example-steps">${ex.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}
+          <p class="example-a"><span>答え</span>${esc(ex.a)}</p>
+        </details>
+      </div>`;
+  }
+
   function renderSection(sec) {
     const paras = sec.body.split('\n').filter(Boolean).map((p) => `<p>${esc(p)}</p>`).join('');
-    const table = sec.table
-      ? `<div class="lesson-table-wrap"><table class="lesson-table">
-           <thead><tr>${sec.table.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-           <tbody>${sec.table.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
-         </table></div>`
-      : '';
+    const code = sec.code ? `<pre class="lesson-code">${esc(sec.code)}</pre>` : '';
+    const tables = (sec.tables || (sec.table ? [sec.table] : [])).map(renderTable).join('');
+    const example = sec.example ? renderExample(sec.example) : '';
     const points = sec.points
       ? `<div class="points-box"><p class="points-label">POINT</p>
            <ul>${sec.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`
       : '';
     const art = sec.art ? ArtPlayer.figureHtml(sec.art) : '';
     const widget = sec.widget ? Widgets.html(sec.widget) : '';
-    return `<section class="lesson-section"><h3>${esc(sec.h)}</h3>${paras}${art}${widget}${table}${points}</section>`;
+    return `<section class="lesson-section"><h3>${esc(sec.h)}</h3>${paras}${code}${art}${widget}${tables}${example}${points}</section>`;
   }
 
   // ---------- ユニット確認テスト ----------
