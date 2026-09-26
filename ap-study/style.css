@@ -292,6 +292,34 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .lesson-table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .lesson-table th, .lesson-table td { border: 1px solid var(--line); padding: 7px 12px; text-align: left; }
 .lesson-table th { background: var(--surface-2); font-weight: 700; white-space: nowrap; }
+.lesson-table-cap { font-size: 12.5px; font-weight: 700; color: var(--ink-2); margin: 14px 0 0; }
+
+/* 教材内のコード(SQLなど) */
+.lesson-code {
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.75;
+  background: var(--surface-2); border-radius: 10px; padding: 12px 14px; margin: 4px 0 14px;
+  white-space: pre-wrap; overflow-x: auto;
+}
+
+/* 例題(答えは開くまで隠す) */
+.example-box {
+  border: 1.5px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 14px 0 12px;
+  background: var(--surface);
+}
+.example-label {
+  display: inline-block; font-size: 11px; font-weight: 900; letter-spacing: .08em;
+  color: var(--gold); background: var(--gold-soft); border-radius: 999px; padding: 2px 10px; margin-bottom: 8px;
+}
+.example-q { font-size: 14px; font-weight: 700; line-height: 1.8; }
+.example-box details { margin-top: 8px; }
+.example-box summary { font-size: 13px; font-weight: 700; color: var(--accent); cursor: pointer; padding: 4px 0; }
+.example-steps { margin: 8px 0 6px 1.4em; font-size: 13.5px; line-height: 1.8; }
+.example-steps li { margin-bottom: 2px; }
+.example-a { font-size: 14px; font-weight: 700; margin-top: 6px; }
+.example-a span {
+  font-size: 11px; font-weight: 900; color: var(--ok); background: var(--ok-soft);
+  border-radius: 999px; padding: 2px 10px; margin-right: 8px; vertical-align: 1px;
+}
 
 /* 図解・アニメ図解 */
 .art {
@@ -960,3 +988,44 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
   .part-meter { display: none; }
   .score-big { font-size: 42px; }
 }
+
+/* パリティチェック・SQL実行ラボ */
+.w-row-label { font-size: 12px; font-weight: 700; color: var(--ink-2); margin: 12px 0 6px; }
+.w-bit.is-parity { border-style: dashed; }
+.w-bit.is-flip { background: var(--ng-soft); border-color: var(--ng); color: var(--ng); }
+.w-bit.is-flip small { color: var(--ng); opacity: 1; font-weight: 900; }
+.w-sql-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.w-sql-tab {
+  font-size: 12.5px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
+  background: var(--surface); border: 1.5px solid var(--line); color: var(--ink-2);
+}
+.w-sql-tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.w-sql-code { margin-bottom: 4px; background: var(--surface); }
+.w-sql-table { background: var(--surface); }
+.w-sql-table tr.is-hit td { background: var(--accent-soft); font-weight: 700; }
+.w-sql-table tr.is-out td { color: var(--ink-3); }
+.w-sql-table tr.g0 td { background: var(--accent-soft); }
+.w-sql-table tr.g1 td { background: var(--gold-soft); }
+.w-sql-table tr.g2 td { background: var(--ok-soft); }
+.w-sql-table tr.is-out td { background: var(--surface); text-decoration: line-through; }
+
+/* 文章の多い表: PCでは1列目を折り返さず、スマホではカード形式に並べ替える */
+@media (min-width: 561px) {
+  .lesson-table.is-stack td:first-child { white-space: nowrap; font-weight: 700; }
+}
+@media (max-width: 560px) {
+  .lesson-table.is-stack, .lesson-table.is-stack tbody, .lesson-table.is-stack tr, .lesson-table.is-stack td { display: block; width: 100%; }
+  .lesson-table.is-stack thead { display: none; }
+  .lesson-table.is-stack tr {
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; padding: 8px 12px; background: var(--surface);
+  }
+  .lesson-table.is-stack td { border: none; padding: 3px 0; }
+  .lesson-table.is-stack td:first-child { font-weight: 700; font-size: 14px; }
+  .lesson-table.is-stack td:not(:first-child)::before {
+    content: attr(data-label); display: block; font-size: 11px; font-weight: 700; color: var(--ink-3);
+  }
+  .lesson-table.is-stack td:empty { display: none; }
+  .lesson-table th, .lesson-table td { padding: 6px 8px; }
+}
+.w-sql-table th, .w-sql-table td { white-space: nowrap; }
+@media (max-width: 560px) { .w-sql-table { font-size: 12px; } }

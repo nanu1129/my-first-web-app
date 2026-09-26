@@ -282,6 +282,152 @@ const Widgets = (() => {
         paint();
       },
     },
+
+    // ---- パリティチェック: 受信したビットを反転させて、誤りを見つけられるか試す ----
+    parity: {
+      render(el) {
+        let data = [1, 0, 1, 1, 0, 0, 1];
+        let recv = null;
+        const code = () => data.concat(data.reduce((p, b) => p ^ b, 0)); // 偶数パリティ
+        function paint() {
+          const sent = code();
+          if (!recv) recv = sent.slice();
+          const flips = recv.filter((b, i) => b !== sent[i]).length;
+          const ones = recv.reduce((n, b) => n + b, 0);
+          const ok = ones % 2 === 0;
+          const bit = (b, i, cls, label) => `<button class="w-bit ${b ? 'on' : ''} ${cls}" data-i="${i}"><small>${label}</small><b>${b}</b></button>`;
+          let verdict;
+          if (!ok) verdict = `<span style="color:var(--ok)">1が${ones}個(奇数) → 誤りを検出!</span>`;
+          else if (flips === 0) verdict = `1が${ones}個(偶数) → 誤りなし`;
+          else verdict = `<span style="color:var(--ng)">1が${ones}個(偶数) → 誤りなしと判定…でも実は${flips}ビット反転している(見逃し)</span>`;
+          el.innerHTML = `
+            <p class="widget-title">パリティチェック: 通信の途中でビットが反転したら、受け取った側は気づけるか試そう</p>
+            <p class="w-row-label">送る側(データ7ビットをタップで変更。最後の1ビットは偶数パリティで自動的に決まる)</p>
+            <div class="w-bits" data-row="send">
+              ${sent.map((b, i) => bit(b, i, i === 7 ? 'is-parity' : '', i === 7 ? 'パリティ' : `D${i + 1}`)).join('')}
+            </div>
+            <p class="w-row-label">受け取った側(タップすると、そのビットがノイズで反転する)</p>
+            <div class="w-bits" data-row="recv">
+              ${recv.map((b, i) => bit(b, i, b !== sent[i] ? 'is-flip' : '', b !== sent[i] ? '反転!' : (i === 7 ? 'パリティ' : `D${i + 1}`))).join('')}
+            </div>
+            <p class="w-result">${verdict}</p>
+            <button class="btn-mini" data-reset>ノイズを消す</button>
+            <p class="widget-note">1ビットだけ反転させると必ず見つかります。2ビット反転させると偶数に戻ってしまい、見逃すことを確かめてみましょう。どのビットが反転したかも分からないので、パリティでは訂正はできません。</p>`;
+          el.querySelectorAll('[data-row="send"] .w-bit').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const i = Number(btn.dataset.i);
+              if (i === 7) return;
+              data[i] ^= 1;
+              recv = null;
+              paint();
+            });
+          });
+          el.querySelectorAll('[data-row="recv"] .w-bit').forEach((btn) => {
+            btn.addEventListener('click', () => { recv[Number(btn.dataset.i)] ^= 1; paint(); });
+          });
+          el.querySelector('[data-reset]').addEventListener('click', () => { recv = null; paint(); });
+        }
+        paint();
+      },
+    },
+
+    // ---- SQL実行ラボ: 用意したSQLを選んで、行の絞込みと結果を見る ----
+    sql: {
+      render(el) {
+        const HEAD = ['商品番号', '商品名', '分類', '価格'];
+        const DATA = [
+          [101, 'メロンパン', 'パン', 180], [102, 'カレーパン', 'パン', 220], [103, '食パン', 'パン', 350],
+          [201, '緑茶', '飲料', 150], [202, 'コーヒー', '飲料', 400],
+          [301, 'ショートケーキ', '菓子', 480], [302, 'ロールケーキ', '菓子', 1200], [303, 'クッキー', '菓子', 600],
+        ];
+        const price = (r) => r[3];
+        const avg = (rows) => rows.reduce((n, r) => n + price(r), 0) / rows.length;
+        const fmt = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+        const groupsOf = (rows) => {
+          const g = new Map();
+          rows.forEach((r) => { if (!g.has(r[2])) g.set(r[2], []); g.get(r[2]).push(r); });
+          return [...g.entries()];
+        };
+        const overall = avg(DATA);
+        const Q = [
+          {
+            label: 'WHERE で行を絞る',
+            sql: 'SELECT *\nFROM 商品\nWHERE 価格 >= 400',
+            keep: (r) => price(r) >= 400,
+            result: (rows) => ({ head: HEAD, rows }),
+            note: 'WHERE は1行ずつ条件を調べ、合う行だけを残します(関係演算の「選択」)。',
+          },
+          {
+            label: '列を選んで並べ替え',
+            sql: "SELECT 商品名, 価格\nFROM 商品\nWHERE 分類 = 'パン'\nORDER BY 価格 DESC",
+            keep: (r) => r[2] === 'パン',
+            result: (rows) => ({ head: ['商品名', '価格'], rows: rows.slice().sort((a, b) => price(b) - price(a)).map((r) => [r[1], r[3]]) }),
+            note: 'SELECT の後ろに書いた列だけが残り(射影)、ORDER BY … DESC で価格の高い順(降順)に並びます。',
+          },
+          {
+            label: 'GROUP BY で集計',
+            sql: 'SELECT 分類, COUNT(*), AVG(価格)\nFROM 商品\nGROUP BY 分類',
+            group: true,
+            result: (rows) => ({ head: ['分類', 'COUNT(*)', 'AVG(価格)'], rows: groupsOf(rows).map(([k, g]) => [k, g.length, fmt(avg(g))]) }),
+            note: 'GROUP BY で分類ごとにまとめ、グループごとに件数と平均を1行で返します。色がグループを表しています。',
+          },
+          {
+            label: 'HAVING でグループを絞る',
+            sql: 'SELECT 分類, AVG(価格)\nFROM 商品\nGROUP BY 分類\nHAVING AVG(価格) >= 260',
+            group: true,
+            keepGroup: (g) => avg(g) >= 260,
+            result: (rows) => ({ head: ['分類', 'AVG(価格)'], rows: groupsOf(rows).filter(([, g]) => avg(g) >= 260).map(([k, g]) => [k, fmt(avg(g))]) }),
+            note: 'HAVING は、まとめたあとの「グループ」に条件をかけます。平均250円のパンのグループが外れました。1行ずつ調べる WHERE との違いに注目。',
+          },
+          {
+            label: 'LIKE であいまい検索',
+            sql: "SELECT 商品名\nFROM 商品\nWHERE 商品名 LIKE '%ケーキ'",
+            keep: (r) => r[1].endsWith('ケーキ'),
+            result: (rows) => ({ head: ['商品名'], rows: rows.map((r) => [r[1]]) }),
+            note: "% は0文字以上の任意の文字列。'%ケーキ' は「ケーキで終わる」という意味です。",
+          },
+          {
+            label: '副問合せ',
+            sql: 'SELECT 商品名, 価格\nFROM 商品\nWHERE 価格 > (SELECT AVG(価格)\n              FROM 商品)',
+            keep: (r) => price(r) > overall,
+            result: (rows) => ({ head: ['商品名', '価格'], rows: rows.map((r) => [r[1], r[3]]) }),
+            note: `かっこの中の SELECT(副問合せ)が先に実行され、全商品の平均 ${fmt(overall)}円 が求まります。それより高い商品だけが残ります。`,
+          },
+        ];
+        let qi = 0;
+        const table = (head, rows, rowCls) => `
+          <div class="lesson-table-wrap"><table class="lesson-table w-sql-table">
+            <thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+            <tbody>${rows.length ? rows.map((r, i) => `<tr class="${rowCls ? rowCls(i) : ''}">${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')
+              : `<tr><td colspan="${head.length}">(該当なし)</td></tr>`}</tbody>
+          </table></div>`;
+        function paint() {
+          const q = Q[qi];
+          const kept = q.keep ? DATA.filter(q.keep) : DATA;
+          const gIndex = new Map(groupsOf(DATA).map(([k], i) => [k, i]));
+          const groupOk = new Map(groupsOf(DATA).map(([k, g]) => [k, !q.keepGroup || q.keepGroup(g)]));
+          const cls = (i) => {
+            const r = DATA[i];
+            if (q.group) return `g${gIndex.get(r[2])}${groupOk.get(r[2]) ? '' : ' is-out'}`;
+            return q.keep(r) ? 'is-hit' : 'is-out';
+          };
+          const res = q.result(kept);
+          el.innerHTML = `
+            <p class="widget-title">SQL実行ラボ: SQLを選んで、どの行が残り、どんな結果になるか見てみよう</p>
+            <div class="w-sql-tabs">${Q.map((x, i) => `<button class="w-sql-tab ${i === qi ? 'on' : ''}" data-q="${i}">${x.label}</button>`).join('')}</div>
+            <pre class="lesson-code w-sql-code">${q.sql}</pre>
+            <p class="w-row-label">元の表「商品」${q.group ? '(色 = グループ)' : '(色付き = 条件に合う行)'}</p>
+            ${table(HEAD, DATA, cls)}
+            <p class="w-row-label">実行結果</p>
+            ${table(res.head, res.rows)}
+            <p class="widget-note">${q.note}</p>`;
+          el.querySelectorAll('.w-sql-tab').forEach((btn) => {
+            btn.addEventListener('click', () => { qi = Number(btn.dataset.q); paint(); });
+          });
+        }
+        paint();
+      },
+    },
   };
 
   function html(id) {
