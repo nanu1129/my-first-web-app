@@ -312,4 +312,105 @@
       frames: [{ svg: svg(196, s), cap: '定量発注方式: 在庫が発注点まで減ったら発注し、調達期間のあとに入荷する。調達期間中に使う量 + 安全在庫 = 発注点。' }],
     };
   }
+
+  // ---- 仮想マシンとコンテナの違い ----
+  {
+    let s = '';
+    const panel = (x, title) => box(x, 6, 266, 206, '', { fill: C.s2, stroke: 'none', r: 12 }) + txt(x + 133, 24, title, { fs: 12.5, w: 900, col: C.ink });
+    // 仮想マシン
+    s += panel(8, '仮想マシン(ハイパバイザ型)');
+    [0, 1, 2].forEach((i) => {
+      const x = 18 + i * 84;
+      s += box(x - 2, 40, 80, 102, '', { fill: 'none', stroke: C.ink3, dash: true, r: 8 });
+      s += box(x + 4, 48, 68, 38, 'アプリ', { fs: 11.5, fill: C.accSoft, stroke: C.acc, col: C.acc });
+      s += box(x + 4, 94, 68, 38, 'ゲストOS', { fs: 11.5, fill: C.goldSoft, stroke: C.gold, col: C.gold });
+    });
+    s += box(16, 150, 250, 26, 'ハイパバイザ', { fs: 11.5 });
+    s += box(16, 180, 250, 26, 'ハードウェア', { fs: 11.5, fill: C.surf });
+    // コンテナ
+    s += panel(286, 'コンテナ');
+    [0, 1, 2].forEach((i) => {
+      const x = 296 + i * 84;
+      s += box(x + 4, 76, 68, 56, 'アプリ\n+部品', { fs: 11.5, fill: C.accSoft, stroke: C.acc, col: C.acc });
+    });
+    s += box(294, 138, 250, 22, 'コンテナエンジン(Dockerなど)', { fs: 11 });
+    s += box(294, 162, 250, 20, 'ホストOS(カーネルを共有)', { fs: 11, fill: C.goldSoft, stroke: C.gold, col: C.gold });
+    s += box(294, 186, 250, 20, 'ハードウェア', { fs: 11, fill: C.surf });
+    s += txt(420, 54, 'ゲストOSがない → 軽くて起動が速い', { fs: 11, w: 700, col: C.ok });
+    AP.art['vm-container'] = {
+      frames: [{ svg: svg(218, s), cap: '仮想マシンは1台ごとにゲストOSを持つので、Windowsの上でLinuxを動かすなど別のOSも使える。コンテナはホストOSを共有するので軽く速いが、ホストと違う種類のOSは動かせない。' }],
+    };
+  }
+
+  // ---- B+木による検索(アニメ) ----
+  {
+    const leaves = [[10, 20, 30], [40, 50, 60], [70, 80, 90]];
+    const LX = [25, 205, 385], LW = 150, LY = 124, KH = 34;
+    function frame(step) {
+      let s = '';
+      const rootOn = step === 0;
+      // 根
+      s += box(220, 22, 60, KH, '40', { fs: 14, fill: rootOn ? C.accSoft : C.surf, stroke: rootOn ? C.acc : C.line, col: rootOn ? C.acc : C.ink, r: 0 });
+      s += box(280, 22, 60, KH, '70', { fs: 14, fill: rootOn ? C.accSoft : C.surf, stroke: rootOn ? C.acc : C.line, col: rootOn ? C.acc : C.ink, r: 0 });
+      s += txt(210, 39, '根', { fs: 11, w: 700, col: C.ink3, a: 'end' });
+      // 枝
+      const ends = [[222, 56, LX[0] + LW / 2, LY], [280, 56, LX[1] + LW / 2, LY], [338, 56, LX[2] + LW / 2, LY]];
+      ends.forEach(([x1, y1, x2, y2], i) => {
+        const on = (step === 0 || step === 1) && i === 1;
+        s += line(x1, y1, x2, y2, on ? C.acc : C.line, { sw: on ? 3 : 2 });
+      });
+      s += txt(130, 84, '40未満', { fs: 10.5, w: 700, col: C.ink3 });
+      s += txt(305, 90, '40以上70未満', { fs: 10.5, w: 700, col: step < 2 ? C.acc : C.ink3, a: 'start' });
+      s += txt(450, 84, '70以上', { fs: 10.5, w: 700, col: C.ink3 });
+      // 葉
+      leaves.forEach((keys, li) => {
+        keys.forEach((k, ki) => {
+          const found = (step === 1 && k === 50) || (step === 2 && k >= 50 && k <= 80);
+          s += box(LX[li] + ki * 50, LY, 50, KH, String(k), {
+            r: 0, fs: 13, fill: found ? C.okSoft : C.surf, stroke: found ? C.ok : C.line, col: found ? C.ok : C.ink,
+          });
+        });
+        if (li < 2) {
+          const on = step === 2 && li === 1;
+          s += arrow(LX[li] + LW + 2, LY + KH / 2, LX[li + 1] - 2, LY + KH / 2, { col: on ? C.ok : C.ink3, sw: on ? 3 : 2 });
+        }
+      });
+      s += txt(20, LY + 52, '葉', { fs: 11, w: 700, col: C.ink3, a: 'start' });
+      const msg = [
+        '50を探す: 根で比べると「40以上70未満」→ 真ん中の枝へ進む',
+        '葉で50が見つかった → 表の行へ。読んだのは根と葉の2か所だけ',
+        '範囲検索(50〜80): 50を見つけたら、つながった葉を右へたどるだけ',
+      ][step];
+      s += txt(280, 200, msg, { fs: 12, w: 700, col: step === 0 ? C.acc : C.ok });
+      return svg(216, s);
+    }
+    AP.art['bplus-tree'] = {
+      frames: [
+        { svg: frame(0), cap: 'B+木の検索: 根から順に、キーの大小を比べて進む枝を選ぶ。' },
+        { svg: frame(1), cap: '葉にたどり着けば目的のキーが見つかる。データが増えても木の高さはあまり増えないので、少ない読込みで済む。' },
+        { svg: frame(2), cap: '葉は値の順に並び、横につながっている。だから「50以上80以下」のような範囲検索も速い(ハッシュインデックスにはできない)。' },
+      ],
+    };
+  }
+
+  // ---- セキュリティ対策の4分類 ----
+  {
+    const cells = [
+      ['物理的対策', '建物や設備を守る', '入退室管理・施錠・監視カメラ・共連れ防止', C.goldSoft, C.gold],
+      ['技術的対策', 'ITのしくみで守る', 'アクセス制御・暗号化・マルウェア対策', C.accSoft, C.acc],
+      ['人的対策', '人に働きかける', '教育・訓練・守秘義務の契約', C.okSoft, C.ok],
+      ['組織的対策', 'ルールと体制を整える', 'セキュリティポリシー・責任者・監査', C.ngSoft, C.ng],
+    ];
+    let s = '';
+    cells.forEach(([t, d, e, fill, col], i) => {
+      const x = 10 + (i % 2) * 275, y = 10 + Math.floor(i / 2) * 88;
+      s += box(x, y, 265, 80, '', { fill, stroke: 'none', r: 10 });
+      s += txt(x + 132, y + 20, t, { fs: 14, w: 700, col });
+      s += txt(x + 132, y + 44, d, { fs: 12, w: 700, col: C.ink });
+      s += txt(x + 132, y + 63, e, { fs: 11, col: C.ink2 });
+    });
+    AP.art['sec-measures'] = {
+      frames: [{ svg: svg(188, s), cap: 'どれか1つだけでは守れない。たとえば暗号化(技術)をしても、パスワードを付箋に書いて貼っていたら(人)意味がない。' }],
+    };
+  }
 })();

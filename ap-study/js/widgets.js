@@ -428,6 +428,36 @@ const Widgets = (() => {
         paint();
       },
     },
+
+    // ---- 索引の威力: データ件数と探す回数 ----
+    'index-power': {
+      render(el) {
+        let e = 6;
+        const jp = (n) => (n >= 1e8 ? `${Math.round(n / 1e7) / 10}億`
+          : n >= 1e4 ? `${Math.round(n / 1e4).toLocaleString()}万` : Math.round(n).toLocaleString());
+        function paint() {
+          const n = 10 ** e;
+          const lin = n / 2;
+          const idx = Math.ceil(Math.log2(n));
+          el.innerHTML = `
+            <p class="widget-title">索引の威力: データの件数を増やして、探す回数を比べてみよう</p>
+            <div class="w-slider-row">
+              <span class="w-slider-val" style="min-width:6em">${jp(n)}件</span>
+              <input type="range" min="3" max="8" step="1" value="${e}" id="w-ix" aria-label="データの件数">
+            </div>
+            <div class="w-bar-row"><span class="w-bar-label">端から順に探す</span>
+              <span class="w-bar"><span style="width:100%;background:var(--gold)"></span></span>
+              <span class="w-bar-val" style="width:auto;min-width:7.5em">平均 ${jp(lin)}回</span></div>
+            <div class="w-bar-row"><span class="w-bar-label">索引で絞り込む</span>
+              <span class="w-bar"><span style="width:${Math.max(0.8, (idx / lin) * 100)}%;background:var(--accent)"></span></span>
+              <span class="w-bar-val" style="width:auto;min-width:7.5em">約 ${idx}回</span></div>
+            <p class="w-result">索引を使うと、比べる回数は <span style="color:var(--accent)">約${jp(lin / idx)}分の1</span></p>
+            <p class="widget-note">件数が10倍になると、端から探す回数も10倍になりますが、索引で「半分ずつ絞り込む」回数は3〜4回増えるだけです。実際のB+木は1回の読込みで数百の枝から選べるので、1億件でも数回の読込みで目的の行にたどり着けます。</p>`;
+          el.querySelector('#w-ix').addEventListener('input', (ev) => { e = Number(ev.target.value); paint(); });
+        }
+        paint();
+      },
+    },
   };
 
   function html(id) {
