@@ -413,4 +413,94 @@
       frames: [{ svg: svg(188, s), cap: 'どれか1つだけでは守れない。たとえば暗号化(技術)をしても、パスワードを付箋に書いて貼っていたら(人)意味がない。' }],
     };
   }
+
+  // ---- カプセル化(アニメ) ----
+  {
+    const ROWS = [
+      { layer: 'アプリケーション層', parts: [], unit: 'データ' },
+      { layer: 'トランスポート層', parts: ['TCP'], unit: 'セグメント' },
+      { layer: 'ネットワーク層', parts: ['IP', 'TCP'], unit: 'パケット' },
+      { layer: 'データリンク層', parts: ['イーサネット', 'IP', 'TCP'], unit: 'フレーム' },
+    ];
+    const DX = 342, DW = 110, HW = 70, RH = 32;
+    function frame(k) {
+      let s = '';
+      ROWS.forEach((r, i) => {
+        if (i > k) return;
+        const y = 16 + i * 46;
+        const now = i === k;
+        s += txt(10, y + RH / 2, r.layer, { fs: 11, w: 700, col: now ? C.ink : C.ink3, a: 'start' });
+        s += box(DX, y, DW, RH, 'データ', { fs: 11.5, fill: C.surf, col: C.ink2 });
+        r.parts.forEach((p, j) => {
+          const x = DX - HW * (r.parts.length - j);
+          const fresh = now && j === 0;
+          s += box(x, y, HW, RH, p, {
+            fs: p.length > 3 ? 10.5 : 11.5,
+            fill: fresh ? C.accSoft : C.s2, stroke: fresh ? C.acc : C.line, col: fresh ? C.acc : C.ink2,
+          });
+        });
+        if (i === 3) s += box(DX + DW, y, 34, RH, 'FCS', { fs: 10.5, fill: now ? C.accSoft : C.s2, stroke: now ? C.acc : C.line, col: now ? C.acc : C.ink2 });
+        s += txt(i === 3 ? DX + DW + 42 : DX + DW + 10, y + RH / 2, r.unit, { fs: 11.5, w: 900, col: now ? C.acc : C.ink3, a: 'start' });
+        if (i < k) s += txt(DX + DW / 2, y + RH + 8, '↓', { fs: 11, w: 900, col: C.ink3 });
+      });
+      s += txt(280, 208, 'TCP = ポート番号 / IP = IPアドレス / イーサネット = MACアドレス', { fs: 11, w: 700, col: C.ink2 });
+      return svg(220, s);
+    }
+    AP.art['encapsulation'] = {
+      frames: [
+        { svg: frame(0), cap: 'アプリケーションが送りたいデータ(たとえばWebページの要求)。' },
+        { svg: frame(1), cap: 'トランスポート層がTCPヘッダを付ける。どのアプリ宛てかを表すポート番号などが入る(セグメント)。' },
+        { svg: frame(2), cap: 'ネットワーク層がIPヘッダを付ける。送信元と宛先のIPアドレスが入る(パケット)。' },
+        { svg: frame(3), cap: 'データリンク層がイーサネットのヘッダ(MACアドレス)と、誤り検出用のFCSを付ける(フレーム)。受信側では逆に、外側から順に外していく。' },
+      ],
+    };
+  }
+
+  // ---- ルータの前後で変わるアドレス ----
+  {
+    let s = '';
+    s += box(12, 20, 84, 40, 'PC', { fs: 14 });
+    s += box(238, 20, 84, 40, 'ルータ', { fs: 14, fill: C.s2 });
+    s += box(464, 20, 84, 40, 'サーバ', { fs: 14 });
+    s += arrow(98, 40, 234, 40, { col: C.ink3, label: '①', lfs: 12 });
+    s += arrow(324, 40, 460, 40, { col: C.ink3, label: '②', lfs: 12 });
+    const card = (x, title, macTo, macFrom) => {
+      let c = box(x, 76, 264, 104, '', { fill: C.surf, r: 10 });
+      c += txt(x + 132, 92, title, { fs: 12, w: 900, col: C.ink });
+      c += box(x + 10, 104, 244, 30, '', { fill: C.goldSoft, stroke: 'none', r: 6 });
+      c += txt(x + 20, 119, `MAC  宛先: ${macTo}  送信元: ${macFrom}`, { fs: 11.5, w: 700, col: C.gold, a: 'start' });
+      c += box(x + 10, 140, 244, 30, '', { fill: C.accSoft, stroke: 'none', r: 6 });
+      c += txt(x + 20, 155, 'IP  宛先: サーバ  送信元: PC', { fs: 11.5, w: 700, col: C.acc, a: 'start' });
+      return c;
+    };
+    s += card(12, '① PC → ルータ', 'ルータ', 'PC');
+    s += card(284, '② ルータ → サーバ', 'サーバ', 'ルータ');
+    s += txt(280, 200, 'MACアドレスは区間ごとに付け替わり、IPアドレスは最後まで変わらない', { fs: 11.5, w: 700, col: C.ink2 });
+    AP.art['mac-ip-hop'] = {
+      frames: [{ svg: svg(212, s), cap: '黄色(MACアドレス)は「隣の機器まで」の宛名なので区間ごとに変わる。青(IPアドレス)は「最終的な届け先」の住所なので変わらない。' }],
+    };
+  }
+
+  // ---- バーンダウンチャート ----
+  {
+    const X0 = 60, X1 = 520, Y0 = 170, YT = 24;
+    const days = 10, maxPt = 100;
+    const px = (d) => X0 + ((X1 - X0) * d) / days;
+    const py = (v) => Y0 - ((Y0 - YT) * v) / maxPt;
+    const actual = [100, 96, 90, 90, 84, 72, 66, 58, 44, 32, 20];
+    let s = '';
+    s += line(X0, YT - 6, X0, Y0, C.ink2) + line(X0, Y0, X1 + 8, Y0, C.ink2);
+    s += txt(X0 - 6, YT - 12, '残りの作業量', { fs: 11, w: 700, col: C.ink2, a: 'start' });
+    s += txt(X1 + 8, Y0 + 16, '日数 →', { fs: 11, w: 700, col: C.ink2, a: 'end' });
+    [0, 50, 100].forEach((v) => { s += txt(X0 - 8, py(v), String(v), { fs: 10, col: C.ink3, a: 'end' }); });
+    s += line(px(0), py(100), px(days), py(0), C.ink3, { dash: true, sw: 2 });
+    s += txt(px(7.2), py(34), '理想の線', { fs: 11, w: 700, col: C.ink3, a: 'end' });
+    s += `<polyline points="${actual.map((v, d) => `${px(d)},${py(v)}`).join(' ')}" fill="none" stroke="${C.acc}" stroke-width="2.5"/>`;
+    actual.forEach((v, d) => { s += circle(px(d), py(v), 3.5, C.acc); });
+    s += txt(548, py(20) - 32, '実績(残り20)', { fs: 11.5, w: 900, col: C.acc, a: 'end' });
+    s += txt(280, 196, '実績の線が理想の線より上にある → 予定より遅れている', { fs: 11.5, w: 700, col: C.ink2 });
+    AP.art['burndown'] = {
+      frames: [{ svg: svg(206, s), cap: 'バーンダウンチャート: 残りの作業量が毎日どれだけ減ったかを描く。この例では最終日に20ポイント残っており、次のスプリントの計画を見直す必要がある。' }],
+    };
+  }
 })();
