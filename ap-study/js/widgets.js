@@ -458,6 +458,46 @@ const Widgets = (() => {
         paint();
       },
     },
+
+    // ---- 網羅チェッカー: テストケースを選んで、どの網羅基準を満たすか確かめる ----
+    coverage: {
+      render(el) {
+        const CASES = [[1, 1], [1, 0], [0, 1], [0, 0]]; // [A > 0, B > 0]
+        const sel = new Set([0]);
+        const tf = (v) => (v ? '真' : '偽');
+        function paint() {
+          const chosen = [...sel].map((i) => CASES[i]);
+          const dec = chosen.map(([a, b]) => a && b);
+          const stmt = dec.some((d) => d);
+          const branch = stmt && dec.some((d) => !d);
+          const cond = [0, 1].every((k) => chosen.some((c) => c[k]) && chosen.some((c) => !c[k]));
+          const crit = [
+            ['命令網羅', stmt], ['判定条件網羅', branch], ['条件網羅', cond],
+            ['判定条件/条件網羅', branch && cond], ['複数条件網羅', sel.size === 4],
+          ];
+          el.innerHTML = `
+            <p class="widget-title">網羅チェッカー: テストケースを選んで、どの網羅基準を満たすか確かめよう</p>
+            <pre class="lesson-code w-sql-code">if (A > 0 and B > 0) then\n    X ← 1\nend if</pre>
+            <p class="w-row-label">テストケース(タップで選ぶ・外す)</p>
+            <div class="w-sql-tabs">${CASES.map(([a, b], i) => `
+              <button class="w-sql-tab ${sel.has(i) ? 'on' : ''}" data-c="${i}">A>0: ${tf(a)} / B>0: ${tf(b)} → 判定 ${tf(a && b)}</button>`).join('')}
+            </div>
+            <div class="w-lamps">${crit.map(([name, ok]) => `
+              <div class="w-lamp ${ok ? 'is-ok' : ''}"><span class="wl-name">${name}</span><span class="wl-val">${ok ? '満たす' : '—'}</span></div>`).join('')}
+            </div>
+            <p class="w-result">${sel.size}ケース選択中${cond && !branch ? ' <span style="color:var(--ng)">… 条件網羅は満たすのに、X ← 1 が一度も実行されない!</span>' : ''}</p>
+            <p class="widget-note">「A>0: 真 / B>0: 偽」と「A>0: 偽 / B>0: 真」の2つだけを選ぶと、条件網羅は満たしても判定条件網羅は満たさないことが分かります。4つすべて選ぶと複数条件網羅です。</p>`;
+          el.querySelectorAll('[data-c]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const i = Number(btn.dataset.c);
+              if (sel.has(i)) sel.delete(i); else sel.add(i);
+              paint();
+            });
+          });
+        }
+        paint();
+      },
+    },
   };
 
   function html(id) {
