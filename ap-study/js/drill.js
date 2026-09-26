@@ -9,6 +9,20 @@ const Drill = (() => {
     {
       id: 'base', name: '基数変換', partId: 'basics',
       gen() {
+        if (Math.random() < 0.25) {
+          // 2進小数: k/16 の形の値(0.0625刻み)は2進数4桁以内で割り切れる
+          const k = ri([2, 3, 5, 6, 7, 9, 10, 11, 12, 13, 14]);
+          const dec = k / 16;
+          const bin = `0.${k.toString(2).padStart(4, '0').replace(/0+$/, '')}`;
+          const steps = [];
+          let x = dec;
+          while (x > 0 && steps.length < 4) { x *= 2; const b = Math.floor(x); steps.push(`×2 → ${x}(${b})`); x -= b; }
+          return {
+            q: `10進数の ${dec} を2進数で表せ(小数点以下は必要な桁数まで)。`,
+            unit: '(2進数)', ans: bin,
+            exp: `小数部に2を掛け、出てきた整数部を上から並べます。${dec} ${steps.join(' ')} なので ${bin} です。`,
+          };
+        }
         if (Math.random() < 0.5) {
           const n = 33 + Math.floor(Math.random() * 94); // 33..126
           const bin = n.toString(2);
@@ -158,6 +172,58 @@ const Drill = (() => {
           q: `固定費 ${f}万円、変動費率 ${r} の会社の売上高が ${sales}万円 のとき、利益は何万円か。`,
           unit: '万円', ans: String(profit),
           exp: `利益 = 売上 × (1 − 変動費率) − 固定費 = ${sales} × ${1 - r} − ${f} = ${profit}万円です。`,
+        };
+      },
+    },
+
+    {
+      id: 'transfer', name: '伝送時間', partId: 'network',
+      gen() {
+        const combos = [];
+        [100, 200, 500, 1000, 2000].forEach((mb) => [10, 100, 1000].forEach((sp) => [0.5, 0.8, 1].forEach((ef) => {
+          const t = (mb * 8) / (sp * ef);
+          if (Number.isInteger(t) && t >= 1 && t <= 2000) combos.push([mb, sp, ef, t]);
+        })));
+        const [mb, sp, ef, t] = ri(combos);
+        return {
+          q: `${mb.toLocaleString()}Mバイトのデータを、${sp.toLocaleString()}Mビット/秒・伝送効率${ef * 100}%の回線で送るのにかかる時間は何秒か。`,
+          unit: '秒', ans: String(t),
+          exp: `${mb.toLocaleString()}Mバイト × 8 = ${(mb * 8).toLocaleString()}Mビット。実効速度は ${sp} × ${ef} = ${sp * ef}Mビット/秒。${(mb * 8).toLocaleString()} ÷ ${sp * ef} = ${t}秒です。`,
+        };
+      },
+    },
+    {
+      id: 'evmidx', name: 'EVM(SPI・CPI)', partId: 'management',
+      gen() {
+        const pv = ri([100, 120, 160, 200, 240, 400]);
+        const r1 = ri([0.6, 0.75, 0.8, 0.9, 1.2, 1.25]);
+        const ev = pv * r1;
+        const r2 = ri([0.75, 0.8, 1.25, 1.5]);
+        const ac = ev / r2;
+        if (!Number.isInteger(ev) || !Number.isInteger(ac)) return this.gen();
+        if (Math.random() < 0.5) {
+          return {
+            q: `EVMで PV=${pv}万円、EV=${ev}万円、AC=${ac}万円 のとき、スケジュール効率指数 SPI はいくらか。`,
+            unit: '', ans: String(r1),
+            exp: `SPI = EV ÷ PV = ${ev} ÷ ${pv} = ${r1}。${r1 < 1 ? '1未満なので進捗は遅れています。' : '1以上なので予定より進んでいます。'}`,
+          };
+        }
+        return {
+          q: `EVMで PV=${pv}万円、EV=${ev}万円、AC=${ac}万円 のとき、コスト効率指数 CPI はいくらか。`,
+          unit: '', ans: String(r2),
+          exp: `CPI = EV ÷ AC = ${ev} ÷ ${ac} = ${r2}。${r2 < 1 ? '1未満なので予算を超過しています。' : '1以上なので予算内に収まっています。'}`,
+        };
+      },
+    },
+    {
+      id: 'bits', name: '必要ビット数', partId: 'basics',
+      gen() {
+        const n = 3 + Math.floor(Math.random() * 1000);
+        const b = Math.ceil(Math.log2(n));
+        return {
+          q: `${n}種類の状態(値)を区別するには、最低何ビット必要か。`,
+          unit: 'ビット', ans: String(b),
+          exp: `2^${b - 1} = ${2 ** (b - 1)} < ${n} ≦ 2^${b} = ${2 ** b} なので ${b}ビットです。「${n}以上になる最小の2のべき乗」を探します。`,
         };
       },
     },

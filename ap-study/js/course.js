@@ -63,6 +63,11 @@ const Course = (() => {
           </div>
         </div>
       </div>
+      <div class="search-box">
+        <input type="search" id="home-search" class="search-input" placeholder="教材・用語を検索(例: RAID、クリティカルパス、正規化)"
+          aria-label="教材と用語を検索" autocomplete="off">
+        <div id="search-results" class="search-results" hidden></div>
+      </div>
       ${renderPlanCard()}
       ${renderDailyStrip()}
       ${AP.parts.map(renderPartCard).join('')}`;
@@ -90,6 +95,12 @@ const Course = (() => {
       Store.setGoal(Number(applyPace.dataset.n));
       renderHome();
     });
+    const search = document.getElementById('home-search');
+    if (search) {
+      let t = null;
+      search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => renderSearch(search.value), 120); });
+      search.addEventListener('keydown', (e) => { if (e.key === 'Escape') { search.value = ''; renderSearch(''); } });
+    }
     $home().querySelectorAll('.task-row').forEach((row) => {
       row.addEventListener('click', () => runTask(row.dataset.act, row.dataset.id));
     });
@@ -98,6 +109,22 @@ const Course = (() => {
   // ---------- 学習計画(試験日から逆算) ----------
   function renderPlanCard() {
     const p = Plan.compute();
+    if (p.passed) {
+      return `
+      <div class="plan-card">
+        <div class="plan-head">
+          <div class="plan-head-main">
+            <p class="plan-phase"><span class="pill pill-accent">試験日を過ぎました</span> 設定していた試験日(${p.jp(p.exam)})を過ぎています。</p>
+            <p class="plan-track">次の試験を受ける場合は、試験日を設定し直すと学習計画を作り直します。おつかれさまでした!</p>
+          </div>
+          <label class="plan-date">
+            <span>試験日</span>
+            <input type="date" id="exam-date" value="${p.examStr}">
+            <a class="plan-ipa" href="https://www.ipa.go.jp/shiken/" target="_blank" rel="noopener">試験日程を確認(IPA)</a>
+          </label>
+        </div>
+      </div>`;
+    }
     const pctElapsed = Math.min(100, Math.round((p.elapsed / p.totalDays) * 100));
     const trackText = {
       ahead: `予定より ${p.diff}ユニット 先行しています。この調子!`,
@@ -117,8 +144,8 @@ const Course = (() => {
       <div class="plan-card">
         <div class="plan-head">
           <div class="plan-count">
-            <span class="pc-label">試験まで</span>
-            <span class="pc-num">${p.daysLeft}<small>日</small></span>
+            <span class="pc-label">${p.daysLeft === 0 ? '今日が' : '試験まで'}</span>
+            <span class="pc-num">${p.daysLeft === 0 ? '本番' : `${p.daysLeft}<small>日</small>`}</span>
           </div>
           <div class="plan-head-main">
             <p class="plan-phase"><span class="pill pill-accent">いま ${esc(p.phase.name)}</span> ${esc(p.phase.desc)}</p>
@@ -149,6 +176,75 @@ const Course = (() => {
             : '<p class="chart-empty">今日のノルマは達成済みです。おつかれさま。</p>'}
         </div>
       </div>`;
+  }
+
+  // ---------- 検索(教材の節と用語) ----------
+  const norm = (s) => String(s || '').normalize('NFKC').toLowerCase();
+
+  function snippet(text, q) {
+    const t = String(text).replace(/\n+/g, ' ');
+    const i = norm(t).indexOf(q);
+    const from = Math.max(0, i - 24);
+    const part = t.slice(from, from + 90);
+    return (from > 0 ? '…' : '') + part + (from + 90 < t.length ? '…' : '');
+  }
+  function mark(text, q) {
+    const s = esc(text);
+    const i = norm(text).indexOf(q);
+    if (i < 0 || !q) return s;
+    // NFKC で長さが変わらない範囲(通常の日本語・英数字)でハイライトする
+    const raw = String(text);
+    return esc(raw.slice(0, i)) + '<mark>' + esc(raw.slice(i, i + q.length)) + '</mark>' + esc(raw.slice(i + q.length));
+  }
+
+  function renderSearch(value) {
+    const box = document.getElementById('search-results');
+    if (!box) return;
+    const q = norm(value).trim();
+    if (!q) { box.hidden = true; box.innerHTML = ''; return; }
+    const lessonHits = [];
+    AP.lessons.forEach((l) => l.units.forEach((u) => u.sections.forEach((sec) => {
+      const pts = (sec.points || []).join(' / ');
+      const inH = norm(sec.h).includes(q), inBody = norm(sec.body).includes(q), inPts = norm(pts).includes(q);
+      if (inH || inBody || inPts) {
+        // 見出しは場所の表示に出すので、抜粋は本文 → POINT の順で一致箇所の周辺を使う
+        const src = inBody ? sec.body : (inPts ? pts : sec.body);
+        lessonHits.push({ u, sec, part: partOf(l.partId), text: snippet(src, q), score: (inH ? 2 : 0) + (inBody ? 1 : 0) });
+      }
+    })));
+    lessonHits.sort((a, b) => b.score - a.score); // 見出しに含む節を先に
+    const termHits = AP.terms.filter((t) => norm(t.term).includes(q) || norm(t.def).includes(q))
+      .sort((a, b) => (norm(b.term).includes(q)) - (norm(a.term).includes(q)));
+    if (!lessonHits.length && !termHits.length) {
+      box.hidden = false;
+      box.innerHTML = '<p class="search-empty">見つかりませんでした。別の言葉で探してみよう。</p>';
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = `
+      ${lessonHits.length ? `<p class="search-head">教材(${lessonHits.length}件)</p>
+        ${lessonHits.slice(0, 8).map((h, i) => `
+          <button class="search-hit" data-hit="${i}">
+            <span class="sh-where">${esc(h.part.name)} › ${esc(h.u.title)} › ${mark(h.sec.h, q)}</span>
+            <span class="sh-text">${mark(h.text, q)}</span>
+          </button>`).join('')}` : ''}
+      ${termHits.length ? `<p class="search-head">用語(${termHits.length}件)</p>
+        ${termHits.slice(0, 6).map((t) => `
+          <div class="search-term"><b>${mark(t.term, q)}</b><span>${mark(t.def, q)}</span></div>`).join('')}` : ''}`;
+    box.querySelectorAll('[data-hit]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const h = lessonHits[Number(b.dataset.hit)];
+        openLesson(h.u.id);
+        // 該当する節までスクロールし、少しの間ハイライトする
+        const target = [...document.querySelectorAll('#view-lesson .lesson-section h3')].find((el) => el.textContent === h.sec.h);
+        if (target) {
+          const sec = target.parentElement;
+          sec.classList.add('is-found');
+          setTimeout(() => { window.scrollTo(0, sec.getBoundingClientRect().top + window.scrollY - 80); }, 0);
+          setTimeout(() => sec.classList.remove('is-found'), 2400);
+        }
+      });
+    });
   }
 
   // 目標セレクタ(10/20/30/50)のうち推奨値に最も近いもの
