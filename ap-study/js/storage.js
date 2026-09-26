@@ -347,6 +347,8 @@ const Store = (() => {
       };
     },
     setGoal(n) { this.setPref('goal', n); },
+    // 日ごとの学習問題数(全端末の合計) { 'YYYY-MM-DD': 件数 }
+    dayCounts() { return sumBucket('days'); },
 
     // --- 間違い理由の集計 ---
     addReason(reason) {

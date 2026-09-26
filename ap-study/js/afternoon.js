@@ -20,14 +20,40 @@ const Afternoon = (() => {
   const len = (s) => [...(s || '')].length;
   const fmtScore = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
+  // 午後試験の分野(これまでの出題形式)と、このサイトで練習できる分野
+  const FIELDS = ['経営戦略', '情報戦略', 'プログラミング', 'システムアーキテクチャ', 'ネットワーク', 'データベース',
+    '組込みシステム開発', '情報システム開発', 'プロジェクトマネジメント', 'サービスマネジメント', 'システム監査'];
+  const COVERED = { 経営戦略: '経営戦略', プログラミング: 'プログラミング', ネットワーク: 'ネットワーク', データベース: 'データベース',
+    プロジェクトマネジメント: 'プロジェクトマネジメント', サービスマネジメント: 'サービスマネジメント', システム監査: 'システム監査' };
+
+  function guide() {
+    return `
+      <details class="guide-box">
+        <summary>午後試験のしくみと、分野の選び方</summary>
+        <ul class="guide-list">
+          <li><b>問1 情報セキュリティは必須</b>。残りの10分野から<b>4問を選んで</b>解答します(計5問・150分。1問あたり約30分)。</li>
+          <li>選択できる分野: ${FIELDS.slice(0).map((f) => (COVERED[f]
+            ? `<span class="pill pill-accent">${f}</span>` : `<span class="pill pill-muted">${f}</span>`)).join(' ')}
+            <br><small>色つきの分野は、このサイトで練習できます。</small></li>
+          <li>選び方のヒント: 文章を読み解くのが得意なら<b>プロジェクトマネジメント・サービスマネジメント・システム監査・経営戦略</b>、
+            技術に強いなら<b>データベース・ネットワーク・プログラミング</b>が選ばれやすい分野です。
+            本番までに「得意な4分野 + 予備の1分野」を決めて、集中的に練習しておきましょう。</li>
+          <li>試験の形式は変わることがあります。最新の情報は <a href="https://www.ipa.go.jp/shiken/" target="_blank" rel="noopener">IPA 公式サイト</a> で確認してください。</li>
+        </ul>
+      </details>`;
+  }
+
   function renderMenu() {
+    // セキュリティ(必須)を先頭に並べる
+    const cases = AP.cases.slice().sort((a, b) => (b.partId === 'security') - (a.partId === 'security'));
     $view().innerHTML = `
       <div class="crumb"><button data-back>実践トレーニング</button> › 午後演習</div>
       <h2 class="view-title">午後演習(ケーススタディ)</h2>
       <p class="view-lead">本番の午後試験と同じ「長文を読んで設問に答える」形式の学習用オリジナル問題です。
         選択式に加えて、本番と同じ<b>記述式</b>の設問もあります。記述式は解答例と照らし合わせて自己採点します。</p>
+      ${guide()}
       <div class="practice-menu">
-        ${AP.cases.map((c) => {
+        ${cases.map((c) => {
           const st = Store.caseState(c.id);
           const writes = c.questions.filter((q) => q.type === 'write').length;
           return `
@@ -58,11 +84,10 @@ const Afternoon = (() => {
     window.scrollTo(0, 0);
   }
 
-  // 本文の段落。改行を含む段落(プログラムなど)は整形済みテキストとして表示する
+  // 本文の段落。プログラムは等幅の整形済みテキスト、箇条書きなどの改行は <br> で表示する
   function paragraph(p) {
-    return p.includes('\n')
-      ? `<pre class="case-code">${esc(p)}</pre>`
-      : `<p class="case-text">${esc(p)}</p>`;
+    if (cs.code && p.includes('\n')) return `<pre class="case-code">${esc(p)}</pre>`;
+    return `<p class="case-text">${p.split('\n').map(esc).join('<br>')}</p>`;
   }
 
   function paint(feedback) {

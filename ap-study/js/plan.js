@@ -108,6 +108,7 @@ const Plan = (() => {
 
     return {
       exam, examStr: examDate(), daysLeft, totalDays, elapsed,
+      passed: exam < today,
       phases, phase, phaseIdx,
       unitsTotal, unitsDone, unitsRemaining, nextUnit,
       partsDone, casesDone, dueCount,

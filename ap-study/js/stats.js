@@ -98,6 +98,8 @@ const Stats = (() => {
         </div>
       </div>
 
+      ${calendarPanel()}
+
       <div class="panel">
         <h3>分野別正答率</h3>
         <p class="panel-note">一問一答・本番レベル演習・模擬試験など、すべての解答の累積です。</p>
@@ -299,6 +301,39 @@ const Stats = (() => {
       }
     };
     reader.readAsText(file);
+  }
+
+  // ---------- 学習カレンダー(直近12週) ----------
+  function calendarPanel() {
+    const days = Store.dayCounts();
+    const DAY = 86400000;
+    const ymd = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const dow = (today.getDay() + 6) % 7; // 月曜=0
+    const start = today.getTime() - (dow + 7 * 11) * DAY; // 11週前の月曜
+    const level = (n) => (n === 0 ? 0 : n < 10 ? 1 : n < 20 ? 2 : n < 40 ? 3 : 4);
+    let cells = '', studied = 0, total = 0;
+    for (let i = 0; i < 84; i++) {
+      const t = start + i * DAY;
+      if (t > today.getTime()) { cells += '<span class="cal-cell future"></span>'; continue; }
+      const key = ymd(t);
+      const n = days[key] || 0;
+      if (n) { studied += 1; total += n; }
+      cells += `<span class="cal-cell l${level(n)}${key === ymd(today.getTime()) ? ' today' : ''}" title="${key}: ${n}問"></span>`;
+    }
+    return `
+      <div class="panel">
+        <h3>学習カレンダー(直近12週)</h3>
+        <p class="panel-note">色が濃いほど、その日にたくさん解いています。毎日少しずつでも色をつなげていこう。</p>
+        <div class="cal-wrap">
+          <div class="cal-days"><span>月</span><span></span><span>水</span><span></span><span>金</span><span></span><span>日</span></div>
+          <div class="cal-grid">${cells}</div>
+        </div>
+        <div class="cal-foot">
+          <span>学習した日 <b>${studied}日</b> / 合計 <b>${total}問</b></span>
+          <span class="cal-legend">少 <i class="cal-cell l0"></i><i class="cal-cell l1"></i><i class="cal-cell l2"></i><i class="cal-cell l3"></i><i class="cal-cell l4"></i> 多</span>
+        </div>
+      </div>`;
   }
 
   return { render };
