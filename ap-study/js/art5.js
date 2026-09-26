@@ -503,4 +503,76 @@
       frames: [{ svg: svg(206, s), cap: 'バーンダウンチャート: 残りの作業量が毎日どれだけ減ったかを描く。この例では最終日に20ポイント残っており、次のスプリントの計画を見直す必要がある。' }],
     };
   }
+
+  // ---- 正規分布と標準偏差 ----
+  {
+    const CX = 280, SX = 64, BASE = 176, H = 140;
+    const f = (z) => Math.exp(-z * z / 2);
+    const pt = (z) => `${(CX + z * SX).toFixed(1)},${(BASE - H * f(z)).toFixed(1)}`;
+    const area = (a, b) => {
+      const zs = [];
+      for (let z = a; z <= b + 1e-9; z += 0.05) zs.push(z);
+      return `${CX + a * SX},${BASE} ${zs.map(pt).join(' ')} ${CX + b * SX},${BASE}`;
+    };
+    let s = '';
+    s += `<polygon points="${area(-3, 3)}" fill="${C.s2}"/>`;
+    s += `<polygon points="${area(-2, 2)}" fill="${C.goldSoft}"/>`;
+    s += `<polygon points="${area(-1, 1)}" fill="${C.accSoft}"/>`;
+    const zs = []; for (let z = -3.8; z <= 3.8 + 1e-9; z += 0.05) zs.push(z);
+    s += `<polyline points="${zs.map(pt).join(' ')}" fill="none" stroke="${C.acc}" stroke-width="2.5"/>`;
+    s += line(CX - 3.9 * SX, BASE, CX + 3.9 * SX, BASE, C.ink2);
+    [-3, -2, -1, 0, 1, 2, 3].forEach((z) => {
+      s += line(CX + z * SX, BASE, CX + z * SX, BASE + 5, C.ink2, { sw: 1.5 });
+      s += txt(CX + z * SX, BASE + 16, z === 0 ? '平均' : `${z > 0 ? '+' : '−'}${Math.abs(z)}σ`, { fs: 11, w: 700, col: C.ink2 });
+    });
+    s += txt(CX, 110, '約68%', { fs: 13, w: 900, col: C.acc });
+    s += txt(CX - 1.5 * SX, 160, '約95%', { fs: 11, w: 900, col: C.gold });
+    s += txt(CX + 1.5 * SX, 160, '(±2σ)', { fs: 10.5, w: 700, col: C.gold });
+    s += txt(CX + 3.1 * SX, 140, '±3σで約99.7%', { fs: 11, w: 700, col: C.ink2 });
+    AP.art['normal-dist'] = {
+      frames: [{ svg: svg(204, s), cap: '正規分布: 平均を中心に左右対称の釣り鐘型。σ(シグマ)は標準偏差。平均 ± 1σ に約68%、± 2σ に約95%、± 3σ に約99.7% のデータが入る。' }],
+    };
+  }
+
+  // ---- ハイプ・サイクル ----
+  {
+    let s = '';
+    s += line(40, 20, 40, 176, C.ink2) + line(40, 176, 540, 176, C.ink2);
+    s += txt(46, 14, '期待の大きさ', { fs: 11, w: 700, col: C.ink2, a: 'start' });
+    s += txt(540, 192, '時間 →', { fs: 11, w: 700, col: C.ink2, a: 'end' });
+    const d = 'M 44 168 C 100 160, 120 30, 150 34 C 180 38, 200 150, 250 150 C 310 150, 380 100, 530 96';
+    s += `<path d="${d}" fill="none" stroke="${C.acc}" stroke-width="3"/>`;
+    const labels = [
+      [80, 150, '①黎明期', 'start'], [158, 26, '②過度な期待のピーク期', 'start'], [250, 164, '③幻滅期', 'middle'],
+      [360, 106, '④啓発期', 'middle'], [530, 84, '⑤生産性の安定期', 'end'],
+    ];
+    labels.forEach(([x, y, t, a]) => { s += txt(x, y, t, { fs: 11.5, w: 900, col: C.ink, a }); });
+    AP.art['hype-cycle'] = {
+      frames: [{ svg: svg(200, s), cap: 'ハイプ・サイクル: 新しい技術は、話題になって期待が膨らみすぎたあと幻滅期を迎え、実際の使い道が見つかって安定していく。' }],
+    };
+  }
+
+  // ---- アンゾフの成長マトリクス ----
+  {
+    const cells = [
+      ['市場浸透', '今の製品を今の市場でもっと売る', C.accSoft, C.acc],
+      ['製品開発', '今の市場に新しい製品を出す', C.okSoft, C.ok],
+      ['市場開拓', '今の製品を新しい市場で売る', C.goldSoft, C.gold],
+      ['多角化', '新しい製品で新しい市場に出る', C.ngSoft, C.ng],
+    ];
+    let s = '';
+    s += txt(320, 14, '製品', { fs: 12, w: 900, col: C.ink });
+    s += txt(206, 32, '既存', { fs: 11, w: 700, col: C.ink2 }) + txt(434, 32, '新規', { fs: 11, w: 700, col: C.ink2 });
+    s += txt(28, 120, '市場', { fs: 12, w: 900, col: C.ink });
+    s += txt(72, 80, '既存', { fs: 11, w: 700, col: C.ink2 }) + txt(72, 164, '新規', { fs: 11, w: 700, col: C.ink2 });
+    cells.forEach(([t, dsc, fill, col], i) => {
+      const x = 96 + (i % 2) * 228, y = 42 + Math.floor(i / 2) * 84;
+      s += box(x, y, 220, 76, '', { fill, stroke: 'none', r: 10 });
+      s += txt(x + 110, y + 28, t, { fs: 14, w: 900, col });
+      s += txt(x + 110, y + 52, dsc, { fs: 11, w: 700, col: C.ink2 });
+    });
+    AP.art['ansoff'] = {
+      frames: [{ svg: svg(214, s), cap: 'アンゾフの成長マトリクス: 「製品」と「市場」がそれぞれ今のままか新しいかで、成長の方向を4つに分ける。右下(多角化)ほどリスクが大きい。' }],
+    };
+  }
 })();
