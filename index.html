@@ -2,181 +2,111 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>AIワークアウトプランナー | あなた専用の筋トレメニュー</title>
-  <meta name="description" content="体重・身長・目的・使える器具から、AIがあなたに最適な1週間の筋トレメニューを提案します。">
-  <meta name="theme-color" content="#14161b">
+  <meta name="description" content="体格・目的・使える器具から、あなた専用の1週間の筋トレメニューを作成。記録・休憩タイマー・進捗グラフまで、端末の中だけで動作します。">
+  <meta name="theme-color" content="#111319">
+  <meta name="color-scheme" content="dark">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ワークアウト">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="preload" href="fonts/bebas-neue-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="session.css?v=14">
 </head>
 <body>
-  <header class="site-header">
-    <div class="header-inner">
-      <h1 class="logo"><span class="logo-en">AI WORKOUT</span><span class="logo-ja">プランナー</span></h1>
+  <header class="app-bar">
+    <div class="app-bar-inner">
+      <p class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="9" fill="#cbf24f"/>
+          <g fill="none" stroke="#12140f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 16h18M10 12v8M13 10v12M19 10v12M22 12v8"/>
+          </g>
+        </svg>
+        <span class="brand-name"><span class="brand-en" lang="en">AI WORKOUT</span><span class="brand-ja">プランナー</span></span>
+      </p>
+      <button type="button" id="app-reload" class="icon-btn app-bar-btn" aria-label="アプリを再読み込み" hidden><span data-icon="refresh"></span></button>
     </div>
-    <p class="tagline">体格・目的・使える器具から、あなた専用の1週間メニューを作成</p>
   </header>
 
-  <main>
-    <form id="menu-form" class="panel" novalidate>
-      <h2 class="panel-title">プロフィール入力</h2>
+  <main id="main" class="app-main">
+    <noscript><p class="notice">このアプリを使うには JavaScript を有効にしてください。</p></noscript>
+    <div id="notices" class="notices"></div>
 
-      <div class="field-grid">
-        <label class="field">
-          <span>体重 (kg)</span>
-          <select id="weight"></select>
-        </label>
-        <label class="field">
-          <span>身長 (cm)</span>
-          <select id="height"></select>
-        </label>
-        <label class="field">
-          <span>年齢</span>
-          <select id="age"></select>
-        </label>
-        <label class="field">
-          <span>性別</span>
-          <select id="gender">
-            <option value="男性">男性</option>
-            <option value="女性">女性</option>
-            <option value="その他・回答しない">その他・回答しない</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>目的</span>
-          <select id="goal">
-            <option value="hypertrophy">筋肥大(筋肉を大きくしたい)</option>
-            <option value="cut">減量・引き締め</option>
-            <option value="strength">筋力・体力向上</option>
-            <option value="health">健康維持</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>経験レベル</span>
-          <select id="level">
-            <option value="beginner">初心者(〜1年)</option>
-            <option value="intermediate">中級者(1〜3年)</option>
-            <option value="advanced">上級者(3年以上)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>週のトレーニング頻度</span>
-          <select id="frequency">
-            <option value="1">週1回</option>
-            <option value="2">週2回</option>
-            <option value="3" selected>週3回</option>
-            <option value="4">週4回</option>
-            <option value="5">週5回</option>
-            <option value="6">週6回</option>
-            <option value="7">週7回</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="field focus-field">
-        <span>特に鍛えたい部位 <small>(任意・複数選択可)</small></span>
-        <div id="focus-chips" class="focus-chips"></div>
-      </div>
-
-      <h2 class="panel-title">使える器具・施設 <small>(複数選択可・未選択なら自重のみ)</small></h2>
-      <div id="preset-buttons" class="preset-bar"></div>
-      <div id="equipment-groups" class="equipment-groups"></div>
-
-      <p id="form-error" class="error-msg" role="alert"></p>
-      <button type="submit" id="generate-btn" class="primary-btn">メニュー作成</button>
-    </form>
-
-    <section class="panel" id="log-section">
-      <h2 class="panel-title">トレーニング記録 <small>(記録するとメニュー生成に反映されます)</small></h2>
-      <form id="log-form" novalidate>
-        <div class="log-date-wrap">
-          <label class="field log-date-field">
-            <span>日付</span>
-            <input type="date" id="log-date">
-          </label>
-          <div class="date-quick">
-            <button type="button" class="preset-btn" data-days-ago="0">今日</button>
-            <button type="button" class="preset-btn" data-days-ago="1">昨日</button>
-          </div>
-        </div>
-        <div id="log-entries"></div>
-        <button type="button" id="log-add-row" class="secondary-btn">+ 種目を追加</button>
-        <p id="log-error" class="error-msg" role="alert"></p>
-        <button type="submit" class="primary-btn log-save-btn">この内容で記録する</button>
-      </form>
-      <div id="log-list" class="log-list"></div>
-    </section>
-    <datalist id="exercise-names"></datalist>
-
-    <section class="panel" id="progress-section" hidden>
-      <h2 class="panel-title">進捗・記録の可視化</h2>
-
-      <div id="streak-cards" class="summary-cards"></div>
-      <div id="badges" class="badges"></div>
-
-      <h3 class="sub-title">トレーニングカレンダー(直近8週)</h3>
-      <div id="calendar" class="calendar"></div>
-
-      <h3 class="sub-title">種目の重量推移</h3>
-      <select id="chart-exercise" class="chart-select" aria-label="グラフに表示する種目"></select>
-      <div id="exercise-chart" class="chart-box"></div>
-
-      <h3 class="sub-title">体重の推移</h3>
-      <form id="bodyweight-form" class="bw-form">
-        <select id="bw-date-quick" aria-label="日付">
-          <option value="0">今日</option>
-          <option value="1">昨日</option>
-        </select>
-        <select id="bw-value" aria-label="体重"></select>
-        <button type="submit" class="secondary-btn">体重を記録</button>
-      </form>
-      <div id="bodyweight-chart" class="chart-box"></div>
+    <section id="view-menu" class="view" aria-labelledby="menu-title" hidden>
+      <header class="view-head">
+        <h1 id="menu-title" class="view-title" tabindex="-1">メニュー</h1>
+        <p class="view-sub"></p>
+      </header>
+      <div class="view-body"></div>
     </section>
 
-    <section class="panel" id="backup-section">
-      <h2 class="panel-title">データのバックアップ <small>(記録はこの端末内にのみ保存されています)</small></h2>
-      <p class="backup-desc">機種変更やブラウザのデータ削除に備えて、記録をファイルに保存・復元できます。</p>
-      <div class="backup-btns">
-        <button type="button" id="export-btn" class="secondary-btn">⬇ データを書き出す</button>
-        <button type="button" id="import-btn" class="secondary-btn">⬆ データを読み込む</button>
-        <input type="file" id="import-file" accept="application/json" hidden>
-      </div>
-      <p id="backup-msg" class="backup-msg"></p>
+    <section id="view-log" class="view" aria-labelledby="log-title" hidden>
+      <header class="view-head">
+        <h1 id="log-title" class="view-title" tabindex="-1">記録</h1>
+        <p class="view-sub"></p>
+      </header>
+      <div class="view-body"></div>
     </section>
 
-    <section id="result-section" class="panel" hidden>
-      <div class="result-header">
-        <h2 class="panel-title">あなたの1週間メニュー</h2>
-      </div>
-      <div id="result-content" class="result-content"></div>
+    <section id="view-progress" class="view" aria-labelledby="progress-title" hidden>
+      <header class="view-head">
+        <h1 id="progress-title" class="view-title" tabindex="-1">進捗</h1>
+        <p class="view-sub"></p>
+      </header>
+      <div class="view-body"></div>
+    </section>
+
+    <section id="view-settings" class="view" aria-labelledby="settings-title" hidden>
+      <header class="view-head">
+        <h1 id="settings-title" class="view-title" tabindex="-1">設定</h1>
+        <p class="view-sub"></p>
+      </header>
+      <div class="view-body"></div>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <p>本アプリの提案は一般的なフィットネス情報であり、医療アドバイスではありません。持病のある方は医師に相談してください。</p>
-  </footer>
-
-  <div id="rest-timer" class="rest-timer" hidden>
+  <div id="rest-timer" class="rest-timer" hidden role="timer" aria-label="休憩タイマー">
+    <div class="rest-timer-track" aria-hidden="true"><div class="rest-timer-bar"></div></div>
     <div class="rest-timer-main">
-      <span class="rest-timer-label">休憩タイマー</span>
+      <span class="rest-timer-label" aria-hidden="true">休憩</span>
       <span id="rest-timer-time" class="rest-timer-time">0:00</span>
     </div>
     <div class="rest-timer-actions">
-      <button type="button" id="rest-add" class="rest-mini">+15秒</button>
-      <button type="button" id="rest-add-min" class="rest-mini">+1分</button>
-      <button type="button" id="rest-reset" class="rest-mini">リセット</button>
-      <button type="button" id="rest-close" class="rest-mini rest-close">終了</button>
+      <button type="button" class="rest-mini" data-rest="+15">+15秒</button>
+      <button type="button" class="rest-mini" data-rest="+60">+1分</button>
+      <button type="button" class="rest-mini" data-rest="reset">リセット</button>
+      <button type="button" class="rest-mini rest-close" data-rest="stop">終了</button>
     </div>
+    <span class="rest-timer-live sr-only" aria-live="polite"></span>
   </div>
 
-  <script type="module" src="js/app.js?v=12"></script>
+  <nav class="tab-bar" aria-label="画面の切り替え">
+    <a class="tab" href="#menu" data-tab="menu"><span class="tab-ico" data-icon="dumbbell"></span><span class="tab-label">メニュー</span></a>
+    <a class="tab" href="#log" data-tab="log"><span class="tab-ico" data-icon="clipboard"></span><span class="tab-label">記録</span></a>
+    <a class="tab" href="#progress" data-tab="progress"><span class="tab-ico" data-icon="chart"></span><span class="tab-label">進捗</span></a>
+    <a class="tab" href="#settings" data-tab="settings"><span class="tab-ico" data-icon="sliders"></span><span class="tab-label">設定</span></a>
+  </nav>
+
+  <div id="toast-region" class="toast-region"></div>
+  <p id="sr-status" class="sr-only" role="status" aria-live="polite"></p>
+
+  <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="sheet-title" class="sheet-title" tabindex="-1"></h2>
+        <button type="button" class="icon-btn sheet-close" aria-label="閉じる"><span data-icon="close"></span></button>
+      </header>
+      <div class="sheet-body"></div>
+      <footer class="sheet-foot"></footer>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/app.js?v=14"></script>
 </body>
 </html>

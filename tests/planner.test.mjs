@@ -176,10 +176,26 @@ test("プランの形(SPEC の Plan / Day / Ex)を守る", () => {
   assert.equal(round.days.length, p.days.length);
 });
 
-test("同じ入力なら同じプラン(決定的)", () => {
+test("同じ入力なら同じプラン(決定的)・入力(プロフィール・記録)を書き換えない", () => {
   for (const o of [{}, { frequency: 6, focus: ["arms"] }, { equipment: EQ.home, level: "beginner", frequency: 4 }]) {
     assert.deepEqual(clone(planOf(o)), clone(planOf(o)));
   }
+  const deepFreeze = (x) => {
+    if (x && typeof x === "object") {
+      for (const v of Object.values(x)) deepFreeze(v);
+      Object.freeze(x);
+    }
+    return x;
+  };
+  const logs = [{ date: "2026-09-26", entries: [
+    { name: "ベンチプレス", weight: 40, reps: 10, sets: 1 },
+    { name: "ベンチプレス", weight: 80, reps: 8, sets: 3, setDetails: [{ weight: 80, reps: 8 }, { weight: 80, reps: 7 }] },
+    { name: "水泳(平泳ぎ)", track: "cardio", minutes: 30, distance: 600, unit: "m" },
+  ] }];
+  const profile = profileOf({ frequency: 5, focus: ["chest"], equipment: [...EQ.gym, "pool"] });
+  const a = generatePlan(deepFreeze(clone(profile)), deepFreeze(clone(logs)), NOW);
+  assert.deepEqual(clone(a), clone(generatePlan(profile, logs, NOW)));
+  alternativeExercise(deepFreeze(clone(profile)), deepFreeze(clone(logs)), deepFreeze(clone(a.days[0])), 0, NOW);
 });
 
 test("各日: 種目の重複なし・器具とレベルの範囲内(レベル制限を超えない B19)", () => {
@@ -251,11 +267,21 @@ test("細かい筋肉: 週3回以上なら三頭・二頭・肩の側部・も�
   for (const m of noFocus) {
     if (m.frequency < 3) continue;
     const tot = weeklySets(m.plan);
-    const need = ["triceps", "biceps", "hamstrings", "calves", "chest", "back", "quads", "core"];
-    if (["gym", "machine", "home_db", "band"].includes(m.eq)) need.push("side_delt");
+    // 自重のみ(自宅・プール)でもペットボトルのサイドレイズで肩の側部を鍛える
+    const need = ["triceps", "biceps", "hamstrings", "calves", "chest", "back", "quads", "core", "side_delt"];
     for (const k of need) if (!(tot[k] > 0)) fails.push(`${m.key} ${k}=0`);
   }
   expectNone(fails, "coverage");
+  // 週1〜2回でも、スクワット・ヒンジ・押す・引く の基本動作がそろう(B17)
+  for (const m of noFocus.filter((x) => x.frequency <= 2)) {
+    const pats = new Set(m.plan.days.flatMap((d) => d.exercises.map((e) => e.pattern)));
+    const has = (list) => list.some((p) => pats.has(p));
+    if (!has(["squat", "lunge"])) fails.push(`${m.key} no squat`);
+    if (!has(["hinge", "glute"])) fails.push(`${m.key} no hinge`);
+    if (!has(["h_push", "incline_push", "v_push"])) fails.push(`${m.key} no push`);
+    if (!has(["h_pull", "v_pull"])) fails.push(`${m.key} no pull`);
+  }
+  expectNone(fails, "basic patterns f1-2");
   // マシンのみでも下半身の日にレッグカールが入る
   for (const f of [4, 5, 6]) {
     const plan = planOf({ equipment: ["machine"], frequency: f });
@@ -895,4 +921,250 @@ test("入力の欠損: 頻度が不正でも空のメニューにしない(B25)"
   assert.ok(p.days.every((d) => d.exercises.length >= 3));
   assert.equal(generatePlan(profileOf({ frequency: 12 }), [], NOW).days.length, 7);
   assert.equal(generatePlan(profileOf({ frequency: "2" }), [], NOW).days.length, 2);
+});
+
+test("メイン種目: その日の1種目目は他の種目よりセット数が少なくならない(初心者は必ず)", () => {
+  const fails = [];
+  let days = 0;
+  let leads = 0;
+  for (const m of MATRIX) {
+    for (const d of liftDays(m.plan)) {
+      const main = d.exercises.find((e) => e.tier === "main");
+      if (!main) continue;
+      days++;
+      const top = Math.max(0, ...d.exercises.filter((e) => e !== main && e.track === "weight").map((e) => e.sets));
+      if (main.sets >= top) leads++;
+      else if (m.level === "beginner") fails.push(`${m.key} ${d.title} ${d.exercises.map((e) => `${e.name}${e.sets}`)}`);
+    }
+  }
+  expectNone(fails, "beginner main sets");
+  assert.ok(leads / days >= 0.98, `main leads ${leads}/${days}`);
+  // 初心者でもメイン種目は3セットでフォームを練習する(健康維持は2セットから)
+  for (const goal of ["hypertrophy", "cut", "strength"]) {
+    for (const eq of ["gym", "home", "home_db"]) {
+      for (const d of liftDays(planOf({ goal, level: "beginner", frequency: 3, equipment: EQ[eq] }))) {
+        assert.equal(d.exercises[0].tier, "main", `${goal} ${eq} ${d.title}`);
+        assert.ok(d.exercises[0].sets >= 3, `${goal} ${eq} ${d.title} ${d.exercises[0].name} ${d.exercises[0].sets}`);
+      }
+    }
+  }
+  for (const d of liftDays(planOf({ goal: "health", level: "beginner", frequency: 3 }))) assert.equal(d.exercises[0].sets, 2);
+});
+
+test("種目DB: 難易度の上下(harder/easier)は実在する同じ部位の種目を指す", () => {
+  for (const name of allExerciseNames()) {
+    const i = infoOf(name);
+    for (const link of [i.harder, i.easier]) {
+      if (!link) continue;
+      const j = infoOf(link);
+      assert.equal(SUB_MUSCLES[j.sub]?.group ?? j.muscle, SUB_MUSCLES[i.sub]?.group ?? i.muscle, `${name} → ${link}`);
+      assert.equal(j.track, i.track, `${name} → ${link}`);
+    }
+  }
+  // 自重の押す・しゃがむ種目には入門バリエーションがある(高BMI・高齢者の出発点)
+  for (const name of ["腕立て伏せ", "自重スクワット", "パイクプッシュアップ", "ダイヤモンドプッシュアップ"]) {
+    assert.ok(infoOf(name).easier, name);
+  }
+});
+
+test("前回記録からの目標重量は、いつも記録フォームの重量の選択肢(WEIGHT_CHOICES)にある", () => {
+  const names = ["ベンチプレス", "バーベルスクワット", "ダンベルプレス", "サイドレイズ", "ケトルベルスイング",
+    "ラットプルダウン", "スミスマシンスクワット", "トライセプスプレスダウン", "チェストプレス(マシン)"];
+  const fails = [];
+  const at = (name, weight, reps, date = "2026-09-26") =>
+    progressionTarget({ name, weight, reps, date }, { name, reps: "8〜12回" }, { level: "intermediate" }, NOW);
+  for (const name of names) {
+    for (const w of WEIGHT_CHOICES.filter((x) => x > 0 && x <= 200)) {
+      const up = at(name, w, 12);
+      if (!WEIGHT_CHOICES.includes(up.weight) || !(up.weight > w)) fails.push(`${name} up ${w}→${up.weight}`);
+      const down = at(name, w, 3);
+      if (!WEIGHT_CHOICES.includes(down.weight) || down.weight > w || (w >= 5 && !(down.weight < w))) fails.push(`${name} down ${w}→${down.weight}`);
+      const layoff = at(name, w, 10, "2026-07-01");
+      if (!WEIGHT_CHOICES.includes(layoff.weight) || layoff.weight > w || (w >= 5 && !(layoff.weight < w))) fails.push(`${name} layoff ${w}→${layoff.weight}`);
+    }
+  }
+  expectNone(fails, "weight grid");
+  // ケトルベルは実在する規格の次の重さへ(記録できない 36kg は使わない)
+  assert.equal(at("ケトルベルスイング", 24, 12).weight, 28);
+  assert.equal(at("ケトルベルスイング", 32, 12).weight, 40);
+});
+
+test("ウォームアップセット: 段階の数は本番の回数に合わせ、重さは選択肢の値・バーより軽くしない(I36)", () => {
+  const logs = [{ date: "2026-09-25", entries: [
+    { name: "チェストプレス(マシン)", track: "weight", weight: 50, reps: 8, sets: 3 },
+    { name: "ダンベルプレス", track: "weight", weight: 24, reps: 8, sets: 3 },
+    { name: "ベンチプレス", track: "weight", weight: 30, reps: 5, sets: 3 },
+  ] }];
+  const rampOf = (plan, name) => {
+    const day = plan.days.find((d) => d.exercises[0]?.name === name);
+    assert.ok(day, name);
+    return day.warmup.find((w) => w.startsWith("ウォームアップセット"));
+  };
+  const kgs = (ramp) => [...ramp.matchAll(/([\d.]+)kg×/g)].map((m) => Number(m[1]));
+  // 筋力目的でも、マシンがメインの日(6〜8回)は 50%→70% の2段階で足りる
+  const machine = rampOf(generatePlan(profileOf({ goal: "strength", equipment: ["machine"], frequency: 4 }), logs, NOW), "チェストプレス(マシン)");
+  assert.equal(kgs(machine).length, 2, machine);
+  // ダンベルの段階は選択肢にある重さ
+  const db = rampOf(generatePlan(profileOf({ equipment: EQ.home_db, frequency: 4 }), logs, NOW), "ダンベルプレス");
+  assert.ok(kgs(db).length >= 2 && kgs(db).every((w) => WEIGHT_CHOICES.includes(w) && w < 24), db);
+  // 筋力目的のバーベル(3〜5回): バーのみから始め、20kg より軽い段階は出さない
+  const bar = rampOf(generatePlan(profileOf({ goal: "strength", equipment: EQ.barbell, frequency: 4 }), logs, NOW), "ベンチプレス");
+  assert.match(bar, /20kg\(バーのみ\)×10/);
+  assert.ok(kgs(bar).every((w) => w >= 20 && WEIGHT_CHOICES.includes(w)), bar);
+});
+
+test("健康維持の有酸素: アクティブレストの日も数えて週150分以上・筋トレ日は長くしすぎない(I20/I21)", () => {
+  const profile = profileOf({ age: 72, gender: "女性", goal: "health", level: "beginner", frequency: 7 });
+  const senior = generatePlan(profile, [], NOW);
+  assert.ok(senior.weeklyCardioMinutes >= 150, `${senior.weeklyCardioMinutes}`);
+  for (const d of liftDays(senior)) assert.ok(d.cardio && d.cardio.minutes <= 25, `${d.title} ${d.cardio?.minutes}`);
+  // 入れ替えても同じ分数のまま
+  const day = liftDays(senior)[0];
+  const alt = alternativeCardio(profile, [], day.cardio.name, NOW, { day });
+  assert.ok(alt && alt.minutes === day.cardio.minutes, `${alt?.name} ${alt?.minutes}`);
+  for (const frequency of [5, 6, 7]) {
+    for (const level of LEVEL_KEYS) {
+      const p = planOf({ goal: "health", level, frequency });
+      assert.ok(p.weeklyCardioMinutes >= 150, `f${frequency} ${level} ${p.weeklyCardioMinutes}`);
+      for (const d of liftDays(p)) assert.ok(d.cardio.minutes <= 30);
+    }
+  }
+});
+
+test("60歳以上: 頭が下がる種目(パイク・デクライン)・ディップスは自動採用も入れ替えもしない(I21)", () => {
+  const risky = /パイク|デクライン|ディップス|バーピー|ジャンピングジャック/;
+  const fails = [];
+  for (const eq of ["home", "home_db", "band", "gym"]) {
+    for (const level of ["beginner", "intermediate"]) {
+      for (const frequency of [2, 3, 4, 7]) {
+        const profile = profileOf({ age: 68, goal: "health", level, frequency, equipment: EQ[eq] });
+        const plan = generatePlan(profile, [], NOW);
+        plan.days.forEach((d, di) => d.exercises.forEach((ex, ei) => {
+          if (risky.test(ex.name)) fails.push(`${eq}/${level}/f${frequency} ${ex.name}`);
+          for (const name of swapCycle(profile, plan, di, ei).seen) if (risky.test(name)) fails.push(`${eq}/${level}/f${frequency} swap ${name}`);
+        }));
+      }
+    }
+  }
+  expectNone(fails, "senior risky");
+  // 30歳なら自宅でもパイクプッシュアップを使う(調整は高齢者だけ)
+  const young = planOf({ equipment: EQ.home, frequency: 6 });
+  assert.ok(young.days.some((d) => d.exercises.some((e) => e.name === "パイクプッシュアップ")));
+});
+
+test("アクティブレストの日: 入れ替えは器具を使わない軽い種目だけで、補助扱い・セット数そのまま", () => {
+  const profile = profileOf({ age: 72, goal: "health", level: "beginner", frequency: 7 });
+  const plan = generatePlan(profile, [], NOW);
+  const di = plan.days.findIndex((d) => d.type === "recovery");
+  assert.ok(di >= 0);
+  plan.days[di].exercises.forEach((ex, ei) => {
+    const { seen, day } = swapCycle(profile, plan, di, ei);
+    for (const name of seen) assert.equal(infoOf(name).equipment.length, 0, name);
+    assert.equal(day.exercises[ei].tier, "accessory");
+    assert.equal(day.exercises[ei].sets, ex.sets);
+  });
+  // 片脚立ちは代わりが無いので ↻ を無効にできる
+  const balance = plan.days[di].exercises.findIndex((e) => e.name === "片脚立ち");
+  assert.equal(hasAlternative(profile, plan.days[di], balance), false);
+});
+
+test("しばらく鍛えていない部位: 同じ種類の中で先に置き、複合種目の前に単関節・体幹を置かない(B20)", () => {
+  const logs = [
+    { date: "2026-09-08", entries: [
+      { name: "バーベルカール", weight: 30, reps: 10, sets: 3 },
+      { name: "プランク", track: "time", seconds: 60, sets: 3 },
+    ] },
+    { date: "2026-09-27", entries: [
+      { name: "ベンチプレス", weight: 80, reps: 8, sets: 3 },
+      { name: "バーベルスクワット", weight: 100, reps: 8, sets: 3 },
+      { name: "ラットプルダウン", weight: 50, reps: 10, sets: 3 },
+      { name: "サイドレイズ", weight: 8, reps: 12, sets: 3 },
+      { name: "デッドリフト", weight: 120, reps: 5, sets: 3 },
+    ] },
+  ];
+  const fails = [];
+  for (const eq of ["gym", "home_db", "home"]) {
+    for (const frequency of [2, 3, 4, 5, 6]) {
+      const plan = generatePlan(profileOf({ frequency, equipment: EQ[eq] }), logs, NOW);
+      assert.ok(plan.historySummary.includes("しばらく鍛えていない部位: 腕・体幹(同じ種類の中で優先して配置)"));
+      for (const d of liftDays(plan)) {
+        const tiers = d.exercises.map((e) => tierOf(e.name));
+        if (tiers.some((t, i) => i > 0 && t < tiers[i - 1])) fails.push(`${eq}/f${frequency} ${d.title} ${d.exercises.map((e) => e.name)}`);
+        // 単関節の中では、腕(しばらく空いた部位)が先
+        const iso = d.exercises.filter((e) => tierOf(e.name) === 2).map((e) => e.muscle === "arms");
+        if (iso.indexOf(false) >= 0 && iso.slice(iso.indexOf(false)).includes(true)) fails.push(`${eq}/f${frequency} ${d.title} stale order`);
+      }
+    }
+  }
+  expectNone(fails, "stale order");
+  // 3週間空いた種目は約8割の重さから、最近の種目はダブルプログレッション
+  const plan = generatePlan(profileOf({ frequency: 4 }), logs, NOW);
+  const all = plan.days.flatMap((d) => d.exercises);
+  assert.equal(all.find((e) => e.name === "バーベルカール").target.weight, 25);
+  assert.equal(all.find((e) => e.name === "ベンチプレス").target.weight, 80);
+});
+
+test("入れ替え: きつく×5・楽に×1 の後でも、差し替えた行は元の行と同じセット数(B23)", () => {
+  const profile = profileOf({ frequency: 4 });
+  const plan = generatePlan(profile, [], NOW);
+  for (let i = 0; i < 5; i++) adjustPlanVolume(plan, 1);
+  adjustPlanVolume(plan, -1);
+  let checked = 0;
+  for (const day of plan.days) {
+    day.exercises.forEach((ex, i) => {
+      const alt = alternativeExercise(profile, [], day, i, NOW);
+      if (!alt) return;
+      checked++;
+      assert.equal(alt.sets, ex.sets, `${day.title} ${ex.name}→${alt.name}`);
+      assert.ok(alt.sets >= 2 && alt.sets <= 5);
+    });
+  }
+  assert.ok(checked > 10);
+});
+
+test("保存したプラン(JSON)を読み戻しても、相談・入れ替え・時短がそのまま動く(I02)", () => {
+  const profile = profileOf({ frequency: 5, focus: ["arms"] });
+  const plan = clone(generatePlan(profile, [], NOW));
+  assert.ok(canAdjustVolume(plan, 1));
+  assert.ok(adjustPlanVolume(plan, 1) > 0);
+  const alt = alternativeExercise(profile, [], plan.days[0], 1, NOW);
+  assert.ok(alt && alt.name !== plan.days[0].exercises[1].name);
+  plan.days[0].exercises[1] = alt;
+  shortenPlan(plan);
+  for (const d of plan.days) assert.equal(d.estMinutes, estimateMinutes(d));
+  const again = clone(plan);
+  shortenPlan(again);
+  assert.deepEqual(again, plan);
+  assert.deepEqual(Object.fromEntries(plan.weeklyVolume.map((v) => [v.key, v.sets])), weeklySets(plan));
+});
+
+test("旧形式(v12)のプランでも、時短・きつく・入れ替えが落ちない", () => {
+  const legacy = {
+    bmi: { value: 22.9, category: "普通体重" }, splitName: "Push / Pull / Legs", repScheme: "", focusLabels: ["腕"],
+    advice: { protein: "", calories: "", tips: [] }, historySummary: null,
+    days: [{
+      title: "Day 1:Push(胸・肩・腕)", warmup: ["軽い有酸素 5分"], cooldown: ["腹筋ストレッチ(うつ伏せで上体を反らす)"],
+      exercises: [
+        { name: "ベンチプレス", muscle: "chest", sets: 4, reps: "8〜12回", rest: "90秒", note: null, focused: false },
+        { name: "ダンベルプレス", muscle: "chest", sets: 4, reps: "8〜12回", rest: "90秒", note: null, focused: false },
+        { name: "オーバーヘッドプレス", muscle: "shoulders", sets: 4, reps: "8〜12回", rest: "90秒", note: null, focused: false },
+        { name: "プランク", muscle: "core", sets: 3, reps: "30〜60秒キープ", rest: "45〜60秒", note: null, focused: false },
+        { name: "バーベルカール", muscle: "arms", sets: 3, reps: "8〜12回", rest: "60秒", note: null, focused: true },
+      ],
+      cardio: { name: "ランニング", duration: "20〜30分", note: null, isPool: false },
+    }],
+  };
+  const profile = profileOf({ focus: ["arms"] });
+  const plan = clone(legacy);
+  assert.ok(adjustPlanVolume(plan, 1) > 0);
+  // 旧形式の行でも動作パターンで入れ替える(カールはカールの中で)
+  const alt = alternativeExercise(profile, [], plan.days[0], 4, NOW);
+  assert.ok(alt && infoOf(alt.name).pattern === "biceps", alt?.name);
+  shortenPlan(plan);
+  const d = plan.days[0];
+  assert.ok(d.exercises.some((e) => e.name === "バーベルカール"), "★ is kept");
+  assert.equal(d.exercises[0].name, "ベンチプレス");
+  assert.ok(d.exercises[0].sets <= 3 && d.exercises.slice(1).every((e) => e.sets <= 2));
+  assert.ok(d.estMinutes > 0 && d.estMinutes <= 45, `${d.estMinutes}`);
+  if (!d.exercises.some((e) => e.muscle === "core")) assert.ok(!/腹筋ストレッチ/.test(d.cooldown.join("")));
 });

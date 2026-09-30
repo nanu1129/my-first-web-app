@@ -218,6 +218,21 @@ test("quota errors: save returns false, onError gets a Japanese message, existin
   assert.equal(S.loadLogs().length, 1);
 });
 
+test("initStorage finds corrupt data up front, so a save before any load still preserves it", () => {
+  const raw = '[{"id":1,"date":"2026-09-20","entries":[{"name":"ベンチプレス"'; // 途中で切れている
+  const { store, status, errors } = fresh({ workout_logs: raw, workout_profile: "{oops", workout_meta: JSON.stringify({ schema: 2 }) });
+  assert.deepEqual(status.corrupt.sort(), ["workout_logs", "workout_profile"]);
+  assert.equal(errors.length, 1); // 同じ通知を何度も出さない
+  assert.equal(store.getItem("workout_logs_corrupt"), raw);
+  assert.equal(S.saveLogs([{ id: "n1", date: "2026-09-29", entries: [{ name: "スクワット", weight: 60, reps: 5 }] }]), true);
+  assert.equal(store.getItem("workout_logs_corrupt"), raw);
+  assert.equal(S.loadLogs().length, 1);
+  // 正常なデータなら何も退避しない
+  const ok = fresh({ workout_logs: JSON.stringify([{ id: "a", date: "2026-09-01", entries: [{ name: "A", weight: 1, reps: 1 }] }]), workout_meta: JSON.stringify({ schema: 2 }) });
+  assert.deepEqual([ok.status.corrupt, ok.errors], [[], []]);
+  assert.equal([...ok.store.map.keys()].some((k) => k.includes("corrupt")), false);
+});
+
 test("a corrupt key is not overwritten when its raw text cannot be quarantined", () => {
   const raw = "{not json" + "z".repeat(900);
   const store = new MemoryStorage({ workout_logs: raw, workout_meta: JSON.stringify({ schema: 2 }) }, 1200);
@@ -282,6 +297,29 @@ test("ids stay stable across loads for id-less or duplicate-id logs, so delete a
   const target = S.loadLogs().find((l) => l.entries[0].name === "D");
   assert.ok(S.deleteLog(target.id));
   assert.equal(S.loadLogs().length, 3);
+});
+
+test("same-date logs without timestamps keep a stable order across save/load cycles", () => {
+  const { store } = fresh({
+    workout_meta: JSON.stringify({ schema: 2 }),
+    workout_logs: JSON.stringify([
+      { id: "imp-2", date: "2026-09-20", entries: [{ name: "A", weight: 1, reps: 1 }] },
+      { id: "imp-10", date: "2026-09-20", entries: [{ name: "B", weight: 1, reps: 1 }] },
+      { date: "2026-09-20", entries: [{ name: "C", weight: 1, reps: 1 }] },
+      { id: "1790652957357", date: "2026-09-20", entries: [{ name: "D", weight: 1, reps: 1 }] },
+    ]),
+  });
+  const order = () => S.loadLogs().map((l) => l.entries[0].name).join("");
+  const first = order();
+  assert.equal(first[0], "D"); // 保存時刻の分かる記録が同じ日付の中で最新
+  for (let i = 0; i < 3; i++) {
+    assert.equal(S.saveLogs(S.loadLogs()), true);
+    assert.equal(order(), first, `cycle ${i}`);
+  }
+  // 入力の向き(古い順/新しい順)に関係なく同じ結果
+  const logs = S.loadLogs();
+  assert.deepEqual(S.normalizeLogs([...logs].reverse()).logs, logs);
+  assert.deepEqual(JSON.parse(store.getItem("workout_logs")).map((l) => l.entries[0].name).join(""), [...first].reverse().join(""));
 });
 
 test("profile is validated against the app's option lists", () => {
@@ -360,6 +398,8 @@ test("validateBackup rejects bad files with Japanese messages and never writes (
     [JSON.stringify([1, 2]), /バックアップではありません/],
     [JSON.stringify({ app: "ai-workout-planner", schema: 99, logs: [] }), /新しいバージョン/],
     [JSON.stringify({ app: "ai-workout-planner", logs: [{ date: "2026-09-01" }, null, { date: 5, entries: [] }] }), /有効な記録/],
+    // 記録が全滅なら、体重だけ読めても受け付けない(置き換えで端末の記録が消えるため)
+    [JSON.stringify({ app: "ai-workout-planner", logs: [{ date: "2026/13/45", entries: [{ name: "x" }] }], bodyweight: [{ date: "2026-09-01", weight: 60 }] }), /有効な記録/],
   ];
   for (const [input, re] of cases) {
     const r = S.validateBackup(input);

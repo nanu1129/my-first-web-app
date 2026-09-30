@@ -282,12 +282,22 @@ function normalizeLog(l) {
   return { log: out, droppedEntries };
 }
 
-// 同じ日付の中での並び順(新しいものほど大きい)
-function orderKey(l, index) {
+// 同じ日付の中での並び順の手がかり = 記録した時刻(ミリ秒)。分からなければ -Infinity
+function timeKey(l) {
   if (l.startedAt != null) return l.startedAt;
   if (/^\d{10,}$/.test(l.id)) return Number(l.id); // 旧版の id = 保存時刻(ミリ秒)
   if (l.createdAt != null) return l.createdAt;
-  return index;
+  return -Infinity;
+}
+
+// 新しい順の比較: 日付 → 記録した時刻 → id の自然順。
+// 配列の位置に頼らないので、何度正規化・保存しても同じ日付の記録の順序が入れ替わらない。
+function compareNewestFirst(a, b) {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+  const ka = timeKey(a);
+  const kb = timeKey(b);
+  if (ka !== kb) return kb > ka ? 1 : -1;
+  return b.id.localeCompare(a.id, "en", { numeric: true });
 }
 
 // 記録一覧を正規化する(新しい順)。id が無い・重複するものには決まった規則で id を振る
@@ -296,7 +306,7 @@ export function normalizeLogs(raw) {
   const result = { logs: [], dropped: { logs: 0, entries: 0 } };
   if (!Array.isArray(raw)) return result;
   const seen = new Set();
-  const keyed = [];
+  const logs = [];
   raw.forEach((item, index) => {
     const { log, droppedEntries } = normalizeLog(item);
     result.dropped.entries += droppedEntries;
@@ -311,10 +321,9 @@ export function normalizeLogs(raw) {
       log.id = id;
     }
     seen.add(log.id);
-    keyed.push({ log, key: orderKey(log, index) });
+    logs.push(log);
   });
-  keyed.sort((a, b) => (a.log.date === b.log.date ? b.key - a.key : a.log.date < b.log.date ? 1 : -1));
-  result.logs = keyed.map((k) => k.log);
+  result.logs = logs.sort(compareNewestFirst);
   return result;
 }
 
@@ -408,6 +417,11 @@ export function initStorage({ onError, storage } = {}) {
     if (meta.schema < SCHEMA_VERSION || readRaw(KEYS.meta) == null || status.removedLegacyKey) {
       setMetaQuiet({ schema: SCHEMA_VERSION, ...(status.removedLegacyKey ? { legacyKeyNotice: true } : {}) });
     }
+    // 整合性チェック: 壊れたデータはこの時点で退避・通知しておく
+    // (最初の読み込みより先に保存が呼ばれても、元データを上書きしないため)
+    loadLogs();
+    loadBodyweight();
+    loadProfile();
   }
   status.corrupt = [...corruptKeys];
   return status;
@@ -708,7 +722,9 @@ export function validateBackup(input) {
   const bw = normalizeBodyweight(Array.isArray(obj.bodyweight) ? obj.bodyweight : []);
   const profile = obj.profile == null ? null : normalizeProfile(obj.profile);
   const plan = obj.plan == null ? null : normalizePlanRecord(obj.plan);
-  if (obj.logs.length > 0 && logs.length === 0 && bw.list.length === 0) {
+  // 記録があるはずのファイルで1件も読めないのは壊れている証拠。体重だけ読めても受け付けない
+  // (「置き換え」で端末の記録がすべて消えてしまうため)
+  if (obj.logs.length > 0 && logs.length === 0) {
     return invalidBackup("有効な記録が1件も見つかりませんでした。ファイルが壊れている可能性があります。");
   }
   const warnings = [];

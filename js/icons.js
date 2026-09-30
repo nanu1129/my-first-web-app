@@ -185,3 +185,54 @@ export const EQUIPMENT_SVG = {
     `<line x1="33" y1="19" x2="33" y2="26"/>`
   ),
 };
+
+// ---------- UI の線画アイコン ----------
+// 器具アイコンと同じ作法(線のみ・currentColor・丸い端)で、24 グリッド・線幅 2。
+// ボタンの意味は aria-label や隣の文字で伝えるので、アイコン自体は読み上げない(aria-hidden)。
+const dot = (cx, cy) => `<circle cx="${cx}" cy="${cy}" r="1.1" fill="currentColor" stroke="none"/>`;
+
+export const UI_ICONS = {
+  // タブ
+  dumbbell: `<path d="M6.5 7.5v9M3.5 10v4M17.5 7.5v9M20.5 10v4M6.5 12h11"/>`,
+  clipboard: `<rect x="5" y="4.5" width="14" height="16.5" rx="2.5"/><path d="M9 3h6v3.5H9zM9 11.5h6M9 15.5h4"/>`,
+  chart: `<path d="M4 4v16h16"/><path d="M7.5 15l3.5-4 3 2.5 5-6.5"/>`,
+  sliders: `<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>`,
+  // 種目の操作
+  swap: `<path d="M4.5 8.5h14M15 5l3.5 3.5L15 12M19.5 15.5h-14M9 12l-3.5 3.5L9 19"/>`,
+  info: `<path d="M12 10.5v7"/>${dot(12, 6.8)}`,
+  timer: `<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M9.5 2.5h5M12 2.5V6M18.2 6.8l1.6-1.6"/>`,
+  play: `<path d="M8 5.5v13l10-6.5z" fill="currentColor"/>`,
+  check: `<path d="M5 12.5l4.5 4.5L19 7.5"/>`,
+  close: `<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>`,
+  plus: `<path d="M12 5v14M5 12h14"/>`,
+  chevronDown: `<path d="M6.5 9.5l5.5 5.5 5.5-5.5"/>`,
+  chevronRight: `<path d="M9.5 6l6 6-6 6"/>`,
+  // メニューの構成要素
+  flame: `<path d="M12 21c-3.6 0-6-2.4-6-5.8 0-2.9 1.9-4.6 3.2-6.4.4 1.6 1.1 2.6 2.1 3.1.2-2.9 1.4-5.2 3.4-6.9-.1 2.6.9 4.4 2.3 6.1 1 1.3 1.6 2.6 1.6 4.1 0 3.4-2.4 5.8-6.6 5.8z"/>`,
+  wind: `<path d="M3 9h10.5a2.5 2.5 0 1 0-2.5-2.5M3 13h15a2.5 2.5 0 1 1-2.5 2.5M3 17h6"/>`,
+  pulse: `<path d="M3 12h4l2.5-6 4 12 2.5-6h5"/>`,
+  wave: `<path d="M3 9.5c1.5 0 2-1.5 4.5-1.5S10 9.5 12 9.5s2-1.5 4.5-1.5S19.5 9.5 21 9.5M3 15c1.5 0 2-1.5 4.5-1.5S10 15 12 15s2-1.5 4.5-1.5S19.5 15 21 15"/>`,
+  trend: `<path d="M3.5 16.5l5.5-5.5 4 4 7.5-7.5M15 7.5h5.5V13"/>`,
+  bulb: `<path d="M9.5 18h5M10.5 21h3M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.1V16h5v-.1c0-.8.4-1.6 1.1-2.1A6 6 0 0 0 12 3z"/>`,
+  leaf: `<path d="M5 19c0-8.5 5.5-13.5 14-14-.5 8.5-5.5 14-14 14z"/><path d="M5 19l6.5-6.5"/>`,
+  // 相談(調整)
+  bolt: `<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>`,
+  moon: `<path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.5 6.5 0 0 0 10 10z"/>`,
+  clock: `<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>`,
+  undo: `<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5V9H9"/>`,
+  // 設定・その他
+  refresh: `<path d="M19.5 12a7.5 7.5 0 0 1-13.2 4.9M4.5 12a7.5 7.5 0 0 1 13.2-4.9"/><path d="M18 3.5v4h-4M6 20.5v-4h4"/>`,
+  download: `<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/>`,
+  upload: `<path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 19.5h14"/>`,
+  edit: `<path d="M4.5 19.5h4l10-10-4-4-10 10z"/><path d="M13 7l4 4"/>`,
+  trophy: `<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5.5a2.5 2.5 0 0 0 2.8 3.9M16 6h2.5a2.5 2.5 0 0 1-2.8 3.9M12 13v3.5M9 20h6M10 16.5h4"/>`,
+  alert: `<path d="M12 4l9 16H3z"/><path d="M12 10v4.5"/>${dot(12, 17.3)}`,
+  shield: `<path d="M12 3.5l7 2.5v5.5c0 4.5-3 8-7 9.5-4-1.5-7-5-7-9.5V6z"/><path d="M9 12l2 2 4-4"/>`,
+};
+
+// アイコンの SVG 文字列。cls で大きさなどを CSS から調整する
+export function uiIcon(name, cls = "") {
+  return `<svg class="ico${cls ? ` ${cls}` : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
+    `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">` +
+    `${UI_ICONS[name] ?? ""}</svg>`;
+}

@@ -5,6 +5,8 @@
 // - role="img" と <title>/<desc>・aria-label で内容を読み上げられる
 // - width を渡すと 1 SVG 単位 = 1 CSS px で描くので、文字がどの画面でも同じ大きさになる
 //   (CSS 側は .line-chart { max-width:100%; height:auto; } で縮小のみ許可する)
+// - 色は CSS 変数(--accent / --line / --text-dim)を使う。最新値ラベルの縁取りと自己ベスト点の塗りは
+//   グラフの背景色 --chart-bg(未定義なら --bg-elevated)に合わせる
 import { escapeHtml, formatShortDate } from "./util.js?v=14";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -77,6 +79,7 @@ const textWidth = (s, size, bold = false) =>
  * @param {Array<{date:string, value:number, pr?:boolean}>} points 古い順でなくてもよい
  * @param {object} opts
  *   color     線の色(既定: var(--accent))
+ *   background グラフが置かれる背景色(既定: var(--chart-bg, var(--bg-elevated)))
  *   unit      単位("kg" "回" "m" など)。最新値ラベル・一番上の目盛り・読み上げ文に付く
  *   decimals  値の表示桁数(既定: 目盛りに合わせる/最大 2 桁)
  *   title     グラフの名前(例 "ベンチプレスの最大重量")。<title> と読み上げの先頭に使う
@@ -89,7 +92,7 @@ const textWidth = (s, size, bold = false) =>
  */
 export function lineChartSVG(points, opts = {}) {
   const {
-    color, unit = "", decimals, title = "推移グラフ", ariaLabel, width = 360, height, minSpan = null,
+    color, background, unit = "", decimals, title = "推移グラフ", ariaLabel, width = 360, height, minSpan = null,
     highlight = null, emptyText = "データがありません",
   } = opts;
   const pts = (Array.isArray(points) ? points : [])
@@ -102,7 +105,7 @@ export function lineChartSVG(points, opts = {}) {
   const lineColor = safeColor(color, "var(--accent, #cbf24f)");
   const gridColor = "var(--line, #343943)";
   const dimColor = "var(--text-dim, #9aa0ab)";
-  const haloColor = "var(--bg-panel, #1b1e25)";
+  const haloColor = safeColor(background, "var(--chart-bg, var(--bg-elevated, #23272f))");
   const u = String(unit);
 
   const values = pts.map((p) => p.value);

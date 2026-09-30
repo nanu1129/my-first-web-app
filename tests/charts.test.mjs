@@ -188,6 +188,20 @@ test("PR points get a highlight ring (points[].pr or highlight option)", () => {
   assert.equal((viaOpt.match(/class="line-chart-pr"/g) ?? []).length, 1);
 });
 
+test("the value-label halo and PR ring fill follow the chart background (token or option)", () => {
+  const data = [{ date: "2026-09-01", value: 60 }, { date: "2026-09-08", value: 65, pr: true }];
+  const def = lineChartSVG(data, { unit: "kg" });
+  assert.match(def, /stroke:var\(--chart-bg, var\(--bg-elevated, #23272f\)\)/);
+  assert.match(def, /class="line-chart-pr"[^>]*fill:var\(--chart-bg/);
+  const custom = lineChartSVG(data, { background: "#1b1e25" });
+  assert.match(custom, /stroke:#1b1e25/);
+  assert.doesNotMatch(custom, /--chart-bg/);
+  // 値として不正な色(属性の外へ出ようとするもの)は既定値に戻す
+  const evil = lineChartSVG(data, { background: 'red;"><script>', color: "x\" onload=\"alert(1)" });
+  assert.doesNotMatch(evil, /<script>|onload=/);
+  assert.match(evil, /--chart-bg/);
+});
+
 test("empty or invalid input renders an empty-state paragraph", () => {
   assert.equal(lineChartSVG([]), `<p class="chart-empty">データがありません</p>`);
   assert.equal(lineChartSVG(null, { emptyText: "記録するとグラフが表示されます" }), `<p class="chart-empty">記録するとグラフが表示されます</p>`);

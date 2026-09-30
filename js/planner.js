@@ -140,7 +140,9 @@ const EXERCISES = [
     { style: "bw", harder: "腕立て伏せ", easier: "インクラインプッシュアップ(台に手)", regression: true }),
   E("インクラインプッシュアップ(台に手)", "chest", "h_push", [], 1, 2, "compound",
     { style: "bw", harder: "膝つき腕立て伏せ", regression: true }),
-  E("デクラインプッシュアップ", "chest", "incline_push", [], 2, 5, "compound", { style: "bw", easier: "腕立て伏せ" }),
+  // 頭が心臓より低くなる種目(デクライン・パイク)は60歳以上には自動採用しない(血圧・めまい対策)
+  E("デクラインプッシュアップ", "chest", "incline_push", [], 2, 5, "compound",
+    { style: "bw", easier: "腕立て伏せ", avoid: ["senior"] }),
 
   // --- 背中 ---
   E("デッドリフト", "back", "hinge", ["barbell"], 2, 10, "compound", { sub: "hamstrings", heavy: true, mainOnly: true }),
@@ -200,13 +202,14 @@ const EXERCISES = [
   E("ケーブルサイドレイズ", "shoulders", "lateral", ["cable"], 1, 5, "isolation"),
   E("バンドサイドレイズ", "shoulders", "lateral", ["band"], 1, 4, "isolation"),
   E("パイクプッシュアップ", "shoulders", "v_push", [], 1, 5, "compound",
-    { style: "bw", easier: "パイクプッシュアップ(台に手)" }),
+    { style: "bw", easier: "パイクプッシュアップ(台に手)", avoid: ["senior"] }),
   E("パイクプッシュアップ(台に手)", "shoulders", "v_push", [], 1, 3, "compound",
-    { style: "bw", harder: "パイクプッシュアップ", regression: true }),
+    { style: "bw", harder: "パイクプッシュアップ", regression: true, avoid: ["senior"] }),
   E("フェイスプル", "shoulders", "rear_delt", ["cable"], 1, 6, "isolation", { style: "high" }),
   E("リアデルトフライ(マシン)", "shoulders", "rear_delt", ["mc_pec_fly"], 1, 5, "isolation"),
   E("バンドプルアパート", "shoulders", "rear_delt", ["band"], 1, 4, "isolation", { style: "high" }),
   E("うつ伏せYTWレイズ", "shoulders", "rear_delt", [], 1, 2, "isolation", { style: "high" }),
+  E("ペットボトルサイドレイズ", "shoulders", "lateral", [], 1, 2, "isolation", { style: "high" }),
 
   // --- 腕 ---
   E("バーベルカール", "arms", "biceps", ["barbell"], 1, 6, "isolation"),
@@ -331,6 +334,7 @@ const EXERCISE_TIPS = {
   "リアデルトフライ(マシン)": "マシンに向かって座り、腕を後ろへ開いて肩の後ろに効かせる。",
   "バンドプルアパート": "バンドを肩幅で持ち、胸の前で左右に引き離して肩甲骨を寄せる。",
   "うつ伏せYTWレイズ": "うつ伏せで腕をY・T・Wの形に浮かせる。肩甲骨を寄せて小さくゆっくり。",
+  "ペットボトルサイドレイズ": "水を入れた500ml〜2Lのペットボトルを持ち、肘を軽く曲げて肩の高さまでゆっくり上げる。",
   "バーベルカール": "肘を固定し反動を使わず巻き上げる。下ろしもゆっくり。",
   "ナローベンチプレス": "手幅を狭め、肘を体側に。上腕三頭筋を意識。",
   "ダンベルカール": "肘を固定し小指を巻き込むように。左右交互でも可。",
@@ -673,7 +677,13 @@ export function analyzeLogs(logs, now = new Date()) {
 
 // ---------- 前回記録からの目標(ダブルプログレッション) ----------
 
-const KB_SIZES = [4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48];
+// ケトルベルの規格のうち、記録の重量の選択肢(WEIGHT_CHOICES)にあるもの
+const KB_SIZES = [4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40];
+// 重量の選択肢の中で最も近い値(0 = 自重は除く)
+const snapToChoice = (x) => WEIGHT_CHOICES.reduce((best, v) => (v > 0 && Math.abs(v - x) < Math.abs(best - x) ? v : best), 1);
+// バーベル・スミスはプレートで2.5kg刻み、それ以外は選択肢の中で最も近い値
+const snapFor = (x, info) =>
+  (info?.load === "barbell" || info?.load === "smith") && x > 10 ? Math.round(x / 2.5) * 2.5 : snapToChoice(x);
 const isLowerCompound = (info) =>
   !!info && info.kind === "compound" && ["squat", "lunge", "hinge", "glute"].includes(info.pattern);
 const step25Up = (w) => Math.floor(w / 2.5 + 1e-9) * 2.5 + 2.5;
@@ -690,7 +700,7 @@ function nextWeight(w, info) {
       if (w < 32) return (Math.floor(w / 2) + 1) * 2;
       return step25Up(w);
     case "kettlebell":
-      return KB_SIZES.find((s) => s > w) ?? w + 4;
+      return KB_SIZES.find((s) => s > w) ?? step25Up(w);
     default: // マシン・ケーブル・自重+加重
       return w < 10 ? Math.floor(w) + 1 : step25Up(w);
   }
@@ -700,13 +710,13 @@ function prevWeight(w, info) {
   switch (info?.load) {
     case "barbell":
     case "smith":
-      return Math.max(2.5, Math.round((w - (isLowerCompound(info) ? 5 : 2.5)) / 2.5) * 2.5);
+      return Math.min(w, Math.max(2.5, Math.round((w - (isLowerCompound(info) ? 5 : 2.5)) / 2.5) * 2.5));
     case "dumbbell":
       if (w <= 10) return Math.max(1, Math.ceil(w) - 1);
       if (w <= 32) return Math.max(10, (Math.ceil(w / 2) - 1) * 2);
       return step25Down(w);
     case "kettlebell":
-      return [...KB_SIZES].reverse().find((s) => s < w) ?? Math.max(2, w - 4);
+      return [...KB_SIZES].reverse().find((s) => s < w) ?? w;
     default:
       return w <= 10 ? Math.max(1, Math.ceil(w) - 1) : step25Down(w);
   }
@@ -764,9 +774,9 @@ export function progressionTarget(record, ex, profile, now) {
 
   // 3週間以上あいた種目は約8割の重さから再開
   if (now && w > 0 && record.date && daysSince(record.date, now) >= 21) {
-    const step = w <= 10 ? 1 : 2.5;
-    let back = Math.round((w * 0.8) / step) * step;
+    let back = snapFor(w * 0.8, info);
     if (back >= w) back = prevWeight(w, info);
+    if (back >= w) back = w;
     return { weight: back, reps: lo, text: `${fmtKg(back)}kg×${lo}回(ブランク明けは約8割の重さから)` };
   }
 
@@ -850,7 +860,7 @@ const GOAL_PARAMS = {
     scheme: "減量中も重さは落とさず筋肉を守るのがコツ。セット数はやや控えめにし、消費は食事と仕上げの有酸素で作ります。",
   },
   health: {
-    main: { sets: 2, reps: "8〜12回", rest: "90〜120秒" },
+    main: { sets: 3, reps: "8〜12回", rest: "90〜120秒" },
     secondary: { sets: 2, reps: "10〜15回", rest: "60〜90秒" },
     accessory: { sets: 2, reps: "12〜15回", rest: "60秒" },
     scheme: "健康維持:無理のない重量で中回数。あと2〜3回余裕を残して止め、関節にやさしく続けやすさを最優先します。",
@@ -880,7 +890,7 @@ function resolveParams(e, tier, ctx) {
   }
   let sets = base.sets;
   // 初心者: メイン種目は3セットまで(フォーム練習の回数を確保)、それ以外は1セット減らして安全に
-  if (ctx.levelNum === 1) sets = tier === "main" ? Math.min(sets, 3) : Math.max(2, sets - 1);
+  if (ctx.levelNum === 1) sets = tier === "main" && ctx.goal !== "health" ? Math.min(sets, 3) : Math.max(2, sets - 1);
   else if (ctx.levelNum === 3 && tier === "main") sets = Math.min(5, sets + 1); // 上級者:メイン種目だけ1セット追加
 
   let range = base.reps.replace(/回$/, "");
@@ -937,7 +947,7 @@ function resolveParams(e, tier, ctx) {
 const TEMPLATES = {
   full1: { split: "full", label: "全身", slots: ["squat", "h_push", "h_pull|v_pull|back_ext", "hinge|glute|knee_flex", "v_push|lateral", "?lateral|rear_delt", "core"] },
   fullA: { split: "full", label: "全身A", slots: ["squat", "h_push", "v_pull|h_pull|back_ext", "knee_flex|glute|hinge", "lateral|rear_delt|v_push", "?calf", "core"] },
-  fullB: { split: "full", label: "全身B", slots: ["hinge|glute|knee_flex", "v_push|h_push", "h_pull|v_pull|back_ext", "lunge|squat", "triceps", "?chest_fly|incline_push", "core"] },
+  fullB: { split: "full", label: "全身B", slots: ["hinge|glute|knee_flex", "v_push|h_push", "h_pull|v_pull|back_ext", "lunge|squat", "triceps", "?chest_fly", "core"] },
   fullC: { split: "full", label: "全身C", slots: ["squat|lunge", "incline_push|h_push", "v_pull|h_pull|back_ext", "calf", "biceps", "?glute|knee_flex|hinge", "core"] },
   upperA: { split: "upper", label: "上半身A", slots: ["h_push", "h_pull|v_pull|back_ext", "v_push|lateral", "v_pull|h_pull|back_ext", "lateral|rear_delt", "triceps", "?biceps"] },
   upperB: { split: "upper", label: "上半身B", slots: ["v_push|h_push", "v_pull|h_pull|back_ext", "incline_push|h_push|chest_fly", "h_pull|v_pull|back_ext", "rear_delt|lateral", "biceps", "?triceps"] },
@@ -1254,9 +1264,11 @@ function balanceSets(liftDays, ctx, bands) {
       if (!band) continue;
       const mine = refs.filter((r) => r.ex.sub === key);
       if (totals[key] > band[1]) {
+        // 多すぎる筋肉は、メイン以外でセット数の多い種目(補助種目を優先)から削る
         const cand = mine
           .filter((r) => r.ex.sets > 2)
-          .sort((a, b) => b.ex.sets - a.ex.sets || tierOrder[a.ex.tier] - tierOrder[b.ex.tier] || b.di - a.di)[0];
+          .sort((a, b) => (a.ex.tier === "main") - (b.ex.tier === "main") || b.ex.sets - a.ex.sets ||
+            tierOrder[a.ex.tier] - tierOrder[b.ex.tier] || b.di - a.di)[0];
         if (cand) {
           cand.ex.sets--;
           daySets[cand.di]--;
@@ -1272,11 +1284,11 @@ function balanceSets(liftDays, ctx, bands) {
         let cand = eligible.find((r) => daySets[r.di] < dayCap && !heavyBlocked(r));
         let donor = null;
         if (!cand) {
-          // その日の上限に達していれば、目標帯の下限に余裕がある別の筋肉から1セット回す
+          // その日の上限に達していれば、目標帯の下限に余裕がある別の筋肉から1セット回す(メイン種目からは取らない)
           const sizeOrder = { core: 0, minor: 1, major: 2 };
           for (const r of eligible) {
             donor = refs
-              .filter((d) => d.di === r.di && d.ex.sub !== key && d.ex.sets > 2 && bands[d.ex.sub] &&
+              .filter((d) => d.di === r.di && d.ex.sub !== key && d.ex.sets > 2 && d.ex.tier !== "main" && bands[d.ex.sub] &&
                 totals[d.ex.sub] - 1 >= bands[d.ex.sub][0] && (!heavyBlocked(r) || d.ex.tier !== "accessory"))
               .sort((a, b) => sizeOrder[SUB_MUSCLES[a.ex.sub].size] - sizeOrder[SUB_MUSCLES[b.ex.sub].size] ||
                 tierOrder[a.ex.tier] - tierOrder[b.ex.tier] || b.ex.sets - a.ex.sets)[0] ?? null;
@@ -1341,11 +1353,47 @@ function applyHeavyBudget(liftDays, ctx) {
   }
 }
 
+// メイン種目(その日の1種目目)のセット数が、同じ日の他の種目より少なくならないようにする。
+// 同じ筋肉の種目から1セット移す → メインを1セット増やす → 多い種目を1セット減らす、の順で試す
+// (どれも週の目標帯・1日の上限・筋力目的の重い種目の上限を超えない範囲で)
+function mainLeads(liftDays, ctx, bands) {
+  const dayCap = Math.round(DAY_SET_CAP[ctx.levelNum] * DAY_CAP_GOAL[ctx.goal]);
+  const totals = {};
+  for (const d of liftDays) for (const e of d.exercises) totals[e.sub] = (totals[e.sub] ?? 0) + e.sets;
+  // 増やすときは帯の上限、減らすときは帯の下限を割らないか
+  const within = (sub, delta) => !bands[sub] || (delta > 0 ? totals[sub] + delta <= bands[sub][1] : totals[sub] + delta >= bands[sub][0]);
+  for (const d of liftDays) {
+    const main = d.exercises.find((e) => e.tier === "main");
+    if (!main) continue;
+    for (let guard = 0; guard < 12; guard++) {
+      const top = d.exercises
+        .filter((e) => e !== main && e.track === "weight")
+        .sort((a, b) => b.sets - a.sets)[0];
+      if (!top || top.sets <= main.sets) break;
+      const mainRoom = main.sets < exerciseCap(main, ctx);
+      const daySets = d.exercises.reduce((s, e) => s + e.sets, 0);
+      const heavy = d.exercises.filter((e) => e.tier !== "accessory").reduce((s, e) => s + e.sets, 0);
+      const heavyRoom = ctx.goal !== "strength" || heavy < STRENGTH_HEAVY_BUDGET;
+      if (mainRoom && top.sub === main.sub && top.sets > 2 && (heavyRoom || top.tier !== "accessory")) {
+        main.sets++;
+        top.sets--;
+      } else if (mainRoom && heavyRoom && daySets <= dayCap && within(main.sub, 1)) { // メインは1日の上限+1まで可
+        main.sets++;
+        totals[main.sub]++;
+      } else if (top.sets > 2 && within(top.sub, -1)) {
+        top.sets--;
+        totals[top.sub]--;
+      } else break;
+    }
+  }
+}
+
 function normalizeVolume(days, ctx, bands) {
   const liftDays = days.filter((d) => d.type === "lift");
   applyHeavyBudget(liftDays, ctx);
   balanceSets(liftDays, ctx, bands);
   for (let guard = 0; guard < 40 && pruneOne(liftDays, ctx, bands); guard++) balanceSets(liftDays, ctx, bands);
+  mainLeads(liftDays, ctx, bands);
 }
 
 function weeklyVolumeSummary(plan) {
@@ -1369,16 +1417,19 @@ const SWIM_RX = {
   3: { text: "100m×6本(20秒休憩)+ダウン100m=700m", distanceM: 700, minutes: 25 },
 };
 
-function healthCardioMinutes(liftDays) {
-  return clampNum(Math.ceil(150 / Math.max(1, liftDays) / 5) * 5, 20, 30);
+// 健康維持: 週150分に届くよう筋トレ日の有酸素の分数を決める(アクティブレストの日は30分歩く)
+const HEALTH_RECOVERY_MIN = 30;
+function healthCardioMinutes(liftDays, recoveryDays = 0) {
+  const rest = Math.max(0, 150 - HEALTH_RECOVERY_MIN * recoveryDays);
+  return clampNum(Math.ceil(rest / Math.max(1, liftDays) / 5) * 5, 20, 30);
 }
 
 // 目的に応じた1回分の有酸素(null = その目的では付けない)
-function goalCardio(ctx, liftDays) {
+function goalCardio(ctx, liftDays, recoveryDays = 0) {
   if (ctx.goal === "cut") return { text: "20〜30分", minutes: 25 };
   if (ctx.goal === "strength") return { text: "10〜15分(軽め)", minutes: 12 };
   if (ctx.goal === "health") {
-    const m = healthCardioMinutes(liftDays);
+    const m = healthCardioMinutes(liftDays, recoveryDays);
     return { text: `${m}分(会話できる程度)`, minutes: m };
   }
   return null;
@@ -1389,7 +1440,9 @@ function cardioRx(e, ctx, cfg, mode) {
   const isPool = e.equipment.includes("pool");
   if (mode === "recovery") {
     if (e.modality === "swim") return { text: "25m×10本(ゆっくり・各30秒休憩)=250m", minutes: 20, distanceM: 250, isPool };
-    return { text: "20〜30分(会話できる強さ)", minutes: 25, distanceM: null, isPool };
+    return ctx.goal === "health"
+      ? { text: `${HEALTH_RECOVERY_MIN}分(会話できる強さ)`, minutes: HEALTH_RECOVERY_MIN, distanceM: null, isPool }
+      : { text: "20〜30分(会話できる強さ)", minutes: 25, distanceM: null, isPool };
   }
   if (e.modality === "swim") {
     const rx = SWIM_RX[mode === "optional" ? 1 : ctx.levelNum];
@@ -1486,14 +1539,14 @@ function rampItem(exercises, ctx) {
     ? [[0.4, 5], [0.6, 3], [0.75, 2], [0.85, 1]]
     : ctx.goal === "health" ? [[0.5, 10]] : [[0.5, 8], [0.7, 4]];
   if (W > 0) {
-    const stepOf = info.load === "dumbbell" || info.load === "kettlebell" ? 1 : 2.5;
+    // 重さは記録の選択肢にある値へ丸める。バーベルはバー(20kg)より軽くしない
     const bar = info.load === "barbell" ? 20 : 0;
     const parts = [];
     if (heavyRamp && bar && W > bar * 1.5) parts.push(`${bar}kg(バーのみ)×10`);
     let last = bar && parts.length ? bar : 0;
     for (const [pct, reps] of scheme) {
-      const kg = Math.round((W * pct) / stepOf) * stepOf;
-      if (kg <= last || kg >= W) continue;
+      const kg = snapFor(W * pct, info);
+      if (kg <= last || kg >= W || kg < bar) continue;
       parts.push(`${fmtKg(kg)}kg×${reps}`);
       last = kg;
     }
@@ -1738,7 +1791,7 @@ export function generatePlan(profile, logs = [], now = new Date()) {
   }
 
   // 有酸素: 目的に応じて筋トレ日に付ける(日ごとに種類を回し、脚の日は衝撃の小さいものに)
-  const cfg = goalCardio(ctx, split.liftDays);
+  const cfg = goalCardio(ctx, split.liftDays, split.recoveryDays);
   const cardioUsage = new Map();
   const poolOptional = !cfg && ctx.selected.has("pool");
   for (const day of days) {
@@ -1813,8 +1866,11 @@ function swapCandidates(ctx, day, exIndex) {
   const otherHinge = day.exercises.some(
     (e, i) => i !== exIndex && (e.pattern ?? NAME_TO_EXERCISE.get(e.name)?.pattern) === "hinge"
   );
+  // アクティブレストの日は器具を使わない軽い種目の中だけで入れ替える
+  const recovery = day.type === "recovery";
   const ok = (e) =>
-    allowed(e, ctx) && !others.has(e.name) && !(e.pattern === "hinge" && (noHinge || otherHinge));
+    allowed(e, ctx) && !others.has(e.name) && !(e.pattern === "hinge" && (noHinge || otherHinge)) &&
+    !(recovery && e.equipment.length > 0);
   const sorter = byScore(ctx, null, current.tier === "main");
   const list = [];
   const addPattern = (p) => {
@@ -1834,7 +1890,7 @@ function swapCandidates(ctx, day, exIndex) {
 }
 
 function buildSwapRow(next, current, ctx, day) {
-  const tier = next.kind === "compound" && tierRank(next) <= 1
+  const tier = day.type !== "recovery" && next.kind === "compound" && tierRank(next) <= 1
     ? (current.tier === "main" && tierRank(next) === 0 ? "main" : "secondary")
     : "accessory";
   const p = resolveParams(next, tier, ctx);
@@ -1903,7 +1959,7 @@ export function alternativeCardio(profile, logs, currentName, now = new Date(), 
   const next = list[(idx + 1) % list.length];
   if (next.name === currentName) return null;
   const liftDays = Math.min(ctx.frequency, ctx.liftCap);
-  const cfg = goalCardio(ctx, liftDays) ?? { text: "20〜30分", minutes: 25 };
+  const cfg = goalCardio(ctx, liftDays, ctx.frequency - liftDays) ?? { text: "20〜30分", minutes: 25 };
   const cardio = makeCardio(next, ctx, cfg, mode);
   if (day?.shortened && mode === "normal") shortenCardio(cardio);
   return cardio;
