@@ -879,7 +879,8 @@ function resolveParams(e, tier, ctx) {
     base = { ...g.secondary, sets: g.main.sets };
   }
   let sets = base.sets;
-  if (ctx.levelNum === 1) sets = Math.max(2, sets - 1);                        // 初心者:1セット減らして安全に
+  // 初心者: メイン種目は3セットまで(フォーム練習の回数を確保)、それ以外は1セット減らして安全に
+  if (ctx.levelNum === 1) sets = tier === "main" ? Math.min(sets, 3) : Math.max(2, sets - 1);
   else if (ctx.levelNum === 3 && tier === "main") sets = Math.min(5, sets + 1); // 上級者:メイン種目だけ1セット追加
 
   let range = base.reps.replace(/回$/, "");
@@ -1479,14 +1480,16 @@ function rampItem(exercises, ctx) {
     return `${RAMP_PREFIX}(${first.name}): 本番前にゆっくり5回で動きと可動域を確認`;
   }
   const W = first.target?.weight ?? num(ctx.analysis?.lastRecordByName[first.name]?.weight);
-  const scheme = ctx.goal === "strength"
+  // 段階の数は本番の回数で決める(5回以下の高重量ほど細かく上げる)
+  const heavyRamp = (parseRange(first.reps)?.lo ?? 8) <= 5;
+  const scheme = heavyRamp
     ? [[0.4, 5], [0.6, 3], [0.75, 2], [0.85, 1]]
     : ctx.goal === "health" ? [[0.5, 10]] : [[0.5, 8], [0.7, 4]];
   if (W > 0) {
     const stepOf = info.load === "dumbbell" || info.load === "kettlebell" ? 1 : 2.5;
     const bar = info.load === "barbell" ? 20 : 0;
     const parts = [];
-    if (ctx.goal === "strength" && bar && W > bar * 1.5) parts.push(`${bar}kg(バーのみ)×10`);
+    if (heavyRamp && bar && W > bar * 1.5) parts.push(`${bar}kg(バーのみ)×10`);
     let last = bar && parts.length ? bar : 0;
     for (const [pct, reps] of scheme) {
       const kg = Math.round((W * pct) / stepOf) * stepOf;
@@ -1497,7 +1500,7 @@ function rampItem(exercises, ctx) {
     if (parts.length === 0) return `${RAMP_PREFIX}(${first.name}): 本番より軽い重量で1セット(8回)`;
     return `${RAMP_PREFIX}(${first.name}): ${parts.join(" → ")} → 本番${fmtKg(W)}kg`;
   }
-  const text = ctx.goal === "strength"
+  const text = heavyRamp
     ? "軽い重量×10 → 本番の40%×5 → 60%×3 → 75%×2 → 85%×1"
     : ctx.goal === "health" ? "本番より軽い重量で1セット(10回)" : "本番の約50%×8 → 70%×4";
   return `${RAMP_PREFIX}(${first.name}): ${text}`;
