@@ -32,10 +32,13 @@ const BESTS_SHOWN = 5;
 const BW_HISTORY = 10;
 const BW_SPAN = 15;      // 体重の選択肢は基準値 ±15kg(0.1kg 刻み)
 const RECENT_DAYS = 7;   // 自己ベストの「最近更新」
+// 縦軸の最小の幅(単位ごと)。1点だけ・変化が小さいときに目盛りが細かくなりすぎない(回数に 8.75 などが出ない)
+const MIN_SPAN = { kg: 2, 回: 4, 秒: 20, 分: 4, m: 100, km: 1 };
 
 let ctx = null;
 let body = null;
-let chartName = null;                      // グラフに表示中の種目
+let chartName = null;                      // グラフで選んだ種目(選ぶまでは最後に記録した種目を表示)
+let chartShown = null;                     // いまグラフに表示している種目
 const metricOf = {};                       // 種目の種類ごとに選んだ指標
 let calSelected = null;                    // カレンダーで選んだ日
 let bestsOpen = false;
@@ -136,6 +139,13 @@ function calDetailHtml(logs) {
 
 // ---------- 種目の推移グラフ(I15 I44 B26 B35) ----------
 
+// 初期表示は最後に記録した種目(同じ日に複数の記録があれば後から保存した方。記録の先頭の種目。I44)
+function latestTracked(tracked, logs) {
+  const byName = new Map(tracked.map((t) => [t.name, t]));
+  for (const l of logs) for (const e of l.entries) if (byName.has(e.name)) return byName.get(e.name);
+  return tracked[0];
+}
+
 function chartHtml(logs) {
   const tracked = trackedExercises(logs);
   const head = sectionHead("chart-title", "種目の推移", tracked.length ? `${tracked.length}種目` : "");
@@ -144,8 +154,8 @@ function chartHtml(logs) {
     return `<section id="pg-chart" class="card chart-card" aria-labelledby="chart-title">${head}` +
       `<p class="chart-empty">重さ・回数・秒・距離を記録すると、種目ごとの推移がグラフで表示されます。</p></section>`;
   }
-  const t = tracked.find((x) => x.name === chartName) ?? tracked[0];
-  chartName = t.name;
+  const t = tracked.find((x) => x.name === chartName) ?? latestTracked(tracked, logs);
+  chartShown = t.name;
   const metric = t.metrics.includes(metricOf[t.kind]) ? metricOf[t.kind] : t.metrics[0];
   const options = KIND_GROUPS.map(([kind, label]) => {
     const names = tracked.filter((x) => x.kind === kind);
@@ -163,7 +173,7 @@ function chartHtml(logs) {
   const label = METRIC_LABELS[metric];
   chartData.ex = {
     points,
-    opts: { unit, title: `${t.name}の${label}`, minSpan: unit === "kg" ? 2 : null, emptyText: "この指標の記録はまだありません" },
+    opts: { unit, title: `${t.name}の${label}`, minSpan: MIN_SPAN[unit] ?? null, emptyText: "この指標の記録はまだありません" },
   };
   const values = points.map((p) => p.value);
   const last = points[points.length - 1];
@@ -246,11 +256,14 @@ function bestsHtml(logs) {
     const nm = escapeHtml(b.name);
     const others = Object.values(b.bests).filter((x) => x.kind !== b.best.kind)
       .map((x) => `${x.label} ${fmt(x.value, 2)}${x.unit}`);
-    const recent = daysBetween(b.updated, today) <= RECENT_DAYS;
+    // 最近更新した種目は日付をライムで「更新」と書く(色だけに頼らず文言も変える)
+    const when = daysBetween(b.updated, today) <= RECENT_DAYS
+      ? `<span class="pb-new">${escapeHtml(formatShortDate(b.updated))} 更新</span>`
+      : escapeHtml(`${formatShortDate(b.best.date)} 達成`);
     return `<li><button type="button" class="pb-row" data-act="chart" data-name="${nm}" data-key="pb-${nm}" aria-label="${nm}の推移をグラフで見る">` +
       `<span class="pb-ico">${uiIcon("trophy")}</span>` +
-      `<span class="pb-main"><span class="pb-name">${nm}${recent ? `<span class="tag tag--pr">最近更新</span>` : ""}</span>` +
-      `<span class="pb-sub">${escapeHtml([...others, `${formatShortDate(b.best.date)} 達成`].join(" · "))}</span></span>` +
+      `<span class="pb-main"><span class="pb-name">${nm}</span>` +
+      `<span class="pb-sub">${[...others.map(escapeHtml), when].join(" · ")}</span></span>` +
       `<span class="pb-val"><span class="pb-kind">${escapeHtml(b.best.label)}</span><span><b class="num">${escapeHtml(fmt(b.best.value, 2))}</b>${escapeHtml(b.best.unit)}</span></span>` +
       `</button></li>`;
   }).join("");
@@ -288,7 +301,7 @@ function bwHtml(bw) {
     `<label class="seg-opt"><input type="radio" name="bw-date" value="${v}" data-key="bw-${v}"${bwChoice === v ? " checked" : ""}>` +
     `<span class="seg-main">${main}</span><span class="seg-sub">${escapeHtml(formatJaDate(date))}</span></label>`;
   chartData.bw = series.length
-    ? { points: series, opts: { unit: "kg", title: "体重", minSpan: 2, color: "var(--ai)", decimals: 1 } }
+    ? { points: series, opts: { unit: "kg", title: "体重", minSpan: MIN_SPAN.kg, color: "var(--ai)", decimals: 1 } }
     : null;
   let trend = "";
   if (series.length >= 2) {
@@ -385,7 +398,7 @@ function badgesHtml(logs) {
 // ---------- 全体の描画 ----------
 
 function emptyHtml() {
-  return `<div class="empty-state pg-wide">` +
+  return `<div class="empty-state">` +
     `<span class="empty-ico">${uiIcon("chart")}</span>` +
     `<h2 class="empty-title">記録すると、ここに進捗が表示されます</h2>` +
     `<p class="empty-text">カレンダー・種目ごとのグラフ・自己ベスト・バッジで、続けた成果をひと目で確認できます。体重は今日から記録できます。</p>` +
@@ -402,11 +415,16 @@ const SECTIONS = {
   badges: badgesHtml,
 };
 
+// 狭い画面では上から順に1列。広い画面では まとめ / [カレンダー・グラフ | 自己ベスト・体重・種目名] / バッジ
+const LAYOUT = [["summary"], ["cal", "chart"], ["best", "bw", "names"], ["badges"]];
+
 function render() {
   const key = activeKey();
   const logs = ctx.storage.loadLogs();
-  const order = logs.length ? ["summary", "cal", "chart", "names", "best", "bw", "badges"] : ["bw", "badges"];
-  body.innerHTML = `<div class="progress-grid">${logs.length ? "" : emptyHtml()}${order.map((k) => SECTIONS[k](logs)).join("")}</div>`;
+  const html = (k) => SECTIONS[k](logs);
+  body.innerHTML = `<div class="progress-grid">` + (logs.length
+    ? LAYOUT.map((g) => (g.length > 1 ? `<div class="pg-col">${g.map(html).join("")}</div>` : html(g[0]))).join("")
+    : emptyHtml() + html("bw") + html("badges")) + `</div>`;
   observeCharts();
   focusKey(key);
 }
@@ -493,7 +511,7 @@ function onChange(e) {
     chartName = t.value;
     renderSection("chart", { focus: "chart-ex" });
   } else if (t.name === "chart-metric") {
-    const kind = trackedExercises(ctx.storage.loadLogs()).find((x) => x.name === chartName)?.kind;
+    const kind = trackedExercises(ctx.storage.loadLogs()).find((x) => x.name === chartShown)?.kind;
     if (kind) metricOf[kind] = t.value;
     renderSection("chart", { focus: `metric-${t.value}` });
   } else if (t.matches(".bw-select")) {

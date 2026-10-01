@@ -67,6 +67,11 @@ const unitFor = (name) => (isPoolExercise(name) ? "m" : "km");
 const needsWeight = (name) => !isKnown(name) || LOADED.has(getExerciseInfo(name)?.load);
 const fmt = (v) => formatNum(v, 2);
 const dayName = (title) => String(title ?? "").replace(DAY_PREFIX, "");
+// "メニュー 1日目・全身A"
+function planDayText(pd) {
+  const name = dayName(pd.title) || pd.title;
+  return Number.isInteger(pd.index) ? `メニュー ${pd.index + 1}日目・${name}` : `メニュー ${name}`;
+}
 
 function midNumber(text) {
   const nums = String(text ?? "").match(/\d+(?:\.\d+)?/g)?.map(Number);
@@ -132,14 +137,6 @@ function valueText(e) {
   return `${w}${e.reps ?? "-"}回 × ${e.sets}セット`;
 }
 
-// 一覧の1行に入る短い表記 "60kg×10"
-function shortText(e) {
-  if (e.track === "time") return e.seconds != null ? `${fmt(e.seconds)}秒` : "";
-  if (e.track === "cardio") return e.distance != null ? `${fmt(e.distance)}${e.unit ?? ""}` : e.minutes != null ? `${fmt(e.minutes)}分` : "";
-  if (e.shapeMismatch) return e.reps != null ? `${e.reps}回` : "";
-  return `${e.weight > 0 ? `${fmt(e.weight)}kg×` : ""}${e.reps ?? "-"}回`;
-}
-
 // 推定1RM(重量のある 12回以下のセットのみ。旧形式は出さない)
 function ormText(e) {
   if (e.track !== "weight" || e.shapeMismatch || !(e.weight > 0) || !(e.reps >= 1 && e.reps <= E1RM_MAX_REPS)) return "";
@@ -148,7 +145,11 @@ function ormText(e) {
 }
 
 // "前回 9/26 60kg×10回×3セット"
-const prevText = (last) => (last ? `前回 ${formatShortDate(last.date)} ${valueText(last).replace(/ × /g, "×")}` : "");
+const compactValue = (e) => valueText(e).replace(/ × /g, "×");
+const prevText = (last) => (last ? `前回 ${formatShortDate(last.date)} ${compactValue(last)}` : "");
+// 同じ内容の HTML。狭い画面では日付と数字の間で改行し、数字の途中では切らない
+const prevHtml = (last) =>
+  `前回 ${escapeHtml(formatShortDate(last.date))} <span class="sub-val">${escapeHtml(compactValue(last))}</span>`;
 
 // ---------- 入力フォームの状態 ----------
 
@@ -387,22 +388,26 @@ function entryHtml(r, i, logs) {
   const last = r.base ? null : lastWorkingSet(logs, r.name);
   const sub = legacy
     ? `<span class="tag">旧形式</span><span>以前の形式の記録です</span>`
-    : last ? escapeHtml(prevText(last)) : r.base ? "" : "初めての記録";
-  return `<li class="entry" data-row="${r.key}" role="group" aria-label="${i + 1}件目 ${nm}">` +
+    : last ? prevHtml(last) : r.base ? "" : "初めての記録";
+  return `<li class="entry" data-row="${r.key}"><div role="group" aria-label="${i + 1}件目 ${nm}">` +
     `<div class="entry-head">${exerciseIcon(r.name, r.track, "entry-ico")}` +
     `<div class="entry-title"><p class="entry-name">${nm}</p>${sub ? `<p class="entry-sub">${sub}</p>` : ""}</div>` +
     `<button type="button" class="icon-btn entry-remove" data-act="remove-row" data-row="${r.key}" data-key="rm-${r.key}" aria-label="${nm}を外す">${uiIcon("close")}</button>` +
-    `</div><div class="rec-fields entry-fields">${fieldsHtml(r)}</div></li>`;
+    `</div><div class="rec-fields entry-fields">${fieldsHtml(r)}</div></div></li>`;
 }
 
+// ワンタップ候補。フォームに入っている種目は ✓ で示す(もう一度押すと、重さ違いの行をもう1つ足せる)
 function picksHtml(logs) {
   const { label, names } = quickNames(form.type, logs);
   if (!names.length) return "";
-  return `<p class="picks-label">${label}</p><div class="picks">` +
+  const added = new Set(form.rows.map((r) => r.name));
+  return `<p class="picks-label" id="picks-label">${label}</p><div class="picks" role="group" aria-labelledby="picks-label">` +
     names.map((n) => {
       const nm = escapeHtml(n);
-      return `<button type="button" class="chip pick-chip" data-act="quick-add" data-name="${nm}" data-key="qa-${nm}" aria-label="${nm}を追加">` +
-        `${uiIcon("plus")}<span class="pick-chip-text">${nm}</span></button>`;
+      const has = added.has(n);
+      return `<button type="button" class="chip pick-chip${has ? " is-added" : ""}" data-act="quick-add" data-name="${nm}" data-key="qa-${nm}"` +
+        ` aria-label="${has ? `${nm}をもう1つ追加(追加済み)` : `${nm}を追加`}">` +
+        `${uiIcon(has ? "check" : "plus")}<span class="pick-chip-text">${nm}</span></button>`;
     }).join("") + `</div>`;
 }
 
@@ -429,8 +434,9 @@ function footHtml() {
 function composeHtml(logs) {
   const editing = form.mode === "edit";
   const head = editing
-    ? `<div class="compose-head"><div class="compose-titles"><p class="eyebrow"><span class="eyebrow-en" lang="en">EDIT</span><span>保存すると上書きします</span></p>` +
-      `<h2 id="compose-title" class="card-title" tabindex="-1">${escapeHtml(formatJaDate(form.editingDate))}の記録を編集</h2></div>` +
+    ? `<div class="compose-head"><div class="compose-titles"><p class="eyebrow"><span class="eyebrow-en" lang="en">EDIT</span>` +
+      `<span>${escapeHtml(formatJaDate(form.editingDate))}の記録</span></p>` +
+      `<h2 id="compose-title" class="card-title" tabindex="-1">記録を編集</h2></div>` +
       `<button type="button" class="btn btn-secondary btn-sm" data-act="cancel-edit" data-key="cancel-edit">キャンセル</button></div>`
     : `<div class="compose-head"><h2 id="compose-title" class="card-title" tabindex="-1">トレーニングを記録</h2>` +
       (form.rows.length ? `<button type="button" class="link-btn compose-clear" data-act="clear" data-key="clear">入力を消す</button>` : "") + `</div>`;
@@ -481,17 +487,23 @@ function renderPr() {
 
 // ---------- 記録の一覧 ----------
 
+// 1行目: メニューの日の名前、無ければ種目名を並べる
 function logTitle(l) {
   if (l.planDay?.title) return dayName(l.planDay.title) || l.planDay.title;
-  const n = l.entries.length;
-  return `${l.entries[0].name}${n > 1 ? ` ほか${n - 1}種目` : ""}`;
+  return l.entries.map((e) => e.name).join("・");
 }
 
+// 2行目: 1種目ならその内容、複数なら 種目数 · セット数 · 有酸素の時間(メニューの日は種目名も)
 function logLine(l) {
-  const names = l.entries.map((e) => e.name);
-  if (l.planDay?.title) return `${names.length}種目 · ${names.join("・")}`;
-  const first = shortText(l.entries[0]);
-  return [first, ...names.slice(1)].filter(Boolean).join(" · ");
+  if (l.entries.length === 1 && !l.planDay?.title) return compactValue(l.entries[0]);
+  const sets = l.entries.reduce((s, e) => s + (e.track === "cardio" ? 0 : e.sets ?? 0), 0);
+  const cardio = l.entries.reduce((s, e) => s + (e.track === "cardio" ? e.minutes ?? 0 : 0), 0);
+  return [
+    `${l.entries.length}種目`,
+    sets > 0 ? `${sets}セット` : "",
+    cardio > 0 ? `有酸素${fmt(cardio)}分` : "",
+    l.planDay?.title ? l.entries.map((e) => e.name).join("・") : "",
+  ].filter(Boolean).join(" · ");
 }
 
 function entryLineHtml(e, prs) {
@@ -514,7 +526,7 @@ function logBodyHtml(l, prs) {
   const date = escapeHtml(formatJaDate(l.date));
   const id = escapeHtml(l.id);
   const meta = [
-    l.planDay?.title ? `メニュー: ${escapeHtml(l.planDay.title)}` : "",
+    l.planDay?.title ? escapeHtml(planDayText(l.planDay)) : "",
     l.durationMin ? `所要 ${escapeHtml(fmt(l.durationMin))}分` : "",
   ].filter(Boolean);
   const legacy = l.entries.some((e) => e.shapeMismatch)
@@ -673,7 +685,7 @@ function save() {
 
 function addNew(entries) {
   const date = form.date;
-  const res = ctx.saveLog({ id: uid(), date, entries });
+  const res = ctx.saveLog({ id: uid(), date, entries }, { ownPR: true });
   if (!res.ok) return;
   celebrate = res.prs.length ? { logId: res.id, prs: res.prs } : null;
   resetForm();
@@ -835,6 +847,7 @@ function openPicker() {
   const groups = pickerGroups(type, logs);
   const picked = new Map(); // name → track(選んだ順)
   const logged = new Set(loggedNames(logs));
+  const inForm = new Set(form.rows.map((r) => r.name));
 
   const itemHtml = (name, track) => {
     const nm = escapeHtml(name);
@@ -844,7 +857,8 @@ function openPicker() {
       : track === "cardio" && isPoolExercise(name) ? "25m単位で記録"
       : SUB_MUSCLES[info?.sub]?.label ?? MUSCLE_LABELS[info?.muscle] ?? (isKnown(name) ? "" : "マイ種目");
     return `<li><button type="button" class="pick-item" data-name="${nm}" data-track="${track}" aria-pressed="false">` +
-      `${exerciseIcon(name, track, "pick-ico")}<span class="pick-text"><span class="pick-name">${nm}</span>` +
+      `${exerciseIcon(name, track, "pick-ico")}<span class="pick-text"><span class="pick-name">${nm}` +
+      (inForm.has(name) ? `<span class="tag tag--added">追加済み</span>` : "") + `</span>` +
       (sub ? `<span class="pick-sub">${escapeHtml(sub)}</span>` : "") +
       `</span><span class="pick-check" aria-hidden="true">${uiIcon("check")}</span></button></li>`;
   };

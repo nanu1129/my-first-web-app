@@ -107,7 +107,10 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  /* hidden だと body がスクロール領域になり、アプリバーの sticky が効かなくなる。clip はスクロール領域を作らない
+     (clip 未対応の古い iOS は hidden のまま) */
   overflow-x: hidden;
+  overflow-x: clip;
   /* iOS のバウンス・横向きの余白・ステータスバーの色は background-color から決まる */
   background-color: var(--bg);
   color: var(--text);
@@ -1588,6 +1591,7 @@ select:disabled { opacity: 0.45; }
 .compose-titles { min-width: 0; }
 .compose-titles .eyebrow { margin-bottom: 4px; }
 .compose-clear { font-size: var(--fs-xs); color: var(--text-dim); }
+.compose-head > .btn { flex-shrink: 0; white-space: nowrap; }
 .compose .field-legend { margin-left: 4px; }
 .date-other { margin-top: var(--sp-2); }
 
@@ -1618,6 +1622,9 @@ select:disabled { opacity: 0.45; }
   padding: 0 14px 0 10px;
 }
 .pick-chip .ico { width: 16px; height: 16px; color: var(--accent); }
+/* フォームに入っている種目 */
+.pick-chip.is-added { border-color: var(--accent-line); background: var(--accent-soft); }
+.pick-chip.is-added .ico { stroke-width: 2.6; }
 .pick-chip-text {
   min-width: 0;
   overflow: hidden;
@@ -1665,14 +1672,14 @@ select:disabled { opacity: 0.45; }
   overflow-wrap: anywhere;
 }
 .entry-sub {
-  overflow: hidden;
   font-size: var(--fs-xs);
   line-height: 1.5;
   color: var(--text-dim);
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .entry-sub .tag { height: 18px; margin-right: 6px; vertical-align: 1px; }
+.sub-val { display: inline-block; max-width: 100%; }
 .entry-remove { margin: -4px -6px -4px 0; }
 .entry-remove .ico { width: 18px; height: 18px; }
 .entry-fields { margin-top: 8px; }
@@ -1726,9 +1733,10 @@ select:disabled { opacity: 0.45; }
 .pr-list li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "name val" "kind val";
+  grid-template-areas: "name name" "kind val"; /* 種目名は1行を広く使い、数字は2行目の右に */
+  align-items: baseline;
   column-gap: var(--sp-3);
-  padding: 8px 12px;
+  padding: 8px 12px 10px;
   border-radius: var(--radius-sm);
   background: rgba(0, 0, 0, 0.22);
 }
@@ -1736,7 +1744,6 @@ select:disabled { opacity: 0.45; }
 .pr-kind { grid-area: kind; font-size: var(--fs-xs); font-weight: 700; color: var(--accent); }
 .pr-val {
   grid-area: val;
-  align-self: center;
   display: flex;
   align-items: baseline;
   gap: 3px;
@@ -1947,6 +1954,8 @@ select:disabled { opacity: 0.45; }
 .pick-ico svg { width: 34px; height: 34px; }
 .pick-text { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.4; }
 .pick-name { font-size: var(--fs-sm); font-weight: 700; overflow-wrap: anywhere; }
+.pick-name .tag { margin-left: 6px; vertical-align: 1px; }
+.tag--added { background: var(--accent-soft); color: var(--accent); }
 .pick-sub {
   overflow: hidden;
   font-size: var(--fs-xs);
@@ -1996,7 +2005,7 @@ select:disabled { opacity: 0.45; }
 
 /* ---------- 進捗画面 ---------- */
 
-.progress-grid {
+.progress-grid, .pg-col {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
@@ -2022,9 +2031,10 @@ select:disabled { opacity: 0.45; }
 
 /* カレンダー(B33 I14) */
 .cal {
-  width: calc(100% + 8px);
-  max-width: 440px;
-  margin: -4px -4px 0;
+  /* カードの余白に少しはみ出して、390px 幅でも1マス 44px を確保する */
+  width: calc(100% + 16px);
+  max-width: 448px;
+  margin: -4px -8px 0;
   border-collapse: separate;
   border-spacing: 4px;
   table-layout: fixed;
@@ -2224,16 +2234,13 @@ button.cal-cell:focus-visible { outline-offset: 3px; }
 .pb-ico .ico { width: 18px; height: 18px; }
 .pb-main { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
 .pb-name {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
   font-size: var(--fs-sm);
   font-weight: 800;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .pb-sub { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim); }
+.pb-new { font-weight: 700; color: var(--accent); white-space: nowrap; }
 .pb-val {
   display: flex;
   flex-direction: column;
@@ -2319,6 +2326,7 @@ button.cal-cell:focus-visible { outline-offset: 3px; }
 .badge-item {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-rows: auto 1fr; /* 同じ行のバッジが高さをそろえたとき、余白は本文側に入れる */
   grid-template-areas: "ico state" "body body";
   gap: var(--sp-2);
   min-width: 0;
@@ -2357,18 +2365,51 @@ button.cal-cell:focus-visible { outline-offset: 3px; }
 }
 .is-got .badge-state { color: var(--accent); }
 .badge-state .ico { width: 14px; height: 14px; stroke-width: 3; }
-.badge-body { grid-area: body; min-width: 0; }
-.badge-name { font-size: var(--fs-sm); font-weight: 800; line-height: 1.4; }
-.badge-need { margin-top: 2px; font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim); text-wrap: pretty; }
+.badge-body { grid-area: body; display: flex; flex-direction: column; min-width: 0; }
+/* 日本語を文節で折り返す(対応ブラウザのみ。「初の自己ベス/ト」のような1文字だけの行を避ける) */
+.badge-name { font-size: var(--fs-sm); font-weight: 800; line-height: 1.4; word-break: auto-phrase; text-wrap: balance; }
+.badge-need { margin: 2px 0 var(--sp-2); font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim); word-break: auto-phrase; text-wrap: pretty; }
 .badge-meter {
   height: 4px;
-  margin-top: var(--sp-2);
+  margin-top: auto; /* 進み具合のバーはカードの下端にそろえる */
   overflow: hidden;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.08);
 }
 .badge-meter span { display: block; height: 100%; border-radius: 2px; background: var(--accent-dark); }
 .is-got .badge-meter { display: none; }
+.is-got .badge-need { margin-bottom: 0; }
+
+/* スマホ: ワンタップ候補は横にスクロールする1列(長い種目名で縦に何行も並ぶのを防ぐ。右端がぼけて続きがあると分かる) */
+@media (max-width: 559px) {
+  .picks {
+    flex-wrap: nowrap;
+    margin: -4px -12px;
+    padding: 4px 12px; /* フォーカスの輪(2px+2px)が切れない余白 */
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: 12px;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 28px), transparent);
+  }
+  .picks::-webkit-scrollbar { display: none; }
+  .pick-chip { flex-shrink: 0; max-width: 85%; }
+}
+
+/* 320px 級の画面: バッジは1列の横長(2列だと名前が1文字だけ次の行に落ちる) */
+@media (max-width: 359px) {
+  .badge-grid { grid-template-columns: minmax(0, 1fr); }
+  .badge-item {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-rows: auto;
+    grid-template-areas: "ico body state";
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 10px 12px;
+  }
+  .badge-state { align-self: center; }
+}
 
 @media (min-width: 560px) {
   .compose { padding: 18px 18px 20px; }
@@ -2707,6 +2748,12 @@ body.session-open .tab-bar { display: none; }
   white-space: nowrap;
 }
 .toast-close .ico { width: 18px; height: 18px; }
+/* 狭い画面で操作ボタン付きのとき: 文は1行目いっぱいに、「元に戻す」と閉じるは2行目の右へ(文が3行に細切れにならない) */
+@media (max-width: 419px) {
+  .toast:has(.toast-action) { flex-wrap: wrap; row-gap: 0; padding-bottom: 2px; }
+  .toast:has(.toast-action) .toast-msg { flex: 1 1 calc(100% - 30px); }
+  .toast:has(.toast-action) .toast-action { margin-left: auto; }
+}
 
 @media (prefers-reduced-motion: no-preference) {
   .toast { animation: toast-in 0.24s var(--ease); }

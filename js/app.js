@@ -29,8 +29,9 @@
 //                            保存済みメニュー {v, savedAt, profile, plan, modified}(無ければ null)。
 //                            setPlan は保存し、容量不足で保存できなくてもこの起動中は使える
 //   createPlan(profile)      プロフィールから1週間のメニューを作って保存し、refresh("plan")。記録を返す
-//   saveLog(log, {notify, message})
-//                            記録を1件保存して通知する(自己ベストの祝福・「元に戻す」付き。notify=false で通知なし)。
+//   saveLog(log, {notify, message, ownPR})
+//                            記録を1件保存して通知する(自己ベストの祝福・「元に戻す」付き。notify=false で通知なし、
+//                            ownPR=true で自己ベストは呼び出し側が表示し、通知は保存の知らせだけ)。
 //                            id が無ければ振る。初回の保存で永続化(navigator.storage.persist)も頼む。戻り値 {ok, id, prs}
 //   startWorkout(dayIndex)   保存済みメニューのその日をセッション(ワークアウト)モードで開く
 //   startRestTimer(sec)      休憩タイマーを開始(js/timer.js)
@@ -423,15 +424,16 @@ function notifySaved(entry, prs, message = null) {
   }
 }
 
-// 記録を1件保存する。notify=false のときは通知しない(セッション画面は自分でまとめを表示するため)
-function saveLog(log, { notify = true, message = null } = {}) {
+// 記録を1件保存する。notify=false のときは通知しない(セッション画面は自分でまとめを表示するため)。
+// ownPR=true は呼び出し側が自己ベストを自分で祝う(記録画面のカード)ので、通知は「元に戻す」付きの保存の知らせだけにする
+function saveLog(log, { notify = true, message = null, ownPR = false } = {}) {
   const prev = storage.loadLogs();
   const entry = { ...log, id: log.id != null ? String(log.id) : uid() };
   if (!storage.addLog(entry)) return { ok: false, id: null, prs: [] };
   askPersistOnce();
   const prs = detectPRs(prev, entry);
   refresh("logs");
-  if (notify) notifySaved(entry, prs, message);
+  if (notify) notifySaved(entry, ownPR ? [] : prs, message);
   return { ok: true, id: entry.id, prs };
 }
 

@@ -127,7 +127,10 @@ async function runViewport(browser, base, vp) {
   const entries = () => page.locator("#log-compose .entry");
   const openLogItem = async (item) => {
     const head = item.locator(".log-head");
-    if (await head.getAttribute("aria-expanded") !== "true") await head.click();
+    if (await head.getAttribute("aria-expanded") !== "true") {
+      await head.click();
+      await page.waitForTimeout(250); // 矢印の回転が終わってから
+    }
     return (await item.getAttribute("id")).slice(4);
   };
 
@@ -295,6 +298,7 @@ async function runViewport(browser, base, vp) {
     await page.waitForSelector("#sheet[open] .pick-item", { timeout: 3000 });
     const names = await page.locator("#sheet .pick-name").allInnerTexts();
     assert(names.includes("水泳(クロール)") && names.includes("水泳(平泳ぎ)") && !names.includes("ベンチプレス"), "cardio picker shows the wrong list");
+    await page.waitForTimeout(400); // シートが開く動きが終わってから撮る
     await shot("10-picker");
     results.overflow.picker = await overflow(page);
     return { weight, cardio, picker: names.length };
@@ -330,6 +334,8 @@ async function runViewport(browser, base, vp) {
     await bench.locator("select.f-reps").selectOption("8");
     const clipped = await clippedSelects(page);
     assert(clipped.length === 0, `select text clipped: ${JSON.stringify(clipped)}`);
+    const added = await page.locator("#log-compose .pick-chip.is-added .pick-chip-text").allInnerTexts();
+    assert(added.includes("ベンチプレス"), `quick pick does not show the added state: ${added}`);
     const rm = await bench.locator(".entry-remove").boundingBox();
     assert(rm.width >= 44 && rm.height >= 44, "remove button smaller than 44px");
     await shot("11-log-form");
@@ -426,6 +432,11 @@ async function runViewport(browser, base, vp) {
     await tab("progress").click(); await page.waitForTimeout(350);
     const labels = await page.locator('#view-progress svg.line-chart[role="img"]').evaluateAll((s) => s.map((x) => x.getAttribute("aria-label")));
     assert(labels.length >= 1 && labels.every((l) => l && l.length > 5), "chart without role=img/label");
+    // 縦軸の目盛りは重複せず、回数・秒・分のグラフに小数の目盛りが出ない(B26)
+    const ticks = await page.locator("#view-progress svg.line-chart").evaluateAll((s) =>
+      s.map((svg) => [...svg.querySelectorAll('text[text-anchor="end"]')].map((t) => t.textContent)));
+    assert(ticks.every((t) => t.length >= 2 && new Set(t).size === t.length), `bad tick labels: ${JSON.stringify(ticks)}`);
+    assert(ticks.every((t) => !/[回秒分]$/.test(t[t.length - 1]) || t.every((x) => !/\./.test(x))), `fractional count ticks: ${JSON.stringify(ticks)}`);
     const days = await page.locator("#view-progress button.cal-cell").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
     assert(days.length >= 1 && days.every((l) => /\d+月\d+日\(.\) 記録\d+件/.test(l)), `calendar labels: ${days}`);
     const rest = await page.evaluate(() => [...document.querySelectorAll("#view-progress .cal span.cal-cell:not(.is-future)")]
@@ -445,7 +456,7 @@ async function runViewport(browser, base, vp) {
     }
     await full("14-progress");
     results.overflow.progressFull = await overflow(page);
-    return { charts: labels.length, firstChart: labels[0], calendarDays: days.length, badges: badgeTexts.length, metric };
+    return { charts: labels.length, firstChart: labels[0], ticks: ticks[0], calendarDays: days.length, badges: badgeTexts.length, metric };
   });
 
   await step(results, "progress-bodyweight", async () => {
@@ -480,6 +491,7 @@ async function runViewport(browser, base, vp) {
       await page.locator(".ses-sheet-layer .ses-sheet-btn.is-primary").click();
     }
     await page.waitForSelector(".ses-sheet-layer.is-summary", { timeout: 3000 });
+    await page.waitForTimeout(400); // シートが開く動きが終わってから撮る
     await shot("09-session-summary");
     await page.locator(".ses-sheet-layer.is-summary .ses-sheet-btn.is-primary").click();
     await page.waitForSelector("#session", { state: "hidden", timeout: 3000 });
