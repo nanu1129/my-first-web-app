@@ -4,7 +4,7 @@
 // - 完了時: 2音のビープ(AudioContext は最初のタップで解錠済みのものを再利用)+ 対応端末なら振動 +
 //   読み上げ。「完了!」を 3 秒表示してから閉じる(画面が見えていない間は 3 秒を数えない)
 // - マナーモードではビープが鳴らないことがあるため、画面表示(ライム色の完了状態)が主な合図
-// 画面の部品は index.html の #rest-timer(SPEC の markup contract)を使い、足りない部品だけ補う。
+// 画面の部品は index.html の #rest-timer(SPEC の markup contract)を使う。見た目は session.css。
 
 const TICK_MS = 250;
 const DONE_SHOW_MS = 3000;   // 「完了!」を表示しておく時間
@@ -151,79 +151,54 @@ let returnFocusTo = null;  // タイマー内のボタンを押す前にフォ�
 let resizeObs = null;
 let docListeners = false;
 
+// index.html に #rest-timer が無いとき(単体ページ・テスト)に使う中身。index.html と同じ構造
 const DEFAULT_MARKUP =
-  `<div class="rest-timer-bar" aria-hidden="true"></div>` +
-  `<div class="rest-timer-main"><span class="rest-timer-label">休憩</span><span class="rest-timer-time">0:00</span></div>` +
+  `<div class="rest-timer-track" aria-hidden="true"><div class="rest-timer-bar"></div></div>` +
+  `<div class="rest-timer-main"><span class="rest-timer-label" aria-hidden="true">休憩</span>` +
+  `<span class="rest-timer-time">0:00</span></div>` +
   `<div class="rest-timer-actions">` +
-  `<button type="button" data-rest="+15">+15秒</button>` +
-  `<button type="button" data-rest="+60">+1分</button>` +
-  `<button type="button" data-rest="reset">リセット</button>` +
-  `<button type="button" data-rest="stop">終了</button>` +
+  `<button type="button" class="rest-mini" data-rest="+15">+15秒</button>` +
+  `<button type="button" class="rest-mini" data-rest="+60">+1分</button>` +
+  `<button type="button" class="rest-mini" data-rest="reset">リセット</button>` +
+  `<button type="button" class="rest-mini rest-close" data-rest="stop">終了</button>` +
   `</div>` +
-  `<span class="rest-timer-live" aria-live="polite"></span>`;
+  `<span class="rest-timer-live sr-only" aria-live="polite"></span>`;
 
+// 読み上げ名は表示中の文字で始める(音声操作で「+15秒」と言っても押せるように)
 const BUTTON_NAMES = {
-  "+15": "休憩を15秒のばす",
-  "+60": "休憩を1分のばす",
-  reset: "休憩タイマーを最初の時間に戻す",
-  stop: "休憩タイマーを終了",
+  "+15": "+15秒(休憩をのばす)",
+  "+60": "+1分(休憩をのばす)",
+  reset: "リセット(休憩を最初の時間に戻す)",
+  stop: "終了(休憩タイマーを閉じる)",
 };
 
 function findRoot(rootEl) {
   const doc = globalThis.document;
-  if (rootEl?.id === "rest-timer" || rootEl?.classList?.contains("rest-timer")) return rootEl;
-  const inside = rootEl?.querySelector?.("#rest-timer");
-  if (inside) return inside;
-  const byId = doc.getElementById("rest-timer");
-  if (byId) return byId;
-  // index.html に無ければ作る(単体ページ・テスト用)
+  if (rootEl?.id === "rest-timer") return rootEl;
+  const found = rootEl?.querySelector?.("#rest-timer") ?? doc.getElementById("rest-timer");
+  if (found) return found;
   const el = doc.createElement("div");
   el.id = "rest-timer";
   el.className = "rest-timer";
   el.hidden = true;
-  el.innerHTML = DEFAULT_MARKUP;
   doc.body.appendChild(el);
   return el;
 }
 
-// 契約の部品が欠けていれば補う(既にあるものは触らない)
-function ensureParts(el) {
-  const doc = globalThis.document;
-  if (!el.getAttribute("role")) el.setAttribute("role", "timer");
+// 契約の部品(.rest-timer-time など)を探す。時間の表示が無ければ標準の中身で作る。
+// 読み上げ: 全体は名前付きのランドマーク(region「休憩タイマー」)、時間の表示だけを role=timer にする
+// (timer は毎秒は読み上げない。開始・終了は .rest-timer-live で知らせる)
+function partsOf(el) {
+  if (!el.querySelector(".rest-timer-time")) el.innerHTML = DEFAULT_MARKUP;
+  el.setAttribute("role", "region");
   if (!el.getAttribute("aria-label")) el.setAttribute("aria-label", "休憩タイマー");
-  let time = el.querySelector(".rest-timer-time");
-  if (!time) {
-    time = doc.createElement("span");
-    time.className = "rest-timer-time";
-    time.textContent = "0:00";
-    el.prepend(time);
-  }
-  let bar = el.querySelector(".rest-timer-bar");
-  if (!bar) {
-    bar = doc.createElement("div");
-    bar.className = "rest-timer-bar";
-    bar.setAttribute("aria-hidden", "true");
-    el.prepend(bar);
-  }
-  if (!el.querySelector("[data-rest]")) {
-    const actions = doc.createElement("div");
-    actions.className = "rest-timer-actions";
-    actions.innerHTML = DEFAULT_MARKUP.match(/<div class="rest-timer-actions">(.*?)<\/div>/)[1];
-    el.appendChild(actions);
-  }
-  let live = el.querySelector(".rest-timer-live");
-  if (!live) {
-    live = doc.createElement("span");
-    live.className = "rest-timer-live";
-    live.setAttribute("aria-live", "polite");
-    el.appendChild(live);
-  }
   for (const b of el.querySelectorAll("[data-rest]")) {
     const name = BUTTON_NAMES[b.dataset.rest];
     if (name && !b.hasAttribute("aria-label")) b.setAttribute("aria-label", name);
-    if (b.tagName === "BUTTON" && !b.getAttribute("type")) b.type = "button";
   }
-  return { time, bar, live };
+  const time = el.querySelector(".rest-timer-time");
+  time.setAttribute("role", "timer");
+  return { time, bar: el.querySelector(".rest-timer-bar"), live: el.querySelector(".rest-timer-live") };
 }
 
 function onRootClick(e) {
@@ -272,7 +247,7 @@ export function initTimer(rootEl) {
     resizeObs?.disconnect();
   }
   root = el;
-  els = ensureParts(root);
+  els = partsOf(root);
   root.addEventListener("click", onRootClick);
   root.addEventListener("focusin", onRootFocusIn);
   if (globalThis.ResizeObserver) {
@@ -355,6 +330,11 @@ function stopTicking() {
   tickId = null;
 }
 
+// 残り時間の割合(1 = 満タン)をバーの幅にする
+function setBar(ratio) {
+  if (els.bar) els.bar.style.width = `${(Math.min(1, Math.max(0, ratio)) * 100).toFixed(2)}%`;
+}
+
 function paint() {
   if (!state.running) return;
   const now = Date.now();
@@ -368,8 +348,7 @@ function paint() {
     els.time.textContent = formatClock(sec);
     state.shown = sec;
   }
-  const ratio = Math.min(1, Math.max(0, ms / (Math.max(1, state.total) * 1000)));
-  els.bar.style.width = `${(ratio * 100).toFixed(2)}%`;
+  setBar(ms / (Math.max(1, state.total) * 1000));
 }
 
 function complete(lateMs) {
@@ -378,7 +357,7 @@ function complete(lateMs) {
   state.done = true;
   state.shown = -1;
   els.time.textContent = "完了!";
-  els.bar.style.width = "0%";
+  setBar(0);
   root.classList.add("is-done");
   if (lateMs <= LATE_CUE_MS) {
     playBeep("end");

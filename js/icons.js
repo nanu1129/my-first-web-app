@@ -200,6 +200,7 @@ export const UI_ICONS = {
   // 種目の操作
   swap: `<path d="M4.5 8.5h14M15 5l3.5 3.5L15 12M19.5 15.5h-14M9 12l-3.5 3.5L9 19"/>`,
   info: `<path d="M12 10.5v7"/>${dot(12, 6.8)}`,
+  infoCircle: `<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/>${dot(12, 8)}`,
   timer: `<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M9.5 2.5h5M12 2.5V6M18.2 6.8l1.6-1.6"/>`,
   play: `<path d="M8 5.5v13l10-6.5z" fill="currentColor"/>`,
   check: `<path d="M5 12.5l4.5 4.5L19 7.5"/>`,
@@ -228,6 +229,17 @@ export const UI_ICONS = {
   trophy: `<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5.5a2.5 2.5 0 0 0 2.8 3.9M16 6h2.5a2.5 2.5 0 0 1-2.8 3.9M12 13v3.5M9 20h6M10 16.5h4"/>`,
   alert: `<path d="M12 4l9 16H3z"/><path d="M12 10v4.5"/>${dot(12, 17.3)}`,
   shield: `<path d="M12 3.5l7 2.5v5.5c0 4.5-3 8-7 9.5-4-1.5-7-5-7-9.5V6z"/><path d="M9 12l2 2 4-4"/>`,
+  // 記録・進捗
+  minus: `<path d="M5 12h14"/>`,
+  trash: `<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5"/>`,
+  repeat: `<path d="M4.5 11.5V10a3.5 3.5 0 0 1 3.5-3.5h11M15.5 3l3.5 3.5-3.5 3.5M19.5 12.5V14a3.5 3.5 0 0 1-3.5 3.5H5M8.5 21L5 17.5 8.5 14"/>`,
+  calendar: `<rect x="4" y="5.5" width="16" height="15" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>`,
+  scale: `<rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M7.5 11a5.5 5.5 0 0 1 9 0M12 11.5l1.8-2.8"/>`,
+  body: `<circle cx="12" cy="5" r="2"/><path d="M5.5 9.5L12 11l6.5-1.5M12 11v4.5l-3 5M12 15.5l3 5"/>`,
+  sprout: `<path d="M12 20.5V11.5"/><path d="M12 13.5C12 9 9.2 6.5 4.5 6.5c0 4.5 2.8 7 7.5 7zM12 11.5c0-3.8 2.5-6.5 7.5-6.5 0 3.8-2.5 6.5-7.5 6.5z"/>`,
+  medal: `<circle cx="12" cy="15" r="5.5"/><path d="M8.7 10.6L6 3.5h4l2 5 2-5h4l-2.7 7.1"/>`,
+  crown: `<path d="M4 8.5l4 3.5 4-6.5 4 6.5 4-3.5-1.8 10H5.8z"/>`,
+  star: `<path d="M12 4l2.4 5 5.4.7-4 3.7 1 5.4L12 16.2 7.2 18.8l1-5.4-4-3.7 5.4-.7z"/>`,
 };
 
 // アイコンの SVG 文字列。cls で大きさなどを CSS から調整する

@@ -33,7 +33,6 @@ const LIMIT_MSG = {
 
 let ctx = null;
 let body = null;
-let sub = null;
 let selected = null;        // 表示中の日の番号(null = 次にやる日に合わせる)
 let followNext = true;      // 日を自分で選ぶまでは「次にやる日」を表示し続ける
 const openTips = new Set(); // 開いている「やり方」("日-種目")
@@ -58,6 +57,9 @@ function splitReps(text) {
   const m = /^(\d+(?:\.\d+)?(?:\s*[〜~～\-–]\s*\d+(?:\.\d+)?)?)(.*)$/.exec(String(text ?? ""));
   return m ? [m[1], m[2]] : ["", String(text ?? "")];
 }
+
+// 範囲の「〜」は数字用の書体に無いので、小さく添える
+const rangeHtml = (num) => escapeHtml(num).replace(/\s*[〜~～\-–]\s*/, `<span class="tl">〜</span>`);
 
 const sameList = (a = [], b = []) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
 function sameProfile(a, b) {
@@ -90,7 +92,6 @@ function weekStatus(plan, logs) {
 // ---------- 描画 ----------
 
 function render() {
-  sub.textContent = formatJaDate(localDateStr());
   const rec = ctx.getPlan();
   if (!rec) {
     body.innerHTML = emptyHtml(ctx.storage.loadProfile());
@@ -102,16 +103,13 @@ function render() {
   }
   body.innerHTML =
     hintHtml(rec) +
-    `<div class="menu-top">` +
     `<section id="menu-today" class="today-card" aria-labelledby="today-title">${todayHtml(rec, status)}</section>` +
-    `<section id="menu-overview" class="card plan-overview" aria-label="メニューの概要">${overviewHtml(rec)}</section>` +
-    `</div>` +
     `<section class="week" aria-labelledby="week-title">` +
-    `<div class="section-head"><h2 id="week-title" class="section-title">1週間のメニュー</h2>` +
-    `<span class="section-meta">${escapeHtml(rec.plan.splitName ?? "")}</span></div>` +
+    `<div id="week-head" class="week-head">${weekHeadHtml(rec)}</div>` +
     `<div class="day-tabs" role="tablist" aria-label="表示する日">${tabsHtml(rec.plan.days, status)}</div>` +
     `<div id="menu-day" class="day-panel" role="tabpanel" aria-labelledby="day-tab-${selected}">${dayHtml(rec, selected, status)}</div>` +
     `</section>` +
+    notesHtml(rec) +
     `<section id="menu-consult" class="card consult" aria-labelledby="consult-title">${consultHtml(rec)}</section>` +
     adviceHtml(rec.plan) +
     `<p class="fine-print">メニューは一般的なフィットネス情報にもとづく目安です。痛みや体調の不安があるときは無理をせず、医師に相談してください。</p>`;
@@ -139,7 +137,7 @@ function emptyHtml(profile) {
 function hintHtml(rec) {
   const now = ctx.storage.loadProfile();
   if (!now || !rec.profile || sameProfile(now, rec.profile)) return "";
-  return `<div class="notice notice--hint" role="note">${uiIcon("info", "notice-ico")}<div class="notice-body">` +
+  return `<div class="notice notice--hint" role="note">${uiIcon("infoCircle", "notice-ico")}<div class="notice-body">` +
     `<p class="notice-text">プロフィールが変更されています。今のメニューは変更前の内容で作られています。</p>` +
     `<button type="button" class="link-btn" data-act="regen-profile" data-key="hint-regen">新しいプロフィールで作り直す</button>` +
     `</div></div>`;
@@ -155,12 +153,16 @@ function weekProgressHtml(days, st) {
     `<span class="wp-text">${label}</span></div>`;
 }
 
-function dayMetaText(day) {
-  return [
+// 「·」で区切った短い情報の並び。項目の途中では折り返さない(.meta-line)
+const metaItemsHtml = (items) =>
+  items.filter(Boolean).map((t) => `<span>${escapeHtml(t)}</span>`).join(`<span class="sep" aria-hidden="true"> · </span>`);
+
+function dayMetaHtml(day) {
+  return metaItemsHtml([
     day.exercises?.length ? `${day.exercises.length}種目` : null,
     day.estMinutes ? `約${day.estMinutes}分` : null,
     day.focusSummary || null,
-  ].filter(Boolean).join(" · ");
+  ]);
 }
 
 function todayHtml(rec, st) {
@@ -174,7 +176,7 @@ function todayHtml(rec, st) {
       ? `次回は ${dayNum(st.next)} ${escapeHtml(dayName(days[st.next]))} です。`
       : "今週のメニューはすべて完了です。";
     return head +
-      `<h2 id="today-title" class="today-title"><span class="done-mark">${uiIcon("check")}</span>今日のトレーニングは完了!</h2>` +
+      `<h2 id="today-title" class="today-title" tabindex="-1"><span class="done-mark">${uiIcon("check")}</span>今日のトレーニングは完了!</h2>` +
       `<p class="today-meta">${dayNum(st.todayDone)} ${escapeHtml(dayName(days[st.todayDone]))} を記録しました。${next}</p>` +
       progress +
       (st.next != null
@@ -184,7 +186,7 @@ function todayHtml(rec, st) {
 
   if (st.next == null) {
     return head +
-      `<h2 id="today-title" class="today-title">今週のメニューはすべて完了!</h2>` +
+      `<h2 id="today-title" class="today-title" tabindex="-1">今週のメニューはすべて完了!</h2>` +
       `<p class="today-meta">お疲れさまでした。記録を反映して作り直すと、重さや回数の目標が更新されます。</p>` +
       progress +
       `<div class="today-actions"><button type="button" class="btn btn-primary" data-act="regen-logs" data-key="today-regen">` +
@@ -196,48 +198,51 @@ function todayHtml(rec, st) {
   const label = `${dayNum(i)} ${dayName(day)}`;
   const names = day.exercises.map((e) => e.name);
   if (day.cardio) names.push(day.cardio.name);
-  const shown = names.slice(0, 4).map((n) => `<li class="chip-mini">${escapeHtml(n)}</li>`).join("");
-  const more = names.length > 4 ? `<li class="chip-mini chip-mini--more">+${names.length - 4}</li>` : "";
   const start = day.exercises.length
     ? `<button type="button" class="btn btn-primary btn-lg" data-act="start" data-day="${i}" data-key="today-start" ` +
       `aria-label="${escapeHtml(label)}をワークアウトモードで開始">${uiIcon("play")}開始</button>`
     : "";
   return head +
-    `<h2 id="today-title" class="today-title"><span class="day-chip" lang="en">${dayNum(i)}</span><span>${escapeHtml(dayName(day))}</span></h2>` +
-    `<p class="today-meta">${escapeHtml(dayMetaText(day))}</p>` +
-    `<ul class="today-chips" aria-label="主な種目">${shown}${more}</ul>` +
+    `<h2 id="today-title" class="today-title" tabindex="-1"><span class="day-chip" lang="en">${dayNum(i)}</span><span>${escapeHtml(dayName(day))}</span></h2>` +
+    `<p class="today-meta meta-line">${dayMetaHtml(day)}</p>` +
+    `<p class="today-list">${metaItemsHtml(names)}</p>` +
     `<div class="today-actions">${start}` +
     `<button type="button" class="btn btn-outline btn-lg" data-act="record" data-day="${i}" data-key="today-record" ` +
     `aria-label="${escapeHtml(label)}をやったので記録">${uiIcon("check")}記録</button></div>` +
     progress;
 }
 
-function overviewHtml(rec) {
+// 1週間のメニューの見出し: 分割法・目的・強化部位・BMI を1行に(種目がすぐ下に来るよう簡潔に)
+function weekHeadHtml(rec) {
   const plan = rec.plan;
   const p = rec.profile;
+  const badges = [rec.modified ? "調整済み" : null, plan.shortened ? "時短版" : null]
+    .filter(Boolean).map((b) => `<span class="badge">${b}</span>`).join("");
   const items = [
-    ["目的", p ? `${GOALS[p.goal] ?? ""} · 週${p.frequency}回` : null],
-    ["強化", plan.focusLabels?.length ? `★ ${plan.focusLabels.join("・")}` : null],
-    ["BMI", plan.bmi?.value ? `${plan.bmi.value}(${plan.bmi.category})` : null],
-  ].filter(([, v]) => v);
+    plan.splitName,
+    p ? `${GOALS[p.goal] ?? ""}・週${p.frequency}回` : null,
+    plan.focusLabels?.length ? `★ ${plan.focusLabels.join("・")}` : null,
+    plan.bmi?.value ? `BMI ${plan.bmi.value}(${plan.bmi.category})` : null,
+  ];
+  return `<div class="section-head"><h2 id="week-title" class="section-title">1週間のメニュー</h2>` +
+    (badges ? `<span class="badges">${badges}</span>` : "") + `</div>` +
+    `<p class="plan-line meta-line">${metaItemsHtml(items)}</p>`;
+}
+
+// このメニューのポイント(回数と重さ・1週間の組み方・記録の反映)。普段は閉じておく
+function notesHtml(rec) {
+  const plan = rec.plan;
   const notes = [
     plan.repScheme ? ["回数と重さ", plan.repScheme] : null,
     plan.weekNote ? ["1週間の組み方", plan.weekNote] : null,
     plan.historySummary?.length ? ["記録の反映", plan.historySummary.join(" / ")] : null,
   ].filter(Boolean);
-  const stamp = [
-    `${formatJaDate(localDateStr(new Date(rec.savedAt || Date.now())))}に作成`,
-    rec.modified ? "調整済み" : null,
-    plan.shortened ? "時短版" : null,
-  ].filter(Boolean).join(" · ");
-  return `<dl class="plan-meta">${items.map(([k, v]) => `<div class="pm"><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}</dl>` +
-    (notes.length
-      ? `<details class="fold plan-notes" data-prep="notes"${openPrep.has("notes") ? " open" : ""}>` +
-        `<summary>${uiIcon("bulb", "fold-ico")}<span class="fold-label">このメニューのポイント</span>` +
-        `<span class="fold-count">${notes.length}</span>${uiIcon("chevronDown", "fold-chev")}</summary>` +
-        `<dl class="note-list">${notes.map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}</dl></details>`
-      : "") +
-    `<p class="plan-stamp">${escapeHtml(stamp)}</p>`;
+  const stamp = `${formatJaDate(localDateStr(new Date(rec.savedAt || Date.now())))}に作成`;
+  return `<details id="menu-notes" class="fold card plan-notes" data-prep="notes"${openPrep.has("notes") ? " open" : ""}>` +
+    `<summary>${uiIcon("bulb", "fold-ico")}<span class="fold-label">このメニューのポイント</span>` +
+    `<span class="fold-count">${notes.length}</span>${uiIcon("chevronDown", "fold-chev")}</summary>` +
+    `<dl class="note-list">${notes.map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}</dl>` +
+    `<p class="plan-stamp">${escapeHtml(stamp)}</p></details>`;
 }
 
 function tabsHtml(days, st) {
@@ -257,10 +262,12 @@ function tabsHtml(days, st) {
 
 function dayHeadHtml(day, i, st) {
   const doneDate = st.done.get(i);
+  // 日の名前はすぐ上のタブに出ているので、見出しは読み上げ用にして、見た目は内容の要約だけにする
   return `<div class="day-head">` +
-    `<h3 class="day-title"><span class="day-chip" lang="en">${dayNum(i)}</span><span>${escapeHtml(dayName(day))}</span></h3>` +
+    `<h3 class="sr-only">${dayNum(i)} ${escapeHtml(dayName(day))}</h3>` +
+    `<p class="day-meta meta-line">${dayMetaHtml(day)}</p>` +
     (doneDate ? `<span class="badge badge--done">${uiIcon("check")}${escapeHtml(formatJaDate(doneDate))} 完了</span>` : "") +
-    `<p class="day-meta">${escapeHtml(dayMetaText(day))}</p></div>`;
+    `</div>`;
 }
 
 function dayHtml(rec, i, st) {
@@ -285,7 +292,7 @@ function dayHtml(rec, i, st) {
           `aria-label="${escapeHtml(label)}をワークアウトモードで開始">${uiIcon("play")}この日を開始</button>`
         : "") +
       `<button type="button" class="btn btn-outline" data-act="record" data-day="${i}" data-key="day-record-${i}" ` +
-      `aria-label="${escapeHtml(label)}をやったので記録">${uiIcon("check")}やったので記録</button></div>`;
+      `aria-label="${escapeHtml(label)}をやったので記録">${uiIcon("check")}この日を記録</button></div>`;
   }
   return html;
 }
@@ -333,7 +340,7 @@ function exHtml(profile, day, d, j, ex) {
     `aria-label="${nm}を別の種目に替える"${canSwap ? "" : ` aria-disabled="true"`}>${uiIcon("swap")}</button>`;
   const rest = sec
     ? `<button type="button" class="rest-btn" data-act="rest" data-sec="${sec}" data-key="rest-${key}" ` +
-      `aria-label="${nm}の休憩タイマー ${sec}秒を開始">${uiIcon("timer")}<span>休憩 ${escapeHtml(ex.rest)}</span></button>`
+      `aria-label="${nm}の休憩タイマー ${sec}秒を開始">${uiIcon("timer")}<span>${escapeHtml(ex.rest)}</span></button>`
     : `<span class="rx-rest">休憩 ${escapeHtml(ex.rest ?? "")}</span>`;
   return `<li class="ex${ex.focused ? " is-focus" : ""}" id="ex-${key}">` +
     `<div class="ex-head">` +
@@ -342,7 +349,7 @@ function exHtml(profile, day, d, j, ex) {
     `<div class="ex-actions">${info}${swap}</div></div>` +
     `<div class="ex-rx"><span class="rx"><b class="rx-n">${escapeHtml(ex.sets)}</b>セット</span>` +
     `<span class="rx-x" aria-hidden="true">×</span>` +
-    `<span class="rx"><b class="rx-n">${escapeHtml(num)}</b>${escapeHtml(unit)}</span>${rest}</div>` +
+    `<span class="rx"><b class="rx-n">${rangeHtml(num)}</b>${escapeHtml(unit)}</span>${rest}</div>` +
     targetHtml(ex.note, ex.target) +
     (ex.tip ? `<div class="ex-tip" id="tip-${key}"${tipOpen ? "" : " hidden"}>${uiIcon("bulb", "tip-ico")}<p>${escapeHtml(ex.tip)}</p></div>` : "") +
     `</li>`;
@@ -372,8 +379,7 @@ function consultHtml(rec) {
     `<span class="consult-label">${label}</span><span class="consult-cap">${caption}</span></button>`;
   const harder = canAdjustVolume(plan, 1);
   const easier = canAdjustVolume(plan, -1);
-  return `<div class="section-head"><h2 id="consult-title" class="section-title">メニューを調整</h2>` +
-    `${rec.modified ? `<span class="badge">調整済み</span>` : ""}</div>` +
+  return `<div class="section-head"><h2 id="consult-title" class="section-title">メニューを調整</h2></div>` +
     `<div class="consult-grid">` +
     btn("harder", "bolt", "もっときつく", harder, harder ? "セット数を増やす" : "上限です") +
     btn("easier", "moon", "もっと楽に", easier, easier ? "セット数を減らす" : "下限です") +
@@ -410,8 +416,8 @@ function refreshSummary(rec) {
   if (today && !today.contains(document.activeElement)) today.innerHTML = todayHtml(rec, st);
   const head = body.querySelector("#menu-day .day-head");
   if (head) head.outerHTML = dayHeadHtml(rec.plan.days[selected], selected, st);
-  const overview = body.querySelector("#menu-overview");
-  if (overview) overview.innerHTML = overviewHtml(rec);
+  const weekHead = body.querySelector("#week-head");
+  if (weekHead) weekHead.innerHTML = weekHeadHtml(rec);
   const consult = body.querySelector("#menu-consult");
   if (consult && !consult.contains(document.activeElement)) consult.innerHTML = consultHtml(rec);
 }
@@ -690,16 +696,16 @@ function recRowHtml(r, k) {
   const nm = escapeHtml(r.name);
   let fields;
   if (r.track === "time") {
-    fields = selectHtml("f-sec", `${nm}のキープ時間`, "時間", SECONDS, r.seconds, (v) => `${v}秒`) +
-      selectHtml("f-sets", `${nm}のセット数`, "セット", SETS, r.sets, (v) => `${v}セット`);
+    fields = selectHtml("f-sec", `${nm}のキープ時間(秒)`, "時間(秒)", SECONDS, r.seconds, String) +
+      selectHtml("f-sets", `${nm}のセット数`, "セット", SETS, r.sets, String);
   } else if (r.track === "cardio") {
-    const [values, fmt] = r.unit === "m" ? [POOL_METERS, (v) => `${v}m`] : [KILOMETERS, (v) => `${v}km`];
-    fields = selectHtml("f-min", `${nm}の時間`, "時間", MINUTES, r.minutes, (v) => `${v}分`) +
-      selectHtml("f-dist", `${nm}の距離`, "距離", values, r.distance, fmt, "距離なし");
+    const unit = r.unit === "m" ? "m" : "km";
+    fields = selectHtml("f-min", `${nm}の時間(分)`, "時間(分)", MINUTES, r.minutes, String) +
+      selectHtml("f-dist", `${nm}の距離(${unit})`, `距離(${unit})`, unit === "m" ? POOL_METERS : KILOMETERS, r.distance, String, "なし");
   } else {
-    fields = selectHtml("f-weight", `${nm}の重量`, "重量", WEIGHT_CHOICES, r.weight, (v) => (v === 0 ? "自重" : `${v}kg`), r.weight == null ? "重量を選択" : null) +
-      selectHtml("f-sets", `${nm}のセット数`, "セット", SETS, r.sets, (v) => `${v}セット`) +
-      selectHtml("f-reps", `${nm}の回数`, "回数", REPS, r.reps, (v) => `${v}回`);
+    fields = selectHtml("f-weight", `${nm}の重量(kg)`, "重量(kg)", WEIGHT_CHOICES, r.weight, (v) => (v === 0 ? "自重" : String(v)), r.weight == null ? "未選択" : null) +
+      selectHtml("f-sets", `${nm}のセット数`, "セット", SETS, r.sets, String) +
+      selectHtml("f-reps", `${nm}の回数`, "回数", REPS, r.reps, String);
   }
   const on = !r.optional;
   return `<li class="rec-row${on ? "" : " is-off"}" data-k="${k}">` +
@@ -812,7 +818,6 @@ function openRecordSheet(d, triggerKey) {
 export function mount(section, c) {
   ctx = c;
   body = section.querySelector(".view-body");
-  sub = section.querySelector(".view-sub");
   body.addEventListener("click", onClick);
   body.addEventListener("keydown", onKeydown);
   body.addEventListener("toggle", onToggle, true);

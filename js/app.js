@@ -8,12 +8,14 @@
 //     update(reason)       データが変わったとき、表示中かどうかに関係なく呼ばれる。reason は
 //                          "logs"(記録の追加・削除・編集)/ "plan"(メニューの作成・変更)/ "profile"(プロフィール保存)/
 //                          "import"(バックアップの読み込み・取り消し)/ "day"(日付が変わった)。
-//     show()               (任意)そのタブが表示された直後に呼ばれる。
+//     show(detail)         (任意)そのタブが表示された直後に呼ばれる。navigate(name, {detail}) で渡した値が
+//                          detail に入る(例: 進捗のカレンダーから記録画面へ {logId} を渡して、その記録を開く)。
 //   ビューどうしは直接 import しない。画面をまたぐ処理はすべて ctx を通す。
 //
 // ■ ctx(全ビュー共通のオブジェクト)
 //   storage                  js/storage.js のモジュール(localStorage に触れるのはこれだけ)
-//   navigate(name, {focus})  タブ切り替え。focus=true(既定)で切り替え先の見出しへフォーカス
+//   navigate(name, {focus, detail})
+//                            タブ切り替え。focus=true(既定)で切り替え先の見出しへフォーカス。detail は show(detail) へ渡す
 //   refresh(reason)          全ビューの update(reason) を呼ぶ
 //   toast(message, {action, onAction, tone, duration})
 //                            画面下の通知。action を渡すとボタン(「元に戻す」など)が付く。
@@ -27,14 +29,24 @@
 //                            保存済みメニュー {v, savedAt, profile, plan, modified}(無ければ null)。
 //                            setPlan は保存し、容量不足で保存できなくてもこの起動中は使える
 //   createPlan(profile)      プロフィールから1週間のメニューを作って保存し、refresh("plan")。記録を返す
-//   saveLog(log, {undo, message})
-//                            記録を1件保存して通知する(自己ベストの祝福・「元に戻す」付き)。
-//                            id が無ければ振る。戻り値 {ok, id, prs}
+//   saveLog(log, {notify, message})
+//                            記録を1件保存して通知する(自己ベストの祝福・「元に戻す」付き。notify=false で通知なし)。
+//                            id が無ければ振る。初回の保存で永続化(navigator.storage.persist)も頼む。戻り値 {ok, id, prs}
 //   startWorkout(dayIndex)   保存済みメニューのその日をセッション(ワークアウト)モードで開く
 //   startRestTimer(sec)      休憩タイマーを開始(js/timer.js)
-//   checkForUpdate()         新しいバージョンの確認。Promise<"update" | "latest" | "unsupported" | "error">
+//   checkForUpdate()         新しいバージョンの確認。Promise<"update"(更新の通知を表示済み) | "installing" | "latest" | "unsupported" | "error">
 //   env                      { standalone, ios, version }
 //   motion()                 アニメーションしてよいか(prefers-reduced-motion を尊重)
+//
+// ■ 画面の部品(style.css に用意したクラス。ビューはこれを組み合わせて描く)
+//   .card(.card-head .card-title .card-text .card-note)  .section-head(.section-title .section-meta)
+//   .btn(.btn-primary / -secondary / -outline / -ghost / -danger、.btn-lg .btn-sm .btn-block)  .btn-row  .icon-btn  .link-btn
+//   .chips + .chip[aria-pressed]  .seg(.seg-2 / .seg-3)+ label.seg-opt > input[type=radio] + .seg-main/.seg-sub
+//   .field-group .field-legend .field-grid .field .field-label  select(標準で 44px・16px 文字)
+//   .fold(<details>)+ summary(.fold-ico .fold-label .fold-count .fold-chev)  .fold-list  .note-list
+//   .list > .list-row(.list-main .list-title .list-sub)  .stats > .stat(.stat-label .stat-value > .num .stat-unit)
+//   .empty-state(.empty-ico .empty-title .empty-text)  .tag(--main --focus --dist)  .badge  .kv  .notice  .sr-only
+//   下に固定する UI は --bottom-ui(タブバー+セーフエリア)の上に置く。休憩タイマー表示中は body.timer-open
 import * as storage from "./storage.js?v=14";
 import { APP_VERSION } from "./version.js?v=14";
 import { formatJaDate, localDateStr, uid } from "./util.js?v=14";
@@ -79,7 +91,7 @@ function announce(message) {
   requestAnimationFrame(() => { el.textContent = message; });
 }
 
-const TOAST_ICON = { ok: "check", info: "info", error: "alert", pr: "trophy" };
+const TOAST_ICON = { ok: "check", info: "infoCircle", error: "alert", pr: "trophy" };
 let toastTimer = 0;
 
 function dismissToast() {
@@ -100,7 +112,7 @@ function toast(message, { action = null, onAction = null, tone = "info", duratio
   const region = $("#toast-region");
   const el = document.createElement("div");
   el.className = `toast toast--${tone}`;
-  el.innerHTML = `${uiIcon(TOAST_ICON[tone] ?? "info", "toast-ico")}<p class="toast-msg"></p>`;
+  el.innerHTML = `${uiIcon(TOAST_ICON[tone] ?? "infoCircle", "toast-ico")}<p class="toast-msg"></p>`;
   $(".toast-msg", el).textContent = message;
   if (action) {
     const btn = document.createElement("button");
@@ -164,6 +176,8 @@ function closeSheet() {
 function openSheet({ title, body, footer = null, onClose = null }) {
   const sheet = $("#sheet");
   let returnFocus = document.activeElement;
+  // 前の操作の通知がシートの内容に重ならないよう消しておく
+  dismissToast();
   if (sheetState) {
     // 開いているシートを差し替える(前のシートの後始末だけ先に行う)
     returnFocus = sheetState.returnFocus;
@@ -233,8 +247,9 @@ const viewFromHash = () => {
   return Object.hasOwn(VIEWS, h) ? h : null;
 };
 
-function showView(name, { focus = false } = {}) {
-  if (current !== name) {
+function showView(name, { focus = false, detail = null } = {}) {
+  const switching = current !== name;
+  if (switching) {
     if (current) scrollPos.set(current, window.scrollY);
     for (const n of Object.keys(VIEWS)) $(`#view-${n}`).hidden = n !== name;
     for (const tab of document.querySelectorAll(".tab-bar .tab")) {
@@ -244,17 +259,17 @@ function showView(name, { focus = false } = {}) {
     current = name;
     storage.setMeta({ lastTab: name });
     window.scrollTo(0, scrollPos.get(name) ?? 0);
-    if (mounted.has(name)) {
-      try { VIEWS[name].show?.(); } catch (err) { viewFailed(name, err); }
-    }
   }
   if (focus) $(`#${name}-title`)?.focus({ preventScroll: true });
+  if (mounted.has(name) && (switching || detail != null)) {
+    try { VIEWS[name].show?.(detail); } catch (err) { viewFailed(name, err); }
+  }
 }
 
-function navigate(name, { focus = true } = {}) {
+function navigate(name, { focus = true, detail = null } = {}) {
   if (!Object.hasOwn(VIEWS, name)) return;
   if (location.hash !== `#${name}`) history.replaceState(null, "", `#${name}`);
-  showView(name, { focus });
+  showView(name, { focus, detail });
 }
 
 function setupRouter() {
@@ -306,7 +321,7 @@ function showNotice({ id, text, tone = "info", action = null, onAction = null, o
   el.className = `notice notice--${tone}`;
   el.dataset.notice = id;
   el.setAttribute("role", tone === "error" ? "alert" : "note");
-  el.innerHTML = `${uiIcon(tone === "error" ? "alert" : "info", "notice-ico")}<div class="notice-body"><p class="notice-text"></p></div>`;
+  el.innerHTML = `${uiIcon(tone === "error" ? "alert" : "infoCircle", "notice-ico")}<div class="notice-body"><p class="notice-text"></p></div>`;
   $(".notice-text", el).textContent = text;
   if (action) {
     const b = document.createElement("button");
@@ -385,37 +400,38 @@ function askPersistOnce() {
   storage.requestPersistentStorage();
 }
 
-// 記録を保存して知らせる。自己ベストを更新していれば祝福し、どちらの場合も「元に戻す」を付ける
-function saveLog(log, { undo = true, message = null } = {}) {
+// 保存した記録の通知。自己ベストを更新していれば祝福し、どちらの場合も「元に戻す」を付ける
+function notifySaved(entry, prs, message = null) {
+  const saved = message ?? `${formatJaDate(entry.date)} に${entry.entries.length}種目を記録しました`;
+  const undo = {
+    action: "元に戻す",
+    onAction: () => {
+      if (storage.deleteLog(entry.id)) {
+        refresh("logs");
+        toast("記録を取り消しました", { tone: "info" });
+      }
+    },
+  };
+  if (prs.length > 0) {
+    const top = prs[0];
+    const more = prs.length > 1 ? ` ほか${prs.length - 1}件` : "";
+    toast(`自己ベスト更新! ${top.name} ${top.label} ${top.prev}→${top.value}${top.unit}${more}(${saved})`, {
+      tone: "pr", duration: 9000, ...undo,
+    });
+  } else {
+    toast(saved, { tone: "ok", ...undo });
+  }
+}
+
+// 記録を1件保存する。notify=false のときは通知しない(セッション画面は自分でまとめを表示するため)
+function saveLog(log, { notify = true, message = null } = {}) {
   const prev = storage.loadLogs();
   const entry = { ...log, id: log.id != null ? String(log.id) : uid() };
   if (!storage.addLog(entry)) return { ok: false, id: null, prs: [] };
   askPersistOnce();
   const prs = detectPRs(prev, entry);
   refresh("logs");
-
-  const count = entry.entries.length;
-  const saved = message ?? `${formatJaDate(entry.date)} に${count}種目を記録しました`;
-  const undoOpts = undo
-    ? {
-        action: "元に戻す",
-        onAction: () => {
-          if (storage.deleteLog(entry.id)) {
-            refresh("logs");
-            toast("記録を取り消しました", { tone: "info" });
-          }
-        },
-      }
-    : {};
-  if (prs.length > 0) {
-    const top = prs[0];
-    const more = prs.length > 1 ? ` ほか${prs.length - 1}件` : "";
-    toast(`自己ベスト更新! ${top.name} ${top.label} ${top.prev}→${top.value}${top.unit}${more}(${saved})`, {
-      tone: "pr", duration: 9000, ...undoOpts,
-    });
-  } else {
-    toast(saved, { tone: "ok", ...undoOpts });
-  }
+  if (notify) notifySaved(entry, prs, message);
   return { ok: true, id: entry.id, prs };
 }
 
@@ -425,10 +441,14 @@ function sessionContext(profile) {
   return {
     logs: storage.loadLogs(),
     profile: profile ?? storage.loadProfile(),
-    onSave: (log) => saveLog(log).ok,
+    onSave: (log) => saveLog(log, { notify: false }).ok,
     startRestTimer,
     alternativeExercise,
-    onClose: () => refresh("logs"),
+    // 画面を閉じたあとで(または再開の案内から記録したときに)、保存したことを知らせる。
+    // 自己ベストはセッションのまとめで祝っているので、ここでは「元に戻す」付きの保存の通知だけにする
+    onClose: (result) => {
+      if (result?.saved && result.log) notifySaved(result.log, []);
+    },
   };
 }
 
@@ -439,19 +459,6 @@ function startWorkout(dayIndex) {
   // セッション中にメニューを調整しても影響しないよう、その日の内容を複製して渡す
   const snapshot = { ...structuredClone(day), index: dayIndex };
   openSession(snapshot, sessionContext(record.profile));
-}
-
-// ---------- 休憩タイマー ----------
-
-function setupTimer() {
-  const el = $("#rest-timer");
-  initTimer(el);
-  // 開いている間は、その高さのぶん画面下に余白を空ける(本文・フォーカス位置が隠れないように)
-  if ("ResizeObserver" in window) {
-    new ResizeObserver(() => {
-      if (el.offsetHeight > 0) document.documentElement.style.setProperty("--timer-h", `${el.offsetHeight}px`);
-    }).observe(el);
-  }
 }
 
 // ---------- サービスワーカー(オフライン対応・更新) ----------
@@ -508,7 +515,7 @@ async function checkForUpdate() {
     offerUpdate(swRegistration.waiting);
     return "update";
   }
-  return swRegistration.installing ? "update" : "latest";
+  return swRegistration.installing ? "installing" : "latest";
 }
 
 // ---------- 起動 ----------
@@ -545,7 +552,8 @@ function boot() {
   paintIcons();
   setupSheet();
   setupRouter();
-  setupTimer();
+  // 休憩タイマー(表示中は timer.js が body.timer-open と --timer-h を設定し、レイアウトが下に余白を空ける)
+  initTimer($("#rest-timer"));
   // iOS Safari はタッチの listener が無いと :active(押した感触)を表示しない
   document.addEventListener("touchstart", () => {}, { passive: true });
 

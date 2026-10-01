@@ -9,7 +9,11 @@ const DEFAULT_PROFILE = {
   weight: 65, height: 170, age: 30, gender: "その他・回答しない",
   goal: "hypertrophy", level: "beginner", frequency: 3, focus: [], equipment: [],
 };
-const GENDERS = ["男性", "女性", "その他・回答しない"];
+const GENDER_OPTIONS = [
+  ["男性", "男性"],
+  ["女性", "女性"],
+  ["その他・回答しない", "その他", "回答しない"],
+];
 const GOAL_OPTIONS = [
   ["hypertrophy", "筋肥大", "筋肉を大きく"],
   ["cut", "減量・引き締め", "脂肪を落とす"],
@@ -27,31 +31,33 @@ const AGES = numRange(10, 90);
 const FREQUENCIES = numRange(1, 7);
 const FOCUS_KEYS = Object.keys(MUSCLE_LABELS).filter((m) => m !== "cardio");
 
-// 器具の表示名(短い名前+補足)。グループ名が「ジムマシン」なので「〜マシン」は省く(I12)
+// 器具の表示名(短い名前+補足)。グループ名が「ジムマシン」なので「〜マシン」は省く(I12)。
+// 「|」は改行してよい位置(狭い画面で語の途中や1文字だけの行で折り返さないように)
 const EQUIP_LABEL = {
-  barbell: ["バーベル", "ラック・プレート"],
+  barbell: ["バーベル", "ラック・|プレート"],
   dumbbell: ["ダンベル"],
   kettlebell: ["ケトルベル"],
-  machine: ["すべてのマシン", "下の個別マシンをまとめて選択"],
-  mc_chest_press: ["チェストプレス"],
-  mc_pec_fly: ["ペックフライ", "チェストフライ"],
-  mc_lat_pulldown: ["ラットプルダウン"],
-  mc_seated_row: ["シーテッドロー", "ローイング"],
-  mc_shoulder_press: ["ショルダープレス"],
-  mc_leg_press: ["レッグプレス"],
-  mc_leg_extension: ["レッグエクステンション"],
-  mc_leg_curl: ["レッグカール"],
-  mc_smith: ["スミスマシン"],
-  mc_abdominal: ["アブドミナルクランチ"],
-  cable: ["ケーブルマシン"],
+  machine: ["すべての|マシン", "下の個別マシンを|まとめて選択"],
+  mc_chest_press: ["チェスト|プレス"],
+  mc_pec_fly: ["ペック|フライ", "チェスト|フライ"],
+  mc_lat_pulldown: ["ラット|プルダウン"],
+  mc_seated_row: ["シーテッド|ロー", "ローイング"],
+  mc_shoulder_press: ["ショルダー|プレス"],
+  mc_leg_press: ["レッグ|プレス"],
+  mc_leg_extension: ["レッグ|エクステンション"],
+  mc_leg_curl: ["レッグ|カール"],
+  mc_smith: ["スミス|マシン"],
+  mc_abdominal: ["アブドミナル|クランチ"],
+  cable: ["ケーブル|マシン"],
   pullup_bar: ["懸垂バー"],
-  bench: ["トレーニングベンチ"],
-  band: ["レジスタンスバンド"],
-  pool: ["プール", "クロール・平泳ぎなど"],
-  treadmill: ["ランニングマシン", "屋外ランニングも可"],
-  bike: ["エアロバイク"],
-  mc_rowing: ["ローイングエルゴ"],
+  bench: ["トレーニング|ベンチ"],
+  band: ["レジスタンス|バンド"],
+  pool: ["プール", "クロール・|平泳ぎなど"],
+  treadmill: ["ランニング|マシン", "屋外ランニング|も可"],
+  bike: ["エアロ|バイク"],
+  mc_rowing: ["ローイング|エルゴ"],
 };
+const phraseHtml = (t) => escapeHtml(t).replaceAll("|", "<wbr>");
 
 const UPDATE_MSG = {
   installing: ["新しいバージョンを取得しています。準備ができたらお知らせします。", "info"],
@@ -92,8 +98,7 @@ function withValue(values, v) {
 }
 
 function selectField(name, label, values, value, fmt) {
-  const list = typeof value === "number" ? withValue(values, value) : values;
-  const opts = list.map((v) => `<option value="${escapeHtml(v)}"${v === value ? " selected" : ""}>${escapeHtml(fmt(v))}</option>`).join("");
+  const opts = withValue(values, value).map((v) => `<option value="${escapeHtml(v)}"${v === value ? " selected" : ""}>${escapeHtml(fmt(v))}</option>`).join("");
   return `<label class="field"><span class="field-label">${label}</span>` +
     `<select name="${name}" data-key="pf-${name}">${opts}</select></label>`;
 }
@@ -126,7 +131,7 @@ function summaryHtml(p) {
   return `<div class="card-head"><h2 id="profile-title" class="card-title">プロフィール</h2>` +
     `<button type="button" class="btn btn-ghost btn-sm" data-act="edit" data-key="pf-edit">${uiIcon("edit")}編集</button></div>` +
     `<dl class="kv">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}</dl>` +
-    `<button type="button" class="btn btn-secondary btn-block" data-act="regen" data-key="pf-regen">${uiIcon("refresh")}このプロフィールでメニューを作り直す</button>`;
+    `<button type="button" class="btn btn-secondary btn-block" data-act="regen" data-key="pf-regen">${uiIcon("refresh")}メニューを作り直す</button>`;
 }
 
 function equipGroupsHtml() {
@@ -137,8 +142,8 @@ function equipGroupsHtml() {
       return `<label class="equip-item"><input type="checkbox" class="equip-input" name="equipment" value="${key}"` +
         `${checked.has(key) ? " checked" : ""} data-key="eq-${key}">` +
         `<span class="equip-icon" aria-hidden="true">${EQUIPMENT_SVG[key] ?? ""}</span>` +
-        `<span class="equip-text"><span class="equip-main">${escapeHtml(main)}</span>` +
-        `${subText ? `<small class="equip-sub">${escapeHtml(subText)}</small>` : ""}</span>` +
+        `<span class="equip-text"><span class="equip-main">${phraseHtml(main)}</span>` +
+        `${subText ? `<small class="equip-sub">${phraseHtml(subText)}</small>` : ""}</span>` +
         `<span class="equip-check" aria-hidden="true">${uiIcon("check")}</span></label>`;
     }).join("");
     return `<details class="fold equip-group" data-group="${gi}"${openGroups.has(gi) ? " open" : ""}>` +
@@ -162,10 +167,9 @@ function editorHtml(profile) {
     selectField("weight", "体重", WEIGHTS, d.weight, (v) => `${v}kg`) +
     selectField("height", "身長", HEIGHTS, d.height, (v) => `${v}cm`) +
     selectField("age", "年齢", AGES, d.age, (v) => `${v}歳`) +
-    selectField("gender", "性別", GENDERS, d.gender, (v) => v) +
-    `</div></fieldset>` +
+    `</div><div class="seg seg-3" role="radiogroup" aria-label="性別">${radios("gender", GENDER_OPTIONS, d.gender)}</div></fieldset>` +
     `<fieldset class="field-group"><legend class="field-legend">目的</legend>` +
-    `<div class="seg seg-2">${radios("goal", GOAL_OPTIONS, d.goal)}</div></fieldset>` +
+    `<div class="seg seg-2 seg-goal">${radios("goal", GOAL_OPTIONS, d.goal)}</div></fieldset>` +
     `<fieldset class="field-group"><legend class="field-legend">経験レベル</legend>` +
     `<div class="seg seg-3">${radios("level", LEVEL_OPTIONS, d.level)}</div></fieldset>` +
     `<fieldset class="field-group"><legend class="field-legend">週のトレーニング回数</legend>` +
@@ -522,7 +526,7 @@ function onChange(e) {
   }
   if (!draft) return;
   if (t.matches(".equip-input")) onEquipmentChange(t);
-  else if (t.name === "gender") draft.gender = t.value;
+  else if (t.name === "pf-gender") draft.gender = t.value;
   else if (["weight", "height", "age"].includes(t.name)) draft[t.name] = Number(t.value);
   else if (t.name === "pf-goal") draft.goal = t.value;
   else if (t.name === "pf-level") draft.level = t.value;

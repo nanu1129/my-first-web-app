@@ -1,0 +1,1571 @@
+/* トレーニング中の画面(js/session.js)と休憩タイマー(#rest-timer, js/timer.js)の見た目。
+   色・文字・余白・角丸・操作部の高さは style.css の :root のトークンを使う。ここで足すのは --ses-* だけ。
+   - 休憩タイマーは下のタブバーの上に浮かべ、iPhone のホームバー(セーフエリア)に隠れない位置に置く
+   - 開いている間は body.timer-open で下に余白を取り、ページの最後やフォーカス位置がタイマーの下に隠れないようにする
+   - タップ対象は 44px 以上。hover は hover できる端末だけ。動きは prefers-reduced-motion で止める */
+
+:root {
+  --ses-z: 900;                         /* タブバー(40)・トースト(60)より上 */
+  --ses-foot-h: 73px;                   /* セッション画面の下部ボタン帯(セーフエリアを除く) */
+  --ses-fs-step: 1.75rem;               /* ステッパーの数字(28px) */
+  --ses-fs-timer: 2.625rem;             /* 休憩タイマーの数字(42px) */
+  --ses-glass: rgba(26, 29, 36, 0.94);
+  --ses-bar-glass: rgba(17, 19, 25, 0.95);
+}
+
+/* タップの扱い: ダブルタップでの拡大・長押しの文字選択・灰色のハイライトを出さない */
+.session button,
+.session select,
+.session summary,
+.session label,
+.rest-timer,
+.rest-timer button,
+.ses-sheet-layer button,
+.ses-sheet-layer label,
+.session-resume button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rest-timer,
+.ses-head,
+.ses-set,
+.ses-card-summary,
+.ses-foot {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* ボタンの土台(詳細度を上げない :where で、各部品のクラスの指定を優先させる) */
+:where(.session, .rest-timer, .ses-sheet-layer, .session-resume) button {
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 0.16s var(--ease), border-color 0.16s var(--ease), color 0.16s var(--ease),
+    box-shadow 0.16s var(--ease), transform 0.1s var(--ease), opacity 0.16s var(--ease);
+}
+
+.session button:disabled,
+.ses-sheet-layer button:disabled,
+.session-resume button:disabled {
+  cursor: default;
+}
+
+/* 押した感触 */
+.session button:not(:disabled):active,
+.rest-timer button:active,
+.ses-sheet-layer button:not(:disabled):active,
+.session-resume button:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+.session :focus-visible,
+.rest-timer :focus-visible,
+.ses-sheet-layer :focus-visible,
+.session-resume :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 見出しへのフォーカス移動(読み上げの起点)は枠を出さない */
+.session [tabindex="-1"]:focus,
+.ses-sheet-layer [tabindex="-1"]:focus {
+  outline: none;
+}
+
+.session svg.ico,
+.rest-timer svg.ico,
+.ses-sheet-layer svg.ico,
+.session-resume svg.ico {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+/* ================= 休憩タイマー ================= */
+
+.rest-timer {
+  position: fixed;
+  z-index: calc(var(--ses-z) + 10);
+  left: max(12px, var(--sa-left));
+  right: max(12px, var(--sa-right));
+  bottom: calc(var(--tabbar-h) + var(--sa-bottom) + 8px);
+  max-width: 440px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "main track"
+    "actions actions";
+  align-items: center;
+  gap: 10px 14px;
+  padding: var(--sp-3);
+  color: var(--text);
+  background: var(--ses-glass);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+/* セッション画面(タブバーなし)では下部のボタン帯の上に置く */
+body.session-open .rest-timer {
+  bottom: calc(var(--ses-foot-h) + var(--sa-bottom) + 8px);
+}
+
+.rest-timer-main {
+  grid-area: main;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.rest-timer-label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.rest-timer-time {
+  min-width: 3.1ch;
+  font-family: var(--font-display);
+  font-size: var(--ses-fs-timer);
+  font-weight: 400;
+  line-height: 0.9;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.rest-timer-track {
+  grid-area: track;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+}
+
+.rest-timer-bar {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s linear;
+}
+
+.rest-timer-actions {
+  grid-area: actions;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.rest-mini {
+  min-width: 0;
+  min-height: var(--control-h);
+  padding: 0 2px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.rest-timer .rest-close {
+  color: var(--text-dim);
+  background: transparent;
+}
+
+@media (hover: hover) {
+  .rest-mini:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+}
+
+/* 完了: ライム色のカードで知らせる(マナーモードで音が鳴らなくても分かるように) */
+.rest-timer.is-done {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow), 0 18px 44px rgba(0, 0, 0, 0.5);
+  animation: rest-done-pulse 1s var(--ease) 3;
+  cursor: pointer;
+}
+
+.rest-timer.is-done .rest-timer-label,
+.rest-timer.is-done .rest-timer-time {
+  color: var(--accent-ink);
+}
+
+.rest-timer.is-done .rest-timer-time {
+  font-family: var(--font-ja);
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.rest-timer.is-done .rest-timer-track {
+  background: rgba(18, 20, 15, 0.14);
+}
+
+.rest-timer.is-done .rest-mini {
+  color: var(--accent-ink);
+  background: rgba(18, 20, 15, 0.1);
+  border-color: rgba(18, 20, 15, 0.22);
+}
+
+.rest-timer.is-done :focus-visible {
+  outline-color: var(--accent-ink);
+}
+
+@keyframes rest-done-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(203, 242, 79, 0.55), 0 18px 44px rgba(0, 0, 0, 0.5); }
+  100% { box-shadow: 0 0 0 16px rgba(203, 242, 79, 0), 0 18px 44px rgba(0, 0, 0, 0.5); }
+}
+
+/* 開いている間は、そのぶん画面の下に余白を取る(--timer-h は timer.js が実測して入れる) */
+body.timer-open {
+  padding-bottom: calc(var(--tabbar-h) + var(--sa-bottom) + var(--timer-h, 120px) + 16px);
+}
+
+:root:has(body.timer-open) {
+  scroll-padding-bottom: calc(var(--tabbar-h) + var(--sa-bottom) + var(--timer-h, 120px) + 16px);
+}
+
+/* 横向きの低い画面では1行にまとめる */
+@media (orientation: landscape) and (max-height: 500px) {
+  .rest-timer {
+    max-width: 640px;
+    grid-template-columns: auto minmax(40px, 1fr) auto;
+    grid-template-areas: "main track actions";
+    padding: var(--sp-2) var(--sp-3);
+  }
+
+  .rest-timer-time {
+    font-size: var(--fs-num-lg);
+  }
+
+  .rest-timer-actions {
+    grid-template-columns: repeat(4, auto);
+  }
+
+  .rest-mini {
+    padding: 0 12px;
+  }
+}
+
+/* ================= トレーニング中の画面 ================= */
+
+body.session-open {
+  overflow: hidden;
+}
+
+.session {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ses-z);
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* ---------- 上部(経過時間・進み具合・中断) ---------- */
+
+.ses-head {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  padding: calc(var(--sa-top) + 10px) max(var(--gutter), var(--sa-right)) var(--sp-3) max(var(--gutter), var(--sa-left));
+  background: var(--ses-bar-glass);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.ses-head-inner {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.ses-head-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.ses-head-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.ses-kicker {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--accent);
+}
+
+.ses-title {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  line-height: 1.35;
+  font-feature-settings: "palt";
+  overflow-wrap: anywhere;
+}
+
+.ses-pause {
+  flex: none;
+  min-width: 64px;
+  min-height: var(--control-h);
+  padding: 0 var(--sp-4);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+}
+
+.ses-head-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-2);
+}
+
+.ses-stat {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ses-stat-label,
+.ses-stat-unit {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.ses-stat-num {
+  font-family: var(--font-display);
+  font-size: var(--fs-num);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ses-progress {
+  flex: 1;
+  min-width: 32px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+}
+
+.ses-progress-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.3s var(--ease);
+}
+
+/* 操作の結果(「変更しました」など)。上部のすぐ下に浮かべる */
+.ses-msg {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: var(--sp-2) 14px;
+  transform: translateX(-50%);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  animation: ses-fade 0.18s var(--ease);
+}
+
+.ses-msg:empty {
+  display: none;
+}
+
+.ses-msg[data-kind="error"] {
+  border-color: var(--danger);
+}
+
+/* ---------- 本文(スクロールする部分) ---------- */
+
+.ses-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px max(var(--sp-3), var(--sa-right)) var(--sp-6) max(var(--sp-3), var(--sa-left));
+  scroll-padding: var(--sp-4) 0 var(--sp-6);
+}
+
+body.timer-open .ses-body {
+  padding-bottom: calc(var(--timer-h, 120px) + var(--sp-6));
+  scroll-padding-bottom: calc(var(--timer-h, 120px) + var(--sp-4));
+}
+
+.ses-body > * {
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ウォームアップ・クールダウン */
+.ses-prep {
+  margin-bottom: var(--sp-3);
+  background: var(--bg-panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+
+.ses-prep-bottom .ses-prep {
+  margin: var(--sp-3) 0 0;
+}
+
+.ses-prep summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+  border-radius: inherit;
+}
+
+.ses-prep summary::-webkit-details-marker {
+  display: none;
+}
+
+.ses-prep summary > svg.ico:first-child {
+  color: var(--accent);
+}
+
+.ses-prep-count {
+  min-width: 22px;
+  padding: 0 6px;
+  font-size: var(--fs-xs);
+  line-height: 20px;
+  text-align: center;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-pill);
+}
+
+.session svg.ses-prep-chev {
+  margin-left: auto;
+  color: var(--text-dim);
+  transition: transform 0.2s var(--ease);
+}
+
+.ses-prep[open] .ses-prep-chev {
+  transform: rotate(180deg);
+}
+
+.ses-prep ul {
+  padding: 0 var(--sp-4) 14px 44px;
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
+/* ---------- 種目カード ---------- */
+
+.ses-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  list-style: none;
+}
+
+.ses-card {
+  padding: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+
+.ses-card.is-current {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 1px rgba(203, 242, 79, 0.12), var(--shadow-sm);
+}
+
+.ses-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+
+.ses-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+  background: var(--bg-elevated);
+  border-radius: 12px;
+}
+
+.ses-card-icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+.session .ses-card-icon.is-generic svg {
+  width: 22px;
+  height: 22px;
+}
+
+.ses-card-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.ses-card-name {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  line-height: 1.4;
+  font-feature-settings: "palt";
+  overflow-wrap: anywhere;
+}
+
+.ses-star {
+  margin-right: 4px;
+  color: var(--accent);
+}
+
+.ses-card-meta {
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* 「・」の区切りでだけ改行する */
+.ses-meta-part {
+  white-space: nowrap;
+}
+
+.ses-card-count {
+  flex: none;
+  padding-top: 2px;
+  font-family: var(--font-display);
+  font-size: var(--fs-num);
+  line-height: 1;
+  color: var(--text-dim);
+}
+
+.ses-card-count b {
+  font-weight: 400;
+  color: var(--text);
+}
+
+.ses-card.is-current .ses-card-count b {
+  color: var(--accent);
+}
+
+/* 前回・目標 */
+.ses-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--sp-2);
+  margin-top: 10px;
+}
+
+.ses-note {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  max-width: 100%;
+  padding: 5px 10px;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+}
+
+.ses-note-label {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.ses-note-value {
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.ses-note.is-target {
+  background: var(--accent-soft);
+}
+
+.ses-note.is-target .ses-note-label {
+  color: var(--accent);
+}
+
+/* ---------- セットの行 ---------- */
+/* スマホ: [番号] [重量ステッパー / 回数ステッパー の2段] [✓(2段分の高さ)] */
+
+.ses-sets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  list-style: none;
+}
+
+.ses-set {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 56px;
+  grid-template-areas:
+    "no a check"
+    "no b check";
+  align-items: center;
+  gap: 6px var(--sp-2);
+  padding: 6px 6px 6px var(--sp-2);
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+
+.ses-set.is-next {
+  background: rgba(203, 242, 79, 0.05);
+  border-color: var(--accent-line);
+}
+
+.ses-card.is-cardio .ses-set {
+  grid-template-columns: minmax(0, 1fr) 56px;
+  grid-template-areas:
+    "a check"
+    "b check";
+  padding-left: 6px;
+}
+
+.ses-set-no {
+  grid-area: no;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--text-dim);
+}
+
+.ses-set.is-next .ses-set-no {
+  color: var(--accent);
+}
+
+.ses-set-a {
+  grid-area: a;
+  min-width: 0;
+}
+
+.ses-set-b {
+  grid-area: b;
+  min-width: 0;
+}
+
+.ses-set.is-done .ses-set-a,
+.ses-set.is-done .ses-set-b,
+.ses-set.is-done .ses-set-no {
+  opacity: 0.55;
+}
+
+.ses-check {
+  grid-area: check;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  min-height: 48px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+}
+
+.session .ses-check svg.ico {
+  width: 28px;
+  height: 28px;
+  stroke-width: 2.6;
+}
+
+.ses-set.is-next .ses-check {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.ses-check[aria-pressed="true"] {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ステッパー [−] 値 [+]。値をタップするとネイティブの選択リスト */
+.ses-step {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1);
+  min-width: 0;
+  height: var(--control-h);
+}
+
+.ses-step-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.ses-step-btn:disabled {
+  opacity: 0.35;
+}
+
+.ses-val {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ses-val:focus-within {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.ses-val-text {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ses-val-text b {
+  font-family: var(--font-display);
+  font-size: var(--ses-fs-step);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ses-val-text b.is-long {
+  font-size: var(--fs-xl);
+}
+
+.ses-val-text b.is-word {
+  font-family: var(--font-ja);
+  font-size: var(--fs-md);
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.ses-val-text small {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.session .ses-val-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  font-size: 16px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.session .ses-val-select:focus-visible {
+  outline: none;
+}
+
+/* キープ(体幹種目)のカウントダウン */
+.ses-hold {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--control-h);
+  overflow: hidden;
+  font-weight: 800;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.ses-hold > svg.ico,
+.ses-hold-text {
+  position: relative;
+}
+
+.session .ses-hold > svg.ico {
+  width: 18px;
+  height: 18px;
+}
+
+.ses-hold-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: rgba(203, 242, 79, 0.24);
+  transition: width 0.2s linear;
+}
+
+.ses-hold.is-running {
+  color: var(--text);
+  background: var(--bg-elevated);
+}
+
+.ses-hold.is-running .ses-hold-text {
+  font-family: var(--font-display);
+  font-size: var(--fs-num);
+  font-weight: 400;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ses-hold.is-running.is-prep .ses-hold-text {
+  font-family: var(--font-ja);
+  font-size: var(--fs-md);
+  font-weight: 800;
+}
+
+.ses-hold:disabled {
+  color: var(--text-dim);
+  border-color: var(--line);
+}
+
+/* ---------- カード下部(やり方・入れ替え・セット数) ---------- */
+
+.ses-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: var(--sp-2) -4px 0;
+}
+
+/* メニュー画面の ⓘ・入れ替えと同じ形: 34px の円を 44px の押せる範囲に描く */
+.ses-tool {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+}
+
+.ses-tool::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  transition: border-color 0.16s var(--ease), background-color 0.16s var(--ease);
+}
+
+.session .ses-tool svg.ico {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+
+.ses-tool[data-act="tip"][aria-expanded="true"] {
+  color: var(--ai);
+}
+
+.ses-tool[data-act="tip"][aria-expanded="true"]::before {
+  background: rgba(124, 196, 255, 0.12);
+  border-color: rgba(124, 196, 255, 0.6);
+}
+
+.session .ses-tool[data-act="collapse"] svg.ico {
+  transform: rotate(180deg);
+}
+
+.ses-tool:disabled,
+.ses-setcount-btn:disabled {
+  opacity: 0.35;
+}
+
+.ses-setcount {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.ses-setcount-label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.ses-setcount-btn {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+}
+
+.session .ses-setcount-btn svg.ico {
+  width: 18px;
+  height: 18px;
+}
+
+.ses-card-tip {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  padding: 10px var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  background: rgba(124, 196, 255, 0.07);
+  border-radius: var(--radius-sm);
+}
+
+.session .ses-card-tip svg.ico {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  color: var(--ai);
+}
+
+.ses-card-tip p {
+  min-width: 0;
+}
+
+/* 完了してたたんだカード */
+.ses-card.is-collapsed {
+  padding: 0;
+  background: transparent;
+  border-color: var(--line-soft);
+}
+
+.ses-card-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+}
+
+.ses-sum-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.session .ses-sum-check svg.ico {
+  width: 16px;
+  height: 16px;
+  stroke-width: 3;
+}
+
+.ses-sum-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.ses-sum-name {
+  overflow: hidden;
+  font-weight: 700;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ses-sum-detail {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.ses-sum-count {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.ses-empty {
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  color: var(--text-dim);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+/* ---------- 下部のボタン帯 ---------- */
+
+.ses-foot {
+  flex: none;
+  padding: 10px max(var(--sp-3), var(--sa-right)) calc(10px + var(--sa-bottom)) max(var(--sp-3), var(--sa-left));
+  background: var(--ses-bar-glass);
+  border-top: 1px solid var(--line);
+}
+
+.ses-foot-inner {
+  display: flex;
+  gap: 10px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.ses-add,
+.ses-finish {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-h-lg);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-md);
+  font-weight: 800;
+}
+
+.ses-add {
+  flex: none;
+  padding: 0 18px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+}
+
+.ses-finish {
+  flex: 1;
+  min-width: 0;
+  padding: 0 var(--sp-4);
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.ses-finish.is-ready {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), var(--shadow-glow);
+}
+
+.ses-finish:focus-visible {
+  outline-color: #fff;
+}
+
+@media (hover: hover) {
+  .ses-pause:hover,
+  .ses-add:hover,
+  .ses-step-btn:not(:disabled):hover,
+  .ses-check:hover {
+    border-color: var(--accent);
+  }
+
+  .ses-tool:not(:disabled):hover {
+    color: var(--accent);
+  }
+
+  .ses-tool:not(:disabled):hover::before {
+    border-color: var(--accent-line);
+  }
+
+  .ses-setcount-btn:not(:disabled):hover,
+  .ses-card-summary:hover {
+    color: var(--text);
+    background: var(--bg-elevated);
+  }
+
+  .ses-finish:hover {
+    background: #d6f768;
+  }
+
+  .ses-prep summary:hover {
+    background: var(--bg-elevated);
+  }
+}
+
+/* 狭い画面(〜360px)はカードの余白を詰める */
+@media (max-width: 360px) {
+  .ses-card {
+    padding: var(--sp-3);
+  }
+
+  .ses-card-head {
+    gap: 10px;
+  }
+}
+
+/* 広い画面: セットを1行に [番号] [重量] [回数] [✓] */
+@media (min-width: 520px) {
+  .ses-set {
+    grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr) 56px;
+    grid-template-areas: "no a b check";
+  }
+
+  .ses-card.is-cardio .ses-set {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 56px;
+    grid-template-areas: "a b check";
+  }
+
+  .ses-card {
+    padding: var(--sp-4) 18px;
+  }
+}
+
+/* ---------- シート(中断・種目追加・確認・結果) ---------- */
+
+.ses-sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--ses-z) + 20);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.ses-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 6, 9, 0.62);
+  animation: ses-fade 0.18s var(--ease);
+}
+
+.ses-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100% - var(--sa-top) - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px max(18px, var(--sa-right)) calc(18px + var(--sa-bottom)) max(18px, var(--sa-left));
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -16px 44px rgba(0, 0, 0, 0.5);
+  animation: ses-rise 0.24s var(--ease);
+}
+
+.ses-sheet::before {
+  content: "";
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 0 auto 14px;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.ses-sheet-title {
+  margin-bottom: 6px;
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  line-height: 1.4;
+  font-feature-settings: "palt";
+}
+
+.ses-sheet-text {
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.ses-sheet-note {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+}
+
+.ses-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+.ses-sheet-btn {
+  min-height: var(--control-h-lg);
+  padding: 0 var(--sp-4);
+  font-size: var(--fs-md);
+  font-weight: 800;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.ses-sheet-btn.is-primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.ses-sheet-btn.is-primary:focus-visible {
+  outline-color: #fff;
+}
+
+.ses-sheet-btn.is-danger {
+  color: var(--danger);
+  background: transparent;
+  border-color: rgba(255, 107, 94, 0.45);
+}
+
+.ses-sheet-btn.is-ghost {
+  background: transparent;
+}
+
+.ses-sheet-btn[data-armed="1"] {
+  color: #1c0806;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.ses-sheet-btn:disabled {
+  opacity: 0.4;
+}
+
+@media (hover: hover) {
+  .ses-sheet-btn:not(:disabled):hover {
+    border-color: var(--accent);
+  }
+
+  .ses-sheet-btn.is-danger:not(:disabled):hover {
+    border-color: var(--danger);
+  }
+}
+
+/* 種目追加: 記録の種類の切り替えと種目の選択 */
+.ses-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-1);
+  margin: 6px 0 14px;
+  padding: var(--sp-1);
+  background: var(--bg);
+  border-radius: 12px;
+}
+
+.ses-seg-item {
+  position: relative;
+  display: block;
+}
+
+.ses-seg-item input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ses-seg-item span {
+  display: grid;
+  place-items: center;
+  min-height: var(--control-h);
+  padding: 0 2px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--text-dim);
+  border-radius: 9px;
+}
+
+.ses-seg-item input:checked + span {
+  color: var(--accent);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.ses-seg-item input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ses-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.ses-field select {
+  font-weight: 400;
+}
+
+/* 記録後の結果 */
+.ses-sum-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin: 10px 0 14px;
+}
+
+.ses-sum-stat {
+  padding: var(--sp-3);
+  background: var(--bg-elevated);
+  border-radius: 12px;
+}
+
+.ses-sum-stat dt {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.ses-sum-stat dd {
+  margin-top: 6px;
+  font-family: var(--font-display);
+  font-size: var(--fs-num-lg);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ses-sum-stat dd small {
+  margin-left: 3px;
+  font-family: var(--font-ja);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--text-dim);
+}
+
+.ses-pr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+}
+
+.ses-pr-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: 10px var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
+
+.ses-pr-list svg.ico {
+  color: var(--accent);
+}
+
+.ses-pr-list b {
+  color: var(--accent);
+}
+
+.ses-pr-list small {
+  color: var(--text-dim);
+}
+
+@media (min-width: 640px) {
+  .ses-sheet-layer {
+    align-items: center;
+    padding: var(--sp-6);
+  }
+
+  .ses-sheet {
+    padding-bottom: var(--sp-5);
+    border-bottom: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+  }
+
+  .ses-sheet::before {
+    display: none;
+  }
+}
+
+/* ---------- 再開の案内(メイン画面の上部) ---------- */
+
+.session-resume {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: 14px;
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(203, 242, 79, 0.1), rgba(203, 242, 79, 0.02)), var(--bg-panel);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius);
+}
+
+.session-resume-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 12px;
+}
+
+.session-resume-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-resume-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.5;
+}
+
+.session-resume-text strong {
+  font-weight: 800;
+}
+
+.session-resume-text span {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.session-resume-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: 10px;
+}
+
+.session-resume-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--control-h);
+  padding: 0 var(--sp-4);
+  font-size: var(--fs-md);
+  font-weight: 800;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.session-resume-btn.is-primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.session-resume-btn.is-primary:focus-visible {
+  outline-color: #fff;
+}
+
+.session-resume-btn[data-armed="1"] {
+  color: #1c0806;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ---------- 動き ---------- */
+
+@keyframes ses-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ses-rise {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rest-timer,
+  .rest-timer *,
+  .session *,
+  .ses-sheet-layer *,
+  .session-resume * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .ses-body {
+    scroll-behavior: auto;
+  }
+}

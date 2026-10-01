@@ -2,6 +2,14 @@
 // Usage: node e2e.cjs <repoDir> <outDir>
 // Serves repoDir over HTTP, drives the main user flows in Chromium at several
 // viewports, and writes screenshots + summary.json to outDir.
+// Flow (v2 IA: bottom tabs メニュー / 記録 / 進捗 / 設定):
+//   first run → 設定 onboarding → preset + focus → 保存してメニュー作成 → メニュー
+//   → swap ↻ → consult (きつく / 楽に / 短く / 戻す) → ⓘ tip → rest timer
+//   → TODAY 記録 sheet → log saved → 記録 / 進捗 smoke → reload restores plan → export
+//   → 記録: type switch changes the list → picker (pool 25 m steps, custom cardio name stays cardio)
+//     → no clipped select text → draft survives reload → save → edit → 今日もこれをやる → delete + undo
+//   → 進捗: charts (role=img + label) / calendar labels + day detail / badges text / metric switch / bodyweight
+//   → ▶ 開始 (session): ✓ a set starts the rest timer → 記録して終了 → the log appears in 記録
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -15,7 +23,7 @@ const MIME = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json", ".webmanifest": "application/manifest+json",
-  ".svg": "image/svg+xml", ".png": "image/png",
+  ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2",
 };
 
 function serve() {
@@ -37,6 +45,8 @@ function serve() {
 const VIEWPORTS = [
   { name: "mobile390", width: 390, height: 844, mobile: true },
   { name: "mobile320", width: 320, height: 640, mobile: true },
+  { name: "mobile375", width: 375, height: 667, mobile: true },
+  { name: "mobile430", width: 430, height: 932, mobile: true },
   { name: "desktop", width: 1280, height: 900, mobile: false },
 ];
 
@@ -66,6 +76,35 @@ async function step(results, name, fn) {
   }
 }
 
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg);
+}
+
+// 記録フォームの選択リストで、どの選択肢を選んでも文字が欠けないか(B29)。欠ける選択肢の一覧を返す
+async function clippedSelects(page) {
+  return page.evaluate(() => {
+    const c = document.createElement("canvas").getContext("2d");
+    const out = [];
+    for (const s of document.querySelectorAll("#log-compose .entry select")) {
+      const cs = getComputedStyle(s);
+      c.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const avail = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      for (const o of s.options) {
+        const need = c.measureText(o.textContent).width;
+        if (need > avail + 0.5) out.push({ field: s.dataset.field, text: o.textContent, need: Math.round(need), avail: Math.round(avail) });
+      }
+    }
+    return out.slice(0, 10);
+  });
+}
+
+// 表示中のトーストの文言(無ければ "")
+async function toastText(page) {
+  const t = page.locator(".toast .toast-msg").last();
+  await t.waitFor({ state: "visible", timeout: 3000 });
+  return t.innerText();
+}
+
 async function runViewport(browser, base, vp) {
   const ctx = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
@@ -76,111 +115,382 @@ async function runViewport(browser, base, vp) {
   const results = { viewport: vp.name, consoleErrors: [], pageErrors: [], steps: [], overflow: {} };
   page.on("console", (m) => { if (m.type() === "error") results.consoleErrors.push(m.text().slice(0, 300)); });
   page.on("pageerror", (e) => results.pageErrors.push(String(e.message).slice(0, 300)));
-  // fonts.googleapis may be blocked in sandbox; don't let it hang
+  // 外部フォントは使わないが、万一の読み込みで止まらないように遮断する
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 
   const shot = (n) => page.screenshot({ path: path.join(out, `${vp.name}-${n}.png`), fullPage: false });
   const full = (n) => page.screenshot({ path: path.join(out, `${vp.name}-${n}-full.png`), fullPage: true });
+  const tab = (name) => page.locator(`.tab-bar .tab[data-tab="${name}"]`);
+  const firstExName = () => page.locator("#menu-day .ex .ex-name").first().innerText();
+  const storedLogs = () => page.evaluate(() => JSON.parse(localStorage.getItem("workout_logs") || "[]"));
+  const typeSeg = (label) => page.locator("#log-compose .type-seg .seg-opt", { hasText: label });
+  const entries = () => page.locator("#log-compose .entry");
+  const openLogItem = async (item) => {
+    const head = item.locator(".log-head");
+    if (await head.getAttribute("aria-expanded") !== "true") await head.click();
+    return (await item.getAttribute("id")).slice(4);
+  };
 
-  await step(results, "load", async () => {
+  await step(results, "load-first-run", async () => {
     await page.goto(base + "/index.html", { waitUntil: "load" });
     await page.waitForTimeout(300);
-    await shot("01-top"); await full("01-top");
+    await shot("01-first-run"); await full("01-first-run");
     results.overflow.initial = await overflow(page);
+    const hash = await page.evaluate(() => location.hash);
+    assert(hash === "#settings", `first run should open settings, got ${hash}`);
+    assert(await page.locator("#view-settings .welcome").isVisible(), "welcome card not visible");
+    const hiddenShown = await page.evaluate(() =>
+      [...document.querySelectorAll("[hidden]")].filter((e) => getComputedStyle(e).display !== "none").length);
+    assert(hiddenShown === 0, `${hiddenShown} [hidden] elements are displayed`);
+    return { hash };
   });
 
   await step(results, "preset-gym+focus", async () => {
-    const gym = page.locator(".preset-btn", { hasText: "ジム" }).first();
-    await gym.click();
-    const chip = page.locator(".focus-chip").first();
-    if (await chip.count()) await chip.click();
+    await page.locator(".preset-btn", { hasText: "ジム" }).first().click();
+    assert(await page.locator(".preset-btn", { hasText: "ジム" }).first().getAttribute("aria-pressed") === "true", "preset not pressed");
+    const chip = page.locator('.chip[data-act="focus"]').first();
+    await chip.click();
+    assert(await chip.getAttribute("aria-pressed") === "true", "focus chip not pressed");
+    return { checked: await page.locator('input[name="equipment"]:checked').count() };
   });
 
   await step(results, "generate", async () => {
-    await page.locator("#generate-btn, button[type=submit].primary-btn").first().click();
-    await page.waitForSelector("#result-section:not([hidden])", { timeout: 5000 });
+    await page.locator('#view-settings button[type=submit]').click();
+    await page.waitForSelector("#view-menu:not([hidden]) #menu-today", { timeout: 5000 });
     await page.waitForTimeout(400);
-    await shot("02-result"); await full("02-result");
+    await shot("02-menu"); await full("02-menu");
     results.overflow.afterGenerate = await overflow(page);
-    return { days: await page.locator(".day-block h3").count(), rows: await page.locator(".result-content tbody tr").count() };
+    const days = await page.locator(".day-tab").count();
+    const cards = await page.locator("#menu-day .ex").count();
+    assert(days > 0 && cards > 0, "no plan rendered");
+    return { days, cards, toast: await toastText(page) };
   });
 
   await step(results, "swap-exercise", async () => {
-    const btn = page.locator(".swap-btn").first();
-    const cell = btn.locator("xpath=ancestor::td");
-    const before = (await cell.innerText()).split("\n")[0];
+    const btn = page.locator('#menu-day .swap-btn:not([aria-disabled="true"])').first();
+    const li = btn.locator("xpath=ancestor::li[contains(@class,'ex')]");
+    const id = await li.getAttribute("id");
+    const before = await li.locator(".ex-name").innerText();
     await btn.click(); await page.waitForTimeout(150);
-    const after = (await page.locator(".swap-btn").first().locator("xpath=ancestor::td").innerText()).split("\n")[0];
-    return { before, after, changed: before !== after };
+    const after = await page.locator(`#${id} .ex-name`).innerText();
+    assert(before !== after, "swap did not change the exercise");
+    return { before, after, toast: await toastText(page) };
   });
 
-  await step(results, "consult-harder", async () => {
-    const b = page.locator(".consult-btn", { hasText: "きつく" });
-    if (await b.count()) await b.first().click();
+  await step(results, "consult-each", async () => {
+    const res = {};
+    for (const op of ["harder", "easier", "shorter", "reset"]) {
+      await page.locator(`.consult-btn[data-op="${op}"]`).click();
+      await page.waitForTimeout(150);
+      res[op] = await toastText(page);
+    }
+    return res;
   });
 
   await step(results, "info-toggle", async () => {
-    const b = page.locator(".info-btn").first();
-    if (await b.count()) { await b.click(); await page.waitForTimeout(100); }
+    const b = page.locator("#menu-day .info-btn").first();
+    await b.click(); await page.waitForTimeout(100);
+    const expanded = await b.getAttribute("aria-expanded");
+    const tipVisible = await page.locator(`#${await b.getAttribute("aria-controls")}`).isVisible();
+    assert(expanded === "true" && tipVisible, "tip did not open");
+    return { expanded, tipVisible };
   });
 
   await step(results, "rest-timer", async () => {
-    const b = page.locator(".rest-btn").first();
-    if (!(await b.count())) return { skipped: true };
-    await b.click(); await page.waitForTimeout(1300);
+    await page.locator("#menu-day .rest-btn").first().click();
+    await page.waitForTimeout(1300);
     const t = page.locator("#rest-timer");
+    assert(await t.isVisible(), "timer not visible");
     const box = await t.boundingBox();
-    const vpH = page.viewportSize().height;
+    const size = page.viewportSize();
     await shot("03-timer");
-    const time = await page.locator("#rest-timer-time").innerText();
-    const within = box && box.y >= 0 && box.y + box.height <= vpH && box.x >= 0 && box.x + box.width <= page.viewportSize().width;
-    const reset = page.locator("#rest-reset"); if (await reset.count()) await reset.click();
-    const close = page.locator("#rest-close"); if (await close.count()) await close.click();
-    return { time, withinViewport: !!within, box };
+    const time = await page.locator("#rest-timer .rest-timer-time").innerText();
+    const within = box && box.y >= 0 && box.y + box.height <= size.height && box.x >= 0 && box.x + box.width <= size.width;
+    const bar = await page.locator(".tab-bar").boundingBox();
+    const tabBarVisible = await page.locator(".tab-bar").isVisible();
+    // タブバー(スマホは画面下、広い画面はアプリバーの中)と重ならないこと
+    const clearOfTabBar = !tabBarVisible || !bar || box.y + box.height <= bar.y + 1 || box.y >= bar.y + bar.height - 1 ||
+      box.x + box.width <= bar.x + 1 || box.x >= bar.x + bar.width - 1;
+    const oneLineButtons = await page.evaluate(() =>
+      [...document.querySelectorAll("#rest-timer [data-rest]")].every((b) => b.getBoundingClientRect().height <= 60));
+    assert(within && clearOfTabBar, "timer outside the viewport or under the tab bar");
+    await page.locator('#rest-timer [data-rest="+15"]').click();
+    await page.locator('#rest-timer [data-rest="stop"]').click();
+    await page.waitForTimeout(100);
+    assert(await t.isHidden(), "終了 did not hide the timer");
+    return { time, withinViewport: !!within, clearOfTabBar, oneLineButtons, box };
   });
 
-  await step(results, "record-day", async () => {
-    await page.locator(".day-record-btn").first().click();
+  await step(results, "today-record-sheet", async () => {
+    await page.locator('#menu-today [data-act="record"]').click();
+    await page.waitForSelector("#sheet[open] .rec-row", { timeout: 3000 });
+    const rows = await page.locator("#sheet .rec-row").count();
+    await shot("04-record-sheet");
+    results.overflow.recordSheet = await overflow(page);
+    const save = page.locator("#sheet .rec-save");
+    await save.click();
+    // 重量が未選択の種目があると確認が出るので、もう一度押す
+    if (await page.locator("#sheet[open]").count()) await save.click();
     await page.waitForTimeout(300);
-    const rows = await page.locator("#log-entries .log-row").count();
-    await shot("04-logform");
-    await page.locator("#log-form button[type=submit]").click();
-    await page.waitForTimeout(300);
-    const items = await page.locator(".log-item").count();
+    assert(!(await page.locator("#sheet[open]").count()), "sheet still open");
+    const logs = await page.evaluate(() => JSON.parse(localStorage.getItem("workout_logs") || "[]"));
+    assert(logs.length === 1, `expected 1 log, got ${logs.length}`);
+    const doneMark = await page.locator(".day-tab .dt-mark.is-done").count();
     results.overflow.afterRecord = await overflow(page);
-    return { prefilledRows: rows, logItems: items };
+    return { rows, entries: logs[0].entries.length, planDay: logs[0].planDay, doneMark, toast: await toastText(page) };
   });
 
-  await step(results, "progress-visible", async () => {
-    const vis = await page.locator("#progress-section").isVisible();
-    if (vis) { await page.locator("#progress-section").scrollIntoViewIfNeeded(); await shot("05-progress"); }
-    return { visible: vis };
+  await step(results, "log-view-smoke", async () => {
+    await tab("log").click(); await page.waitForTimeout(200);
+    assert(await page.locator("#view-log").isVisible(), "log view hidden");
+    await shot("05-log");
+    results.overflow.log = await overflow(page);
+    const items = await page.locator("#view-log .log-item").count();
+    assert(items === 1, `expected 1 log in the history, got ${items}`);
+    return { current: await tab("log").getAttribute("aria-current"), items };
   });
 
-  await step(results, "bodyweight", async () => {
-    const f = page.locator("#bodyweight-form");
-    if (!(await f.count())) return { skipped: true };
-    await f.locator("button[type=submit]").click(); await page.waitForTimeout(200);
-    return { chart: await page.locator("#bodyweight-chart svg").count() };
+  await step(results, "progress-view-smoke", async () => {
+    await tab("progress").click(); await page.waitForTimeout(200);
+    assert(await page.locator("#view-progress").isVisible(), "progress view hidden");
+    await shot("06-progress");
+    results.overflow.progress = await overflow(page);
+    return { stats: await page.locator("#view-progress .stat").count() };
   });
 
-  await step(results, "reload-restores-profile", async () => {
+  await step(results, "reload-restores-plan", async () => {
+    await tab("menu").click(); await page.waitForTimeout(150);
+    const before = await firstExName();
     await page.reload({ waitUntil: "load" }); await page.waitForTimeout(300);
-    const checked = await page.locator('input[name="equipment"]:checked').count();
-    const logs = await page.locator(".log-item").count();
-    return { equipmentChecked: checked, logItemsAfterReload: logs };
+    const hash = await page.evaluate(() => location.hash);
+    const after = await firstExName();
+    assert(hash === "#menu", `last tab not restored: ${hash}`);
+    assert(before === after, "plan changed after reload");
+    return { hash, firstExercise: after };
   });
 
-  await step(results, "export", async () => {
+  await step(results, "settings-export", async () => {
+    await tab("settings").click(); await page.waitForTimeout(200);
+    await shot("07-settings"); await full("07-settings");
+    results.overflow.settings = await overflow(page);
     const b = page.locator("#export-btn");
-    if (!(await b.count())) return { skipped: true };
     const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 3000 }), b.click()]);
     const p = path.join(out, `${vp.name}-backup.json`); await dl.saveAs(p);
     const j = JSON.parse(fs.readFileSync(p, "utf8"));
-    return { logs: j.logs?.length, hasProfile: !!j.profile };
+    assert(j.logs?.length === 1 && j.profile && j.plan, "backup is missing data");
+    return { file: dl.suggestedFilename(), logs: j.logs.length, hasProfile: !!j.profile, hasPlan: !!j.plan };
   });
 
-  await full("06-final");
+  // ---------- 記録画面 ----------
+
+  await step(results, "log-type-switch", async () => {
+    await tab("log").click(); await page.waitForTimeout(200);
+    const chips = () => page.locator("#log-compose .pick-chip .pick-chip-text").allInnerTexts();
+    await typeSeg("筋トレ").click();
+    const weight = await chips();
+    await typeSeg("有酸素").click(); await page.waitForTimeout(100);
+    const cardio = await chips();
+    assert(cardio.length > 0 && cardio.join() !== weight.join(), "type switch did not change the quick picks");
+    await page.locator('#log-compose [data-act="open-picker"]').click();
+    await page.waitForSelector("#sheet[open] .pick-item", { timeout: 3000 });
+    const names = await page.locator("#sheet .pick-name").allInnerTexts();
+    assert(names.includes("水泳(クロール)") && names.includes("水泳(平泳ぎ)") && !names.includes("ベンチプレス"), "cardio picker shows the wrong list");
+    await shot("10-picker");
+    results.overflow.picker = await overflow(page);
+    return { weight, cardio, picker: names.length };
+  });
+
+  await step(results, "log-pool-and-custom-cardio", async () => {
+    await page.locator('#sheet .pick-item[data-name="水泳(クロール)"]').first().click();
+    // 有酸素で一覧に無い名前を入れても筋トレに変わらない(B27)
+    await page.locator("#sheet .text-input").fill("サイクリング(屋外)");
+    await page.locator("#sheet .custom-add").click();
+    await page.locator("#sheet .picker-add").click();
+    await page.waitForTimeout(200);
+    assert(await entries().count() === 2, "picker did not add 2 exercises");
+    const pool = entries().filter({ hasText: "水泳(クロール)" });
+    const dist = await pool.locator("select.f-distance option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean).map(Number));
+    assert(dist.length > 10 && dist.every((v) => v % 25 === 0), "pool distances are not 25 m steps");
+    await pool.locator("select.f-distance").selectOption("1000");
+    const custom = entries().filter({ hasText: "サイクリング(屋外)" });
+    assert(await custom.locator("select.f-minutes").count() === 1 && await custom.locator("select.f-weight").count() === 0,
+      "custom cardio name was switched to strength");
+    return { poolChoices: dist.length, firstSteps: dist.slice(0, 4) };
+  });
+
+  await step(results, "log-weight-row-no-clipping", async () => {
+    await typeSeg("筋トレ").click();
+    await page.locator('#log-compose [data-act="open-picker"]').click();
+    await page.waitForSelector("#sheet[open] .pick-item", { timeout: 3000 });
+    await page.locator('#sheet .pick-item[data-name="ベンチプレス"]').first().click();
+    await page.locator("#sheet .picker-add").click();
+    await page.waitForTimeout(200);
+    const bench = entries().filter({ hasText: "ベンチプレス" });
+    await bench.locator("select.f-weight").selectOption("102.5");
+    await bench.locator("select.f-reps").selectOption("8");
+    const clipped = await clippedSelects(page);
+    assert(clipped.length === 0, `select text clipped: ${JSON.stringify(clipped)}`);
+    const rm = await bench.locator(".entry-remove").boundingBox();
+    assert(rm.width >= 44 && rm.height >= 44, "remove button smaller than 44px");
+    await shot("11-log-form");
+    results.overflow.logForm = await overflow(page);
+    return { rows: await entries().count(), removeBox: [Math.round(rm.width), Math.round(rm.height)] };
+  });
+
+  await step(results, "log-draft-survives-reload", async () => {
+    const before = await page.locator("#log-compose .entry-name").allInnerTexts();
+    await page.reload({ waitUntil: "load" }); await page.waitForTimeout(300);
+    const after = await page.locator("#log-compose .entry-name").allInnerTexts();
+    assert(before.length === 3 && before.join() === after.join(), `draft lost: ${before} → ${after}`);
+    const w = await entries().filter({ hasText: "ベンチプレス" }).locator("select.f-weight").inputValue();
+    assert(w === "102.5", `weight not restored (${w})`);
+    return { rows: after };
+  });
+
+  await step(results, "log-save", async () => {
+    const n0 = (await storedLogs()).length;
+    await page.locator('#log-compose [data-act="save"]').click();
+    await page.waitForTimeout(250);
+    const all = await storedLogs();
+    assert(all.length === n0 + 1, `expected ${n0 + 1} logs, got ${all.length}`);
+    const log = all.find((l) => l.entries.some((e) => e.name === "サイクリング(屋外)"));
+    const byName = Object.fromEntries(log.entries.map((e) => [e.name, e]));
+    assert(byName["サイクリング(屋外)"].track === "cardio", "custom cardio saved with the wrong track");
+    assert(byName["水泳(クロール)"].distance === 1000 && byName["水泳(クロール)"].unit === "m", "pool distance not saved in m");
+    assert(byName["ベンチプレス"].weight === 102.5 && byName["ベンチプレス"].reps === 8, "weight row not saved");
+    assert(await entries().count() === 0, "form not cleared after saving");
+    assert(!(await page.evaluate(() => localStorage.getItem("workout_log_draft"))), "draft not cleared");
+    return { logs: all.length, toast: await toastText(page) };
+  });
+
+  await step(results, "log-edit", async () => {
+    const n0 = (await storedLogs()).length;
+    const item = page.locator("#log-history .log-item").first();
+    const id = await openLogItem(item);
+    await shot("12-log-expanded");
+    results.overflow.logExpanded = await overflow(page);
+    await item.locator('[data-act="edit"]').click();
+    await page.waitForTimeout(200);
+    assert(await page.locator("#log-compose.is-editing").count() === 1, "form is not in edit mode");
+    await entries().filter({ hasText: "ベンチプレス" }).locator("select.f-sets").selectOption("5");
+    await page.locator('#log-compose [data-act="save"]').click();
+    await page.waitForTimeout(250);
+    const all = await storedLogs();
+    const log = all.find((l) => l.id === id);
+    assert(all.length === n0, "editing changed the number of logs");
+    assert(log && log.entries.find((e) => e.name === "ベンチプレス").sets === 5, "edit not saved to the same log");
+    assert(log.entries.find((e) => e.name === "水泳(クロール)").distance === 1000, "distance lost on edit");
+    return { id, toast: await toastText(page) };
+  });
+
+  await step(results, "log-duplicate-today", async () => {
+    const n0 = (await storedLogs()).length;
+    const item = page.locator("#log-history .log-item").nth(1);
+    const id = await openLogItem(item);
+    const src = (await storedLogs()).find((l) => l.id === id);
+    await item.locator('[data-act="repeat"]').click();
+    await page.waitForTimeout(250);
+    assert(await entries().count() === src.entries.length, "duplicate did not fill the form");
+    assert(await page.locator('#log-compose input[name="log-date"][value="today"]').isChecked(), "duplicate is not dated today");
+    const save = page.locator('#log-compose [data-act="save"]');
+    await save.click();
+    if (await entries().count()) await save.click();
+    await page.waitForTimeout(250);
+    const all = await storedLogs();
+    assert(all.length === n0 + 1, "duplicate was not saved as a new log");
+    assert(all.find((l) => l.id === id).date === src.date, "original log changed");
+    return { entries: src.entries.length };
+  });
+
+  await step(results, "log-delete-undo", async () => {
+    const n0 = (await storedLogs()).length;
+    const item = page.locator("#log-history .log-item").first();
+    const id = await openLogItem(item);
+    await item.locator('[data-act="delete"]').click();
+    await page.waitForTimeout(200);
+    const afterDelete = await storedLogs();
+    assert(afterDelete.length === n0 - 1 && !afterDelete.some((l) => l.id === id), "log not deleted");
+    const msg = await toastText(page);
+    await page.locator(".toast .toast-action").click();
+    await page.waitForTimeout(200);
+    const restored = await storedLogs();
+    assert(restored.length === n0 && restored.some((l) => l.id === id), "undo did not restore the log");
+    await full("13-log");
+    results.overflow.log = await overflow(page);
+    return { toast: msg };
+  });
+
+  // ---------- 進捗画面 ----------
+
+  await step(results, "progress-charts-calendar-badges", async () => {
+    await tab("progress").click(); await page.waitForTimeout(350);
+    const labels = await page.locator('#view-progress svg.line-chart[role="img"]').evaluateAll((s) => s.map((x) => x.getAttribute("aria-label")));
+    assert(labels.length >= 1 && labels.every((l) => l && l.length > 5), "chart without role=img/label");
+    const days = await page.locator("#view-progress button.cal-cell").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
+    assert(days.length >= 1 && days.every((l) => /\d+月\d+日\(.\) 記録\d+件/.test(l)), `calendar labels: ${days}`);
+    const rest = await page.evaluate(() => [...document.querySelectorAll("#view-progress .cal span.cal-cell:not(.is-future)")]
+      .every((c) => /\d+月\d+日\(.\) 記録なし/.test(c.textContent)));
+    assert(rest, "calendar rest days lack a text label");
+    await page.locator("#view-progress button.cal-cell").first().click();
+    assert(await page.locator("#view-progress .cal-detail-card").isVisible(), "day detail not shown");
+    const badgeTexts = await page.locator("#view-progress .badge-item").allInnerTexts();
+    assert(badgeTexts.length === 8 && badgeTexts.every((t) => /獲得|\d+\/\d+/.test(t)), "badge state text missing");
+    let metric = null;
+    const metricOpts = page.locator("#pg-chart .chart-metric .seg-opt");
+    if (await metricOpts.count() > 1) {
+      const before = await page.locator("#pg-chart svg.line-chart").getAttribute("aria-label");
+      await metricOpts.nth(1).click(); await page.waitForTimeout(150);
+      metric = await page.locator("#pg-chart svg.line-chart, #pg-chart .chart-empty").first().evaluate((el) => el.getAttribute("aria-label") ?? el.textContent);
+      assert(metric !== before, "metric switch did not redraw the chart");
+    }
+    await full("14-progress");
+    results.overflow.progressFull = await overflow(page);
+    return { charts: labels.length, firstChart: labels[0], calendarDays: days.length, badges: badgeTexts.length, metric };
+  });
+
+  await step(results, "progress-bodyweight", async () => {
+    const before = await page.evaluate(() => JSON.parse(localStorage.getItem("bodyweight_logs") || "[]").length);
+    await page.locator('#pg-bw [data-act="bw-step"][data-step="1"]').click();
+    const value = Number(await page.locator("#pg-bw .bw-select").inputValue());
+    await page.locator('#pg-bw [data-act="bw-save"]').click();
+    await page.waitForTimeout(200);
+    const list = await page.evaluate(() => JSON.parse(localStorage.getItem("bodyweight_logs") || "[]"));
+    assert(list.length === before + 1 && list[list.length - 1].weight === value, "bodyweight not saved");
+    assert(await page.locator('#pg-bw svg.line-chart[role="img"]').count() === 1, "bodyweight chart missing");
+    await shot("15-bodyweight");
+    return { value, toast: await toastText(page) };
+  });
+
+  // ---------- セッション(ワークアウト)モード ----------
+
+  await step(results, "session-flow", async () => {
+    const n0 = (await storedLogs()).length;
+    await tab("menu").click(); await page.waitForTimeout(150);
+    await page.locator('#menu-today [data-act="start"], #menu-day [data-act="start"]').first().click();
+    await page.waitForSelector("#session:not([hidden])", { timeout: 3000 });
+    await shot("08-session");
+    results.overflow.session = await overflow(page);
+    const tabBarHidden = await page.locator(".tab-bar").isHidden();
+    await page.locator("#session .ses-check").first().click();
+    await page.waitForTimeout(400);
+    assert(await page.locator("#rest-timer").isVisible(), "✓ did not start the rest timer");
+    await page.locator("#session .ses-finish").click();
+    await page.waitForSelector(".ses-sheet-layer", { timeout: 3000 });
+    if (!(await page.locator(".ses-sheet-layer.is-summary").count())) {
+      await page.locator(".ses-sheet-layer .ses-sheet-btn.is-primary").click();
+    }
+    await page.waitForSelector(".ses-sheet-layer.is-summary", { timeout: 3000 });
+    await shot("09-session-summary");
+    await page.locator(".ses-sheet-layer.is-summary .ses-sheet-btn.is-primary").click();
+    await page.waitForSelector("#session", { state: "hidden", timeout: 3000 });
+    const all = await storedLogs();
+    assert(all.length === n0 + 1, "session was not saved");
+    await tab("log").click(); await page.waitForTimeout(200);
+    const title = await page.locator("#log-history .log-item .log-title-text").first().innerText();
+    return { tabBarHidden, title, timerHidden: await page.locator("#rest-timer").isHidden() };
+  });
+
+  await full("09-final");
   results.overflow.final = await overflow(page);
   await ctx.close();
   return results;

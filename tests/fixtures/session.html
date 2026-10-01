@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>セッション画面テスト</title>
+  <!-- tests/session.test.cjs 用のページ。本物の js/session.js・js/timer.js・storage・planner を読み込み、
+       app.js の代わりに記録用の ctx(呼び出しを window.fixture.calls に残す)を渡す。 -->
+  <link rel="stylesheet" href="../../style.css?v=14">
+  <link rel="stylesheet" href="../../session.css?v=14">
+  <style>
+    /* app のタブバーの代わり(タイマーがその上に出るかを確かめる) */
+    .fixture-tabbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: calc(var(--tabbar-h, 56px) + env(safe-area-inset-bottom, 0px));
+      background: #0b0c10;
+      border-top: 1px solid #343943;
+    }
+    .fixture-main { padding: 16px; }
+    .fixture-filler { height: 1200px; }
+  </style>
+</head>
+<body>
+  <main id="main" class="fixture-main">
+    <div id="notices"></div>
+    <h1>テスト用ページ</h1>
+    <button type="button" id="opener">この日を開始</button>
+    <div class="fixture-filler"></div>
+    <p id="page-end">ページの終わり</p>
+  </main>
+  <nav class="fixture-tabbar" aria-label="タブ"></nav>
+
+  <div id="rest-timer" class="rest-timer" hidden role="timer" aria-label="休憩タイマー">
+    <div class="rest-timer-track" aria-hidden="true"><div class="rest-timer-bar"></div></div>
+    <div class="rest-timer-main">
+      <span class="rest-timer-label" aria-hidden="true">休憩</span>
+      <span id="rest-timer-time" class="rest-timer-time">0:00</span>
+    </div>
+    <div class="rest-timer-actions">
+      <button type="button" class="rest-mini" data-rest="+15">+15秒</button>
+      <button type="button" class="rest-mini" data-rest="+60">+1分</button>
+      <button type="button" class="rest-mini" data-rest="reset">リセット</button>
+      <button type="button" class="rest-mini rest-close" data-rest="stop">終了</button>
+    </div>
+    <span class="rest-timer-live sr-only" aria-live="polite"></span>
+  </div>
+
+  <script type="module">
+    import { openSession, resumeSessionIfAny, isSessionOpen } from "../../js/session.js?v=14";
+    import { initTimer, startRestTimer, isRunning } from "../../js/timer.js?v=14";
+    import * as storage from "../../js/storage.js?v=14";
+    import { alternativeExercise } from "../../js/planner.js?v=14";
+
+    const PROFILE = {
+      weight: 70, height: 172, age: 30, gender: "男性", goal: "hypertrophy", level: "intermediate",
+      frequency: 3, focus: ["chest"], equipment: ["barbell", "dumbbell", "bench", "pool"],
+    };
+
+    // メニューの1日分(planner の Day と同じ形)
+    const DAY = {
+      index: 0,
+      title: "Day 1:全身A",
+      type: "lift",
+      warmup: ["軽い有酸素 5分で体を温める", "ウォームアップセット(ベンチプレス): 本番の約50%×8 → 70%×4"],
+      cooldown: ["大胸筋ストレッチ", "深呼吸を数回"],
+      exercises: [
+        {
+          name: "ベンチプレス", track: "weight", sets: 3, reps: "8〜10回", rest: "90秒", focused: true,
+          tip: "肩甲骨を寄せて胸を張り、バーをみぞおち付近へ。",
+          target: { weight: 62.5, reps: 8, text: "62.5kg×8回から" },
+        },
+        { name: "プランク", track: "time", sets: 2, reps: "30〜60秒キープ", rest: "45〜60秒", focused: false },
+        { name: "ダンベルカール", track: "weight", sets: 2, reps: "10〜12回", rest: "60秒", focused: false },
+      ],
+      cardio: { name: "水泳(クロール)", duration: "25m×8本=200m", minutes: 15, distanceM: 200, isPool: true, optional: false },
+    };
+
+    // 前回の記録(「前回」の行の確認用)
+    const PREVIOUS = {
+      id: "prev-1", date: "2026-09-26",
+      entries: [{ name: "ベンチプレス", track: "weight", weight: 60, reps: 10, sets: 3,
+        setDetails: [{ weight: 60, reps: 10 }, { weight: 60, reps: 10 }, { weight: 60, reps: 8 }] }],
+    };
+
+    const calls = { rest: [], saved: [], savedOk: [], closed: [], alt: [], errors: [] };
+    storage.initStorage({ onError: (msg) => calls.errors.push(msg) });
+    initTimer(document.getElementById("rest-timer"));
+
+    function ctx() {
+      return {
+        logs: storage.loadLogs(),
+        profile: PROFILE,
+        onSave: (log) => {
+          calls.saved.push(structuredClone(log));
+          const ok = storage.addLog(log);
+          calls.savedOk.push(ok);
+          return ok;
+        },
+        startRestTimer: (sec) => {
+          calls.rest.push(sec);
+          startRestTimer(sec);
+        },
+        alternativeExercise: (profile, logs, day, i) => {
+          calls.alt.push(i);
+          return alternativeExercise(profile, logs, day, i);
+        },
+        onClose: (result) => calls.closed.push(structuredClone(result)),
+      };
+    }
+
+    window.fixture = {
+      calls,
+      DAY,
+      seedPrevious: () => storage.addLog(PREVIOUS),
+      open: (day = DAY) => openSession(structuredClone(day), ctx()),
+      resume: () => resumeSessionIfAny(ctx()),
+      isOpen: () => isSessionOpen(),
+      timerRunning: () => isRunning(),
+      logs: () => storage.loadLogs(),
+      stored: () => storage.loadSession(),
+    };
+    document.getElementById("opener").addEventListener("click", () => window.fixture.open());
+    window.fixture.resume();
+    document.documentElement.dataset.ready = "1";
+  </script>
+</body>
+</html>

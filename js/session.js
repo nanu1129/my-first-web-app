@@ -7,15 +7,15 @@
 // - 状態はタップのたびに storage.saveSession で保存し、アプリが落ちても12時間以内なら再開できる
 // - 記録して終了で、セット詳細(setDetails)と要約値(最も重いセット)を持つ正規化済みの記録を作り、ctx.onSave に渡す
 import {
-  WEIGHT_CHOICES, isPoolExercise, parseRestSeconds, alternativeExercise, alternativeCardio,
+  WEIGHT_CHOICES, isPoolExercise, parseRestSeconds, alternativeExercise, alternativeCardio, hasAlternative,
   exerciseChoices, getExerciseTrack, getExerciseTip, getExerciseInfo,
 } from "./planner.js?v=14";
 import { loadSession, saveSession, clearSession, loadLogs, loadProfile, addLog, normalizeEntry } from "./storage.js?v=14";
 import { localDateStr, formatShortDate, escapeHtml, numRange, uid, formatNum } from "./util.js?v=14";
-import { detectPRs } from "./stats.js?v=14";
-import * as icons from "./icons.js?v=14";
+import { detectPRs, lastWorkingSet } from "./stats.js?v=14";
+import { EQUIPMENT_SVG, uiIcon } from "./icons.js?v=14";
 import {
-  initTimer, startRestTimer, stopRest, playBeep, vibrate, unlockAudio, acquireWakeLock, releaseWakeLock,
+  initTimer, startRestTimer, stopRest, isRunning, playBeep, vibrate, unlockAudio, acquireWakeLock, releaseWakeLock,
   formatClock,
 } from "./timer.js?v=14";
 
@@ -30,6 +30,13 @@ const MINUTE_CHOICES = numRange(1, 180);
 const KM_CHOICES = [0, ...numRange(0.1, 50, 0.1)];
 const POOL_CHOICES = [0, ...numRange(25, 10000, 25)];
 const TRACK_LABELS = { weight: "筋トレ", time: "体幹・キープ", cardio: "有酸素" };
+
+// icons.js に無い2つ(ステッパーの −、キープ中止の ■)。描き方は uiIcon と同じ
+const lineIcon = (body) =>
+  `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" ` +
+  `stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
+const ICON_MINUS = lineIcon(`<path d="M5 12h14"/>`);
+const ICON_STOP = lineIcon(`<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/>`);
 
 // ---------- 小さなヘルパー ----------
 
@@ -66,7 +73,9 @@ function stepIn(list, v, dir) {
   return list[0];
 }
 
-const weightLabel = (w) => (w > 0 ? `${fmtNum(w)}kg` : "自重");
+// 重りを使う器具の種目か(0kg を「自重」と書かないため)
+const LOAD_EQUIPMENT = /^(barbell|dumbbell|kettlebell|machine|cable|mc_)/;
+const isLoaded = (name) => (getExerciseInfo(name)?.equipment ?? []).some((k) => LOAD_EQUIPMENT.test(k));
 
 function elapsedText(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -85,45 +94,8 @@ function ago(ms) {
 
 // ---------- 前回の記録 ----------
 
-// 種目名の最新の記録(新しい日付の中で最も良い行)。形式が合わない旧記録(shapeMismatch)は使わない
-function lastEntry(logs, name) {
-  let best = null;
-  for (const log of Array.isArray(logs) ? logs : []) {
-    if (!log || !Array.isArray(log.entries)) continue;
-    if (best && String(log.date) < best.date) continue;
-    for (const e of log.entries) {
-      if (e?.name !== name || e.shapeMismatch) continue;
-      if (!best || String(log.date) > best.date || entryScore(e) > entryScore(best.entry)) {
-        best = { date: String(log.date), entry: e };
-      }
-    }
-  }
-  return best;
-}
-
-function entryScore(e) {
-  if (e.track === "time") return Math.max(num(e.seconds) ?? 0, ...(e.setDetails ?? []).map((s) => num(s.seconds) ?? 0));
-  if (e.track === "cardio") return (num(e.minutes) ?? 0) * 1000 + (num(e.distance) ?? 0);
-  return workingSet(e).weight * 1000 + (workingSet(e).reps ?? 0);
-}
-
-function workingSet(e) {
-  let weight = num(e.weight) ?? 0;
-  let reps = num(e.reps);
-  for (const s of Array.isArray(e.setDetails) ? e.setDetails : []) {
-    const w = num(s?.weight) ?? 0;
-    const r = num(s?.reps);
-    if (r == null) continue;
-    if (reps == null || w > weight || (w === weight && r > reps)) {
-      weight = w;
-      reps = r;
-    }
-  }
-  return { weight, reps };
-}
-
 // 記録1行の短い表記: "60kg×10,10,8" / "60kg×10 / 62.5kg×8" / "30,30,25秒" / "25分・500m"
-export function describeEntry(e) {
+function describeEntry(e) {
   if (!e) return "";
   const details = Array.isArray(e.setDetails) ? e.setDetails : [];
   if (e.track === "time") {
@@ -159,17 +131,17 @@ function liftCard(ex, planIndex, logs, extra = {}) {
   if (track === "cardio") return cardioCard(ex, logs, extra);
   const count = Math.min(MAX_SETS, Math.max(1, Math.round(num(ex.sets) ?? 3)));
   const target = isObj(ex.target) ? ex.target : null;
-  const last = lastEntry(logs, ex.name)?.entry ?? null;
+  // 前回の記録(その日の中で最も良いセット)。目標(planner の target)が無いときの初期値に使う
+  const prev = lastWorkingSet(logs, ex.name);
+  const last = prev?.track === track ? prev : null;
   let base;
   if (track === "time") {
-    const lastSec = last ? entryScore(last) : null;
-    base = { seconds: nearest(SECONDS_CHOICES, target?.seconds ?? midOf(ex.reps) ?? lastSec ?? 30) };
+    base = { seconds: nearest(SECONDS_CHOICES, target?.seconds ?? midOf(ex.reps) ?? last?.seconds ?? 30) };
   } else {
-    const ws = last ? workingSet(last) : null;
-    const weight = num(target?.weight) ?? ws?.weight ?? 0;
+    const weight = num(target?.weight) ?? last?.weight ?? 0;
     base = {
       weight: weight > 0 ? nearest(WEIGHT_CHOICES, weight) : 0,
-      reps: nearest(REPS_CHOICES, target?.reps ?? midOf(ex.reps) ?? ws?.reps ?? 10),
+      reps: nearest(REPS_CHOICES, target?.reps ?? midOf(ex.reps) ?? last?.reps ?? 10),
     };
   }
   return {
@@ -191,7 +163,7 @@ function liftCard(ex, planIndex, logs, extra = {}) {
 function cardioCard(c, logs, extra = {}) {
   const pool = isPoolExercise(c.name) || c.isPool === true;
   const t = isObj(c.target) ? c.target : null;
-  const last = lastEntry(logs, c.name)?.entry ?? null;
+  const last = lastWorkingSet(logs, c.name);
   const durMid = /分/.test(String(c.duration ?? "")) ? midOf(c.duration) : null;
   const minutes = nearest(MINUTE_CHOICES, num(t?.minutes) ?? num(c.minutes) ?? durMid ?? num(last?.minutes) ?? 20);
   let distance = 0;
@@ -220,7 +192,7 @@ function cardioCard(c, logs, extra = {}) {
 }
 
 // 画面に渡された日のメニュー(スナップショット)からセッションを作る
-export function createSession(daySnapshot, logs = [], now = Date.now()) {
+function createSession(daySnapshot, logs) {
   const day = clone(daySnapshot) ?? {};
   const index = Number.isInteger(day.index) ? day.index : Number.isInteger(day.dayIndex) ? day.dayIndex : null;
   const cards = [];
@@ -231,7 +203,7 @@ export function createSession(daySnapshot, logs = [], now = Date.now()) {
   return {
     v: 1,
     id: uid(),
-    startedAt: now,
+    startedAt: Date.now(),
     day: { ...day, index, title: String(day.title ?? "トレーニング") },
     cards,
   };
@@ -263,7 +235,12 @@ function validSession(s) {
       }
     }
   }
-  return { ...s, id: typeof s.id === "string" && s.id ? s.id : uid(), cards, day: { ...s.day, title: String(s.day.title ?? "トレーニング") } };
+  const day = {
+    ...s.day,
+    title: String(s.day.title ?? "トレーニング"),
+    exercises: Array.isArray(s.day.exercises) ? s.day.exercises : [],
+  };
+  return { ...s, id: typeof s.id === "string" && s.id ? s.id : uid(), cards, day };
 }
 
 const countSets = (s) => s.cards.reduce((n, c) => n + c.sets.length, 0);
@@ -271,7 +248,7 @@ const countDone = (s) => s.cards.reduce((n, c) => n + c.sets.filter((x) => x.don
 const cardDone = (c) => c.sets.every((x) => x.done);
 
 // 完了したセットから記録(正規化済みの Log)を作る。完了セットが1つも無ければ null
-export function buildSessionLog(session, now = Date.now()) {
+function buildSessionLog(session) {
   const s = validSession(clone(session));
   if (!s) return null;
   const entries = [];
@@ -296,7 +273,7 @@ export function buildSessionLog(session, now = Date.now()) {
   if (entries.length === 0) return null;
   // 終了時刻 = 最後に ✓ を付けた時刻(放置したセッションを後から保存しても所要時間が膨らまない)
   const lastDone = Math.max(0, ...s.cards.flatMap((c) => c.sets.map((x) => (x.done && Number.isFinite(x.doneAt) ? x.doneAt : 0))));
-  const end = lastDone > s.startedAt ? lastDone : now;
+  const end = lastDone > s.startedAt ? lastDone : Date.now();
   const log = {
     id: s.id,
     date: localDateStr(new Date(s.startedAt)),
@@ -329,11 +306,20 @@ let sheet = null;          // 開いているシート
 let banner = null;         // 再開の案内
 let msgId = null;
 let openerFocus = null;
+let openerScroll = 0;      // 開く前のページのスクロール位置(閉じたら戻す)
+let restFrom = null;       // 休憩タイマーを始めたセット { key, i }
 const expanded = new Set(); // 完了後も開いておくカード
 const tipsOpen = new Set();
 const inerted = [];
 
 const ctxLogs = () => (Array.isArray(ctx.logs) ? ctx.logs : loadLogs());
+const prevCache = new Map();  // 種目名 → 前回の記録(セッション中は記録が変わらないので1回だけ探す)
+
+function previousOf(name) {
+  if (!prevCache.has(name)) prevCache.set(name, lastWorkingSet(ctxLogs(), name));
+  return prevCache.get(name);
+}
+
 const findCard = (key) => state?.cards.find((c) => c.key === key) ?? null;
 
 function persist() {
@@ -357,33 +343,38 @@ function ensureSection() {
   if (section.dataset.ready === "1") return section;
   section.dataset.ready = "1";
   section.classList.add("session");
+  // aria-modal は付けない: 休憩タイマーは画面の外側(body 直下)にあり、読み上げでも操作できる必要がある。
+  // 後ろの画面は showOverlay で inert にする
   section.setAttribute("role", "dialog");
-  section.setAttribute("aria-modal", "true");
   section.setAttribute("aria-labelledby", "session-title");
   section.innerHTML = `
     <header class="ses-head">
-      <div class="ses-head-row">
-        <div class="ses-head-titles">
-          <p class="ses-kicker">トレーニング中</p>
-          <h2 class="ses-title" id="session-title" tabindex="-1"></h2>
+      <div class="ses-head-inner">
+        <div class="ses-head-row">
+          <div class="ses-head-titles">
+            <p class="ses-kicker"></p>
+            <h2 class="ses-title" id="session-title" tabindex="-1"></h2>
+          </div>
+          <button type="button" class="ses-pause" data-act="pause">中断</button>
         </div>
-        <button type="button" class="ses-pause" data-act="pause">中断</button>
+        <div class="ses-head-stats">
+          <p class="ses-stat"><span class="ses-stat-label">経過</span><span class="ses-stat-num ses-elapsed">0:00</span></p>
+          <p class="ses-stat"><span class="ses-stat-label">完了</span><span class="ses-stat-num ses-progress-text">0/0</span><span class="ses-stat-unit">セット</span></p>
+          <div class="ses-progress" aria-hidden="true"><span class="ses-progress-fill"></span></div>
+        </div>
       </div>
-      <div class="ses-head-stats">
-        <p class="ses-stat"><span class="ses-stat-label">経過</span><span class="ses-elapsed">0:00</span></p>
-        <p class="ses-stat"><span class="ses-progress-text">0/0</span><span class="ses-stat-label">セット</span></p>
-      </div>
-      <div class="ses-progress" aria-hidden="true"><span class="ses-progress-fill"></span></div>
+      <p class="ses-msg" role="status" aria-live="polite"></p>
     </header>
     <div class="ses-body">
-      <p class="ses-msg" role="status" aria-live="polite"></p>
       <div class="ses-prep-top"></div>
       <ol class="ses-cards"></ol>
       <div class="ses-prep-bottom"></div>
     </div>
     <footer class="ses-foot">
-      <button type="button" class="ses-add" data-act="add-ex">+ 種目</button>
-      <button type="button" class="ses-finish" data-act="finish">記録して終了</button>
+      <div class="ses-foot-inner">
+        <button type="button" class="ses-add" data-act="add-ex">${uiIcon("plus")}<span>種目</span></button>
+        <button type="button" class="ses-finish" data-act="finish">${uiIcon("check")}<span>記録して終了</span></button>
+      </div>
     </footer>`;
   section.addEventListener("click", onClick);
   section.addEventListener("change", onChange);
@@ -398,18 +389,20 @@ function ensureSection() {
 
 // ---------- 描画 ----------
 
-function prepHtml(label, items) {
+function prepHtml(label, icon, items) {
   if (!Array.isArray(items) || items.length === 0) return "";
-  return `<details class="ses-prep"><summary>${label}(${items.length})</summary><ul>${items
-    .map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul></details>`;
+  return `<details class="ses-prep"><summary>${uiIcon(icon)}<span class="ses-prep-label">${label}</span>` +
+    `<span class="ses-prep-count">${items.length}</span>${uiIcon("chevronDown", "ses-prep-chev")}</summary>` +
+    `<ul>${items.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul></details>`;
 }
 
-function equipmentIcon(name) {
-  const info = getExerciseInfo(name);
-  const svgs = icons.EQUIPMENT_SVG ?? {};
-  const keys = (info?.equipment ?? []).filter((k) => svgs[k]);
+// カード左上の絵: 器具の線画(ベンチより主役の器具を優先)。器具を使わない種目は種類のアイコン
+function cardIcon(c) {
+  const keys = (getExerciseInfo(c.name)?.equipment ?? []).filter((k) => EQUIPMENT_SVG[k]);
   const key = keys.find((k) => k !== "bench") ?? keys[0];
-  return key ? `<span class="ses-card-icon" aria-hidden="true">${svgs[key]}</span>` : "";
+  if (key) return `<span class="ses-card-icon" aria-hidden="true">${EQUIPMENT_SVG[key]}</span>`;
+  const generic = c.kind === "cardio" ? (c.unit === "m" ? "wave" : "pulse") : c.track === "time" ? "clock" : "bolt";
+  return `<span class="ses-card-icon is-generic" aria-hidden="true">${uiIcon(generic)}</span>`;
 }
 
 function optionsHtml(list, value, label) {
@@ -418,7 +411,12 @@ function optionsHtml(list, value, label) {
 }
 
 const FIELDS = {
-  weight: { list: () => WEIGHT_CHOICES, label: weightLabel, name: "重量", show: (v) => (v > 0 ? [fmtNum(v), "kg"] : ["自重", ""]) },
+  weight: {
+    list: () => WEIGHT_CHOICES,
+    label: (v, c) => (v > 0 ? `${fmtNum(v)}kg` : isLoaded(c.name) ? "0kg" : "自重"),
+    name: "重量",
+    show: (v, c) => (v > 0 ? [fmtNum(v), "kg"] : isLoaded(c.name) ? ["0", "kg"] : ["自重", ""]),
+  },
   reps: { list: () => REPS_CHOICES, label: (v) => `${v}回`, name: "回数", show: (v) => [String(v), "回"] },
   seconds: { list: () => SECONDS_CHOICES, label: (v) => `${v}秒`, name: "秒数", show: (v) => [String(v), "秒"] },
   minutes: { list: () => MINUTE_CHOICES, label: (v) => `${v}分`, name: "時間", show: (v) => [String(v), "分"] },
@@ -430,6 +428,12 @@ const FIELDS = {
   },
 };
 
+// 数字でない値(自重・—)は本文の字体、5文字以上の数字は少し小さく
+function valueClass(text) {
+  if (!/\d/.test(text)) return ` class="is-word"`;
+  return text.length >= 5 ? ` class="is-long"` : "";
+}
+
 function stepperHtml(c, i, field) {
   const f = FIELDS[field];
   const set = c.sets[i];
@@ -439,20 +443,23 @@ function stepperHtml(c, i, field) {
   const where = `${escapeHtml(c.name)} ${i + 1}セット目`;
   const attrs = (act) => `data-act="${act}" data-card="${c.key}" data-set="${i}" data-field="${field}" data-fk="${c.key}:${i}:${field}:${act}"`;
   return `<div class="ses-step ses-step-${field}" role="group" aria-label="${where}の${f.name}">` +
-    `<button type="button" class="ses-step-btn" ${attrs("dec")} aria-label="${f.name}を減らす(${where})"${v <= list[0] ? " disabled" : ""}>−</button>` +
-    `<label class="ses-val"><span class="ses-val-text" aria-hidden="true"><b>${escapeHtml(big)}</b>${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</span>` +
+    `<button type="button" class="ses-step-btn" ${attrs("dec")} aria-label="${f.name}を減らす(${where})"${v <= list[0] ? " disabled" : ""}>${ICON_MINUS}</button>` +
+    `<label class="ses-val"><span class="ses-val-text" aria-hidden="true"><b${valueClass(big)}>${escapeHtml(big)}</b>` +
+    `${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</span>` +
     `<select class="ses-val-select" data-card="${c.key}" data-set="${i}" data-field="${field}" data-fk="${c.key}:${i}:${field}:sel" aria-label="${where}の${f.name}">${optionsHtml(list, v, (x) => f.label(x, c))}</select></label>` +
-    `<button type="button" class="ses-step-btn" ${attrs("inc")} aria-label="${f.name}を増やす(${where})"${v >= list[list.length - 1] ? " disabled" : ""}>+</button>` +
+    `<button type="button" class="ses-step-btn" ${attrs("inc")} aria-label="${f.name}を増やす(${where})"${v >= list[list.length - 1] ? " disabled" : ""}>${uiIcon("plus")}</button>` +
     `</div>`;
 }
 
 function holdButtonHtml(c, i) {
   const running = hold && hold.key === c.key && hold.i === i;
   const set = c.sets[i];
-  const label = running ? holdLabel() : `▶ キープ ${set.seconds}秒`;
-  return `<button type="button" class="ses-hold${running ? " is-running" : ""}" data-act="hold" data-card="${c.key}" data-set="${i}" data-fk="${c.key}:${i}:hold"` +
+  const label = running ? holdLabel() : `キープ ${set.seconds}秒`;
+  const phase = running ? ` is-running${hold.phase === "prep" ? " is-prep" : ""}` : "";
+  return `<button type="button" class="ses-hold${phase}" data-act="hold" data-card="${c.key}" data-set="${i}" data-fk="${c.key}:${i}:hold"` +
     ` aria-label="${running ? "キープを中止" : `${escapeHtml(c.name)} ${i + 1}セット目のキープを開始(${set.seconds}秒)`}"${set.done ? " disabled" : ""}>` +
-    `<span class="ses-hold-fill" aria-hidden="true"></span><span class="ses-hold-text">${label}</span></button>`;
+    `<span class="ses-hold-fill" aria-hidden="true"></span>${running ? ICON_STOP : uiIcon("play")}` +
+    `<span class="ses-hold-text" aria-hidden="true">${label}</span></button>`;
 }
 
 function setRowHtml(c, i, nextKey) {
@@ -470,12 +477,12 @@ function setRowHtml(c, i, nextKey) {
     a = stepperHtml(c, i, "minutes");
     b = stepperHtml(c, i, "distance");
   }
-  const checkLabel = `${escapeHtml(c.name)} ${c.sets.length > 1 ? `${i + 1}セット目` : ""}を完了`;
+  const checkLabel = `${escapeHtml(c.name)}${c.kind === "cardio" ? "" : ` ${i + 1}セット目`}を完了`;
   return `<li class="ses-set${set.done ? " is-done" : ""}${isNext ? " is-next" : ""}" data-set="${i}">` +
-    `<span class="ses-set-no" aria-hidden="true">${c.kind === "cardio" ? "" : i + 1}</span>` +
+    (c.kind === "cardio" ? "" : `<span class="ses-set-no" aria-hidden="true">${i + 1}</span>`) +
     `<div class="ses-set-a">${a}</div><div class="ses-set-b">${b}</div>` +
     `<button type="button" class="ses-check" data-act="check" data-card="${c.key}" data-set="${i}" data-fk="${c.key}:${i}:check"` +
-    ` aria-pressed="${set.done}" aria-label="${checkLabel}"><span aria-hidden="true">✓</span></button>` +
+    ` aria-pressed="${set.done}" aria-label="${checkLabel}">${uiIcon("check")}</button>` +
     `</li>`;
 }
 
@@ -488,54 +495,82 @@ function nextSet() {
   return null;
 }
 
+// カード下部のアイコンだけのボタン(読み上げ名は label)
+function toolHtml(c, act, icon, label, { disabled = false, expanded = null } = {}) {
+  return `<button type="button" class="ses-tool" data-act="${act}" data-card="${c.key}" data-fk="${c.key}:${act}" aria-label="${label}"` +
+    `${expanded == null ? "" : ` aria-expanded="${expanded}"`}${act === "tip" ? ` aria-controls="tip-${c.key}"` : ""}` +
+    `${disabled ? " disabled" : ""}>${icon}</button>`;
+}
+
+// ↻ で入れ替えられる種目があるか(有酸素は押したときに確かめる)
+function canSwap(c) {
+  if (c.kind === "cardio") return true;
+  if (c.planIndex == null) return false;
+  return hasAlternative(ctx.profile ?? loadProfile(), state.day, c.planIndex);
+}
+
 function cardHtml(c, next) {
   const doneN = c.sets.filter((x) => x.done).length;
-  const complete = doneN === c.sets.length;
+  const total = c.sets.length;
+  const complete = doneN === total;
   const current = next && next.key === c.key;
-  const cls = `ses-card${complete ? " is-done" : ""}${current ? " is-current" : ""}`;
+  const cls = `ses-card${c.kind === "cardio" ? " is-cardio" : ""}${complete ? " is-done" : ""}${current ? " is-current" : ""}`;
+  const name = escapeHtml(c.name);
   if (complete && !expanded.has(c.key)) {
-    const detail = describeEntry(buildCardEntry(c));
     return `<li class="${cls} is-collapsed" data-card="${c.key}">` +
       `<button type="button" class="ses-card-summary" data-act="expand" data-card="${c.key}" data-fk="${c.key}:expand" aria-expanded="false">` +
-      `<span class="ses-sum-check" aria-hidden="true">✓</span>` +
-      `<span class="ses-sum-name">${escapeHtml(c.name)}</span>` +
-      `<span class="ses-sum-detail">${escapeHtml(detail)}</span>` +
-      `<span class="ses-sum-count">${doneN}/${c.sets.length}</span></button></li>`;
+      `<span class="ses-sum-check" aria-hidden="true">${uiIcon("check")}</span>` +
+      `<span class="ses-sum-text"><span class="ses-sum-name">${name}</span>` +
+      `<span class="ses-sum-detail">${escapeHtml(describeEntry(buildCardEntry(c)))}</span></span>` +
+      `<span class="ses-sum-count">${doneN}/${total}<span class="sr-only">セット完了</span></span></button></li>`;
   }
-  const prev = lastEntry(ctxLogs(), c.name);
+  const prev = previousOf(c.name);
   const meta = c.kind === "cardio"
     ? `${c.duration ? escapeHtml(c.duration) : "有酸素"}${c.optional ? "(任意)" : ""}`
-    : `${c.sets.length}セット${c.reps ? `・${escapeHtml(c.reps)}` : ""}${c.rest ? `・休憩 ${escapeHtml(c.rest)}` : ""}`;
+    : [escapeHtml(c.reps), c.rest ? `休憩 ${escapeHtml(c.rest)}` : ""]
+      .filter(Boolean).map((t) => `<span class="ses-meta-part">${t}</span>`).join("・");
   const anyDone = doneN > 0;
   const tipOpen = tipsOpen.has(c.key);
+  const notes = [];
+  if (prev) {
+    notes.push(`<p class="ses-note"><span class="ses-note-label">前回 ${escapeHtml(formatShortDate(prev.date))}</span>` +
+      `<span class="ses-note-value">${escapeHtml(describeEntry(prev))}</span></p>`);
+  }
+  if (c.target) {
+    notes.push(`<p class="ses-note is-target"><span class="ses-note-label">目標</span><span class="ses-note-value">${escapeHtml(c.target)}</span></p>`);
+  }
   const tools = [];
   if (c.tip) {
-    tools.push(`<button type="button" class="ses-tool" data-act="tip" data-card="${c.key}" data-fk="${c.key}:tip" aria-expanded="${tipOpen}" aria-controls="tip-${c.key}">ⓘ コツ</button>`);
+    tools.push(toolHtml(c, "tip", uiIcon("info"), `${name}のやり方`, { expanded: tipOpen }));
   }
   if (c.added) {
-    tools.push(`<button type="button" class="ses-tool" data-act="remove-card" data-card="${c.key}" data-fk="${c.key}:remove"${anyDone ? " disabled" : ""} aria-label="${escapeHtml(c.name)}を削除">✕ 削除</button>`);
+    tools.push(toolHtml(c, "remove-card", uiIcon("close"), `${name}をこのトレーニングから外す`, { disabled: anyDone }));
   } else if (c.kind === "cardio" || c.planIndex != null) {
-    tools.push(`<button type="button" class="ses-tool" data-act="swap" data-card="${c.key}" data-fk="${c.key}:swap"${anyDone ? " disabled" : ""} aria-label="${escapeHtml(c.name)}を別の種目に変更">↻ 変更</button>`);
+    tools.push(toolHtml(c, "swap", uiIcon("swap"), `${name}を別の種目に替える`, { disabled: anyDone || !canSwap(c) }));
   }
   if (complete) {
-    tools.push(`<button type="button" class="ses-tool" data-act="collapse" data-card="${c.key}" data-fk="${c.key}:collapse" aria-expanded="true">▲ たたむ</button>`);
+    tools.push(toolHtml(c, "collapse", uiIcon("chevronDown"), `${name}をたたむ`, { expanded: true }));
   }
-  const rows = c.sets.map((_, i) => setRowHtml(c, i, next)).join("");
+  const setBtn = (act, icon, label, disabled) =>
+    `<button type="button" class="ses-setcount-btn" data-act="${act}" data-card="${c.key}" data-fk="${c.key}:${act}"` +
+    ` aria-label="${label}(${name})"${disabled ? " disabled" : ""}>${icon}</button>`;
   const setTools = c.kind === "cardio" ? "" :
-    `<div class="ses-card-foot">` +
-    `<button type="button" class="ses-tool" data-act="remove-set" data-card="${c.key}" data-fk="${c.key}:remove-set"${c.sets.length <= 1 || c.sets[c.sets.length - 1].done ? " disabled" : ""}>− セット</button>` +
-    `<button type="button" class="ses-tool" data-act="add-set" data-card="${c.key}" data-fk="${c.key}:add-set"${c.sets.length >= MAX_SETS ? " disabled" : ""}>+ セット</button>` +
+    `<div class="ses-setcount" role="group" aria-label="${name}のセット数">` +
+    setBtn("remove-set", ICON_MINUS, "セットを1つ減らす", total <= 1 || c.sets[total - 1].done) +
+    `<span class="ses-setcount-label" aria-hidden="true">セット</span>` +
+    setBtn("add-set", uiIcon("plus"), "セットを1つ増やす", total >= MAX_SETS) +
     `</div>`;
   return `<li class="${cls}" data-card="${c.key}">` +
-    `<div class="ses-card-head">${equipmentIcon(c.name)}` +
-    `<div class="ses-card-titles"><h3 class="ses-card-name">${c.focused ? `<span class="ses-star" aria-label="強化部位">★</span>` : ""}${escapeHtml(c.name)}</h3>` +
+    `<div class="ses-card-head">${cardIcon(c)}` +
+    `<div class="ses-card-titles"><h3 class="ses-card-name">` +
+    `${c.focused ? `<span class="ses-star" aria-hidden="true">★</span><span class="sr-only">強化部位:</span>` : ""}${name}</h3>` +
     `<p class="ses-card-meta">${meta}</p></div>` +
-    `<span class="ses-card-count" aria-label="${doneN}/${c.sets.length}セット完了">${doneN}/${c.sets.length}</span></div>` +
-    (tools.length ? `<div class="ses-card-tools">${tools.join("")}</div>` : "") +
-    (c.tip ? `<p class="ses-card-tip" id="tip-${c.key}"${tipOpen ? "" : " hidden"}>${escapeHtml(c.tip)}</p>` : "") +
-    (prev ? `<p class="ses-card-prev"><span>前回 ${escapeHtml(formatShortDate(prev.date))}</span>${escapeHtml(describeEntry(prev.entry))}</p>` : "") +
-    (c.target ? `<p class="ses-card-target"><span>目標</span>${escapeHtml(c.target)}</p>` : "") +
-    `<ol class="ses-sets">${rows}</ol>${setTools}</li>`;
+    `<p class="ses-card-count"><b>${doneN}</b>/${total}<span class="sr-only">セット完了</span></p></div>` +
+    (notes.length ? `<div class="ses-notes">${notes.join("")}</div>` : "") +
+    `<ol class="ses-sets">${c.sets.map((_, i) => setRowHtml(c, i, next)).join("")}</ol>` +
+    `<div class="ses-card-foot">${tools.join("")}${setTools}</div>` +
+    (c.tip ? `<div class="ses-card-tip" id="tip-${c.key}"${tipOpen ? "" : " hidden"}>${uiIcon("bulb")}<p>${escapeHtml(c.tip)}</p></div>` : "") +
+    `</li>`;
 }
 
 // 1枚のカードの完了分を記録の形にする(たたんだカードの要約用)
@@ -551,6 +586,7 @@ function renderHeader() {
   if (!state) return;
   const total = countSets(state);
   const done = countDone(state);
+  section.querySelector(".ses-kicker").textContent = state.day.type === "recovery" ? "アクティブレスト(回復日)" : "トレーニング中";
   section.querySelector(".ses-title").textContent = state.day.title;
   section.querySelector(".ses-progress-text").textContent = `${done}/${total}`;
   section.querySelector(".ses-progress-fill").style.width = `${total ? (done / total) * 100 : 0}%`;
@@ -575,9 +611,12 @@ function withFocus(fn) {
 function renderCards() {
   withFocus(() => {
     const next = nextSet();
-    section.querySelector(".ses-cards").innerHTML = state.cards.map((c) => cardHtml(c, next)).join("");
-    section.querySelector(".ses-prep-top").innerHTML = prepHtml("ウォームアップ", state.day.warmup);
-    section.querySelector(".ses-prep-bottom").innerHTML = prepHtml("クールダウン", state.day.cooldown);
+    section.querySelector(".ses-cards").innerHTML = state.cards.length
+      ? state.cards.map((c) => cardHtml(c, next)).join("")
+      : `<li class="ses-empty">この日の種目はありません。「種目」ボタンで追加できます。</li>`;
+    const recovery = state.day.type === "recovery";
+    section.querySelector(".ses-prep-top").innerHTML = prepHtml(recovery ? "体をほぐす" : "ウォームアップ", "flame", state.day.warmup);
+    section.querySelector(".ses-prep-bottom").innerHTML = prepHtml(recovery ? "ストレッチ" : "クールダウン", "leaf", state.day.cooldown);
   });
   renderHeader();
 }
@@ -608,11 +647,23 @@ function message(text, kind = "info") {
   msgId = setTimeout(() => { el.textContent = ""; }, kind === "error" ? 9000 : 5000);
 }
 
-function focusCheck(key, i, scroll = true) {
+// 本文(.ses-body)だけをスクロールして el を見える範囲の中央へ。scrollIntoView は後ろのページまで動かすので使わない。
+// 休憩タイマーが出ていれば、その上までを見える範囲とする
+function reveal(el) {
+  const body = section.querySelector(".ses-body");
+  const b = body.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const timer = globalThis.document.getElementById("rest-timer");
+  const bottom = timer && !timer.hidden ? Math.min(b.bottom, timer.getBoundingClientRect().top) : b.bottom;
+  const room = Math.max(0, bottom - b.top - r.height);
+  body.scrollTo({ top: Math.max(0, body.scrollTop + r.top - b.top - room / 2), behavior: reduceMotion() ? "auto" : "smooth" });
+}
+
+function focusCheck(key, i) {
   const btn = section.querySelector(`.ses-check[data-card="${CSS.escape(key)}"][data-set="${i}"]`);
   if (!btn) return;
   btn.focus({ preventScroll: true });
-  if (scroll) btn.closest(".ses-set")?.scrollIntoView({ block: "center", behavior: reduceMotion() ? "auto" : "smooth" });
+  reveal(btn.closest(".ses-set"));
 }
 
 // ---------- 操作 ----------
@@ -629,8 +680,17 @@ function setValue(c, i, field, value) {
   refresh([c.key]);
 }
 
-function restStarter() {
-  return typeof ctx.startRestTimer === "function" ? ctx.startRestTimer : startRestTimer;
+// 休憩タイマーを始める(ctx.startRestTimer があればそれを使う)。どのセットの ✓ で始めたかを覚えておき、
+// その ✓ を取り消したらタイマーも止める(押し間違いで休憩が動き続けないように)
+function startRest(c, i, sec) {
+  (typeof ctx.startRestTimer === "function" ? ctx.startRestTimer : startRestTimer)(sec);
+  restFrom = { key: c.key, i };
+}
+
+function stopRestFrom(c, i) {
+  if (!restFrom || restFrom.key !== c.key || restFrom.i !== i) return;
+  restFrom = null;
+  if (isRunning()) stopRest();
 }
 
 function toggleDone(c, i, { auto = false } = {}) {
@@ -642,6 +702,7 @@ function toggleDone(c, i, { auto = false } = {}) {
   if (hold && hold.key === c.key && hold.i === i) cancelHold();
   persist();
   if (!set.done) {
+    stopRestFrom(c, i);
     refresh([c.key]);
     return;
   }
@@ -650,7 +711,7 @@ function toggleDone(c, i, { auto = false } = {}) {
   const next = nextSet();
   if (next) {
     const sec = c.kind === "cardio" ? 0 : parseRestSeconds(c.rest);
-    if (sec > 0) restStarter()(sec);
+    if (sec > 0) startRest(c, i, sec);
   } else {
     message("全セット完了!「記録して終了」で保存しましょう");
   }
@@ -723,15 +784,17 @@ function holdLabel() {
   if (!hold) return "";
   const left = Math.max(0, hold.endAt - Date.now());
   if (hold.phase === "prep") return `準備 ${Math.ceil(left / 1000)}`;
-  return `■ ${formatClock(Math.ceil(left / 1000))}`;
+  return formatClock(Math.ceil(left / 1000));
 }
 
+// ▶ でキープを始める。休憩タイマーが動いていれば、休憩は終わったものとして閉じる
 function startHold(c, i) {
   unlockAudio();
   cancelHold();
+  if (isRunning()) stopRest();
   const seconds = c.sets[i].seconds;
   hold = { key: c.key, i, phase: "prep", endAt: Date.now() + PREP_MS, seconds, id: setInterval(tickHold, 200) };
-  message(`準備して。3秒後に${seconds}秒のキープを始めます`);
+  message(`3秒後にキープ開始(${seconds}秒)`);
   refresh([c.key]);
   tickHold();
 }
@@ -754,6 +817,7 @@ function tickHold() {
       playBeep("start");
       vibrate(60);
     }
+    message(`キープ開始(${hold.seconds}秒)`);
   }
   if (hold.phase === "hold" && now >= hold.endAt) {
     const { key, i, endAt } = hold;
@@ -771,6 +835,7 @@ function tickHold() {
   }
   const btn = section.querySelector(`.ses-hold[data-card="${CSS.escape(hold.key)}"][data-set="${hold.i}"]`);
   if (!btn) return;
+  btn.classList.toggle("is-prep", hold.phase === "prep");
   btn.querySelector(".ses-hold-text").textContent = holdLabel();
   const total = hold.phase === "prep" ? PREP_MS : hold.seconds * 1000;
   const left = Math.max(0, hold.endAt - now);
@@ -920,7 +985,7 @@ function openSheet({ title, body = "", actions, onCancel, className = "" }) {
       }
     }
   });
-  (layer.querySelector(".ses-sheet-body select, .ses-sheet-btn:not([disabled])") ?? layer.querySelector(".ses-sheet-title")).focus({ preventScroll: true });
+  layer.querySelector(".ses-sheet-title").focus({ preventScroll: true });
   return layer;
 }
 
@@ -1057,8 +1122,8 @@ function showSummary({ log, prs }) {
   const stat = (label, value) => `<div class="ses-sum-stat"><dt>${label}</dt><dd>${value}</dd></div>`;
   const prList = prs.length
     ? `<ul class="ses-pr-list">${prs.map((p) =>
-      `<li><span aria-hidden="true">🏆</span> ${escapeHtml(p.name)} ${escapeHtml(p.label ?? "")} <b>${escapeHtml(fmtNum(p.value))}${escapeHtml(p.unit ?? "")}</b>` +
-      `${p.prev != null ? `<small>(前回ベスト ${escapeHtml(fmtNum(p.prev))}${escapeHtml(p.unit ?? "")})</small>` : ""}</li>`).join("")}</ul>`
+      `<li>${uiIcon("trophy")}<span>${escapeHtml(p.name)} ${escapeHtml(p.label ?? "")} <b>${escapeHtml(fmtNum(p.value))}${escapeHtml(p.unit ?? "")}</b>` +
+      `${p.prev != null ? `<small>(前回ベスト ${escapeHtml(fmtNum(p.prev))}${escapeHtml(p.unit ?? "")})</small>` : ""}</span></li>`).join("")}</ul>`
     : "";
   openSheet({
     title: "おつかれさまでした!",
@@ -1097,9 +1162,11 @@ function showOverlay(s, context) {
   state = s;
   expanded.clear();
   tipsOpen.clear();
+  prevCache.clear();
   ensureSection();
   initTimer();
   openerFocus = doc.activeElement;
+  openerScroll = globalThis.scrollY ?? 0;
   // 背景の画面を操作・読み上げの対象から外す
   for (const el of doc.body.children) {
     if (el === section || el.id === "rest-timer" || el.inert || el.classList.contains("ses-sheet-layer")) continue;
@@ -1139,7 +1206,9 @@ function closeOverlay(result) {
   doc.body.classList.remove("session-open");
   for (const el of inerted.splice(0)) el.inert = false;
   state = null;
+  restFrom = null;
   const context = ctx;
+  globalThis.scrollTo?.(0, openerScroll);
   if (openerFocus?.isConnected) openerFocus.focus({ preventScroll: true });
   openerFocus = null;
   context.onClose?.(result);
@@ -1216,7 +1285,7 @@ function removeBanner() {
   banner = null;
 }
 
-// 保存されたセッションがあれば画面下に案内を出す(12時間以内: 再開/破棄、それより前: 記録する/破棄)。
+// 保存されたセッションがあればメイン画面の上部に案内を出す(12時間以内: 再開/破棄、それより前: 記録する/破棄)。
 // 案内を出したら true。完了セットの無い古いセッションは黙って消す。
 export function resumeSessionIfAny(context = {}) {
   if (isSessionOpen()) return false;
@@ -1243,11 +1312,15 @@ export function resumeSessionIfAny(context = {}) {
   banner.setAttribute("aria-label", "途中のトレーニング");
   const when = fresh ? `${ago(age)}に開始` : `${formatShortDate(localDateStr(new Date(stored.startedAt)))}に開始`;
   banner.innerHTML =
+    `<span class="session-resume-ico" aria-hidden="true">${uiIcon("timer")}</span>` +
+    `<div class="session-resume-body">` +
     `<p class="session-resume-text"><strong>${fresh ? "途中のトレーニングがあります" : "記録していないトレーニングがあります"}</strong>` +
-    `<span>${escapeHtml(stored.day.title)}・${doneN}/${countSets(stored)}セット・${escapeHtml(when)}</span></p>` +
+    `<span>${[stored.day.title, `${doneN}/${countSets(stored)}セット完了`, when]
+      .map((t) => `<span class="ses-meta-part">${escapeHtml(t)}</span>`).join("・")}</span></p>` +
     `<div class="session-resume-actions">` +
-    `<button type="button" class="session-resume-btn is-primary" data-resume="${fresh ? "resume" : "save"}">${fresh ? "再開" : "記録する"}</button>` +
-    `<button type="button" class="session-resume-btn" data-resume="discard">破棄</button></div>`;
+    `<button type="button" class="session-resume-btn is-primary" data-resume="${fresh ? "resume" : "save"}">` +
+    `${uiIcon(fresh ? "play" : "check")}<span>${fresh ? "再開" : "記録する"}</span></button>` +
+    `<button type="button" class="session-resume-btn" data-resume="discard">破棄</button></div></div>`;
   banner.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-resume]");
     if (!btn || btn.disabled) return;
@@ -1280,6 +1353,7 @@ export function resumeSessionIfAny(context = {}) {
       removeBanner();
     }
   });
-  doc.body.appendChild(banner);
+  // メイン画面のお知らせ欄(無ければ main の先頭)に出す
+  (doc.getElementById("notices") ?? doc.querySelector("main") ?? doc.body).prepend(banner);
   return true;
 }
