@@ -1168,3 +1168,57 @@ test("旧形式(v12)のプランでも、時短・きつく・入れ替えが落
   assert.ok(d.estMinutes > 0 && d.estMinutes <= 45, `${d.estMinutes}`);
   if (!d.exercises.some((e) => e.muscle === "core")) assert.ok(!/腹筋ストレッチ/.test(d.cooldown.join("")));
 });
+
+test("記録が増えたら保存済みメニューの前回・目標を付け直す(refreshTargets, I02/I19)", () => {
+  const profile = profileOf({ equipment: EQ.barbell.concat(["dumbbell"]) });
+  const first = [{ id: "a", date: "2026-09-26", entries: [{ name: "ベンチプレス", track: "weight", weight: 75, reps: 10, sets: 3 }] }];
+  const plan = generatePlan(profile, first, NOW);
+  const day = plan.days.find((d) => d.exercises.some((e) => e.name === "ベンチプレス"));
+  assert.ok(day, "bench day exists");
+  const bench = () => day.exercises.find((e) => e.name === "ベンチプレス");
+  const before = bench().target;
+  assert.ok(before?.weight > 0, JSON.stringify(before));
+  // 目標どおりに記録した翌週: 同じ重量で回数を伸ばす目標へ進み、前回の日付も新しくなる
+  const logs = [{ id: "b", date: "2026-10-01", entries: [{ name: "ベンチプレス", track: "weight", weight: before.weight, reps: before.reps, sets: 3 }] }, ...first];
+  const later = new Date(2026, 9, 8, 12, 0, 0);
+  assert.equal(planner.refreshTargets(plan, logs, profile, later), true);
+  assert.match(bench().note, /^前回\(10\/1\)/);
+  assert.equal(bench().target.weight, before.weight);
+  assert.equal(bench().target.reps, before.reps + 1);
+  // 同じ記録でもう一度呼んでも変わらない
+  assert.equal(planner.refreshTargets(plan, logs, profile, later), false);
+  // 記録を消すと前回・目標も消える
+  planner.refreshTargets(plan, [], profile, later);
+  assert.equal(bench().note, null);
+  assert.equal(bench().target, undefined);
+});
+
+test("重り種目を 0kg で記録しても自重の目標にしない・最初の目安の重さ", () => {
+  const r = progressionTarget({ name: "ベンチプレス", date: "2026-09-26", weight: 0, reps: 8, sets: 4 },
+    { name: "ベンチプレス", reps: "8〜12回" }, { level: "intermediate" }, NOW);
+  assert.equal(r.weight, null);
+  assert.equal(r.reps, 9);
+  assert.match(r.text, /9回できる重さ/);
+  // 自重の種目は今までどおり
+  assert.equal(progressionTarget({ name: "腕立て伏せ", date: "2026-09-26", weight: 0, reps: 12 },
+    { name: "腕立て伏せ", reps: "10〜20回" }, { level: "intermediate" }, NOW).weight, 0);
+  assert.equal(planner.startingWeight("ベンチプレス"), 20);
+  assert.ok(planner.startingWeight("サイドレイズ") > 0);
+  assert.ok(WEIGHT_CHOICES.includes(planner.startingWeight("サイドレイズ")));
+  assert.equal(planner.startingWeight("腕立て伏せ"), null);
+  assert.equal(planner.startingWeight("プランク"), null);
+});
+
+test("任意の軽い泳ぎには前回+25m の目標を付けない(処方どおりの距離)", () => {
+  const logs = [{ id: "s", date: "2026-09-26", entries: [{ name: "水泳(平泳ぎ)", track: "cardio", minutes: 25, distance: 750, unit: "m" }] }];
+  const profile = profileOf({ goal: "hypertrophy", equipment: ["pool", ...EQ.gym] });
+  const plan = generatePlan(profile, logs, NOW);
+  const optional = plan.days.map((d) => d.cardio).filter((c) => c?.optional);
+  assert.ok(optional.length > 0, "optional swim exists");
+  for (const c of optional) {
+    assert.equal(c.target, undefined, JSON.stringify(c));
+    assert.ok(c.distanceM > 0 && c.distanceM % 25 === 0);
+  }
+  planner.refreshTargets(plan, logs, profile, NOW);
+  for (const c of plan.days.map((d) => d.cardio).filter((x) => x?.optional)) assert.equal(c.target, undefined);
+});

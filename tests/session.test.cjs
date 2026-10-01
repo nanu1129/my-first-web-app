@@ -90,6 +90,8 @@ const card = (page, name) => page.locator(".ses-card", { has: page.locator(".ses
 const setRow = (page, name, i) => card(page, name).locator(".ses-set").nth(i);
 const value = (row, field) => row.locator(`.ses-step-${field} .ses-val-text`).innerText().then((s) => s.replace(/\s+/g, ""));
 const checkBtn = (row) => row.locator(".ses-check");
+// シートを開いた直後・確認を出した直後のタップはダブルタップとして無視されるので、少し時間を進めてから押す
+const settle = (page) => page.clock.runFor(600);
 // 操作結果の文言(少し遅れて入る)を待つ
 const waitMessage = (page, re) => page.waitForFunction(
   (src) => new RegExp(src).test(document.querySelector(".ses-msg")?.textContent ?? ""), re.source,
@@ -113,7 +115,7 @@ test("session mode: sets, rest timer, hold, pool distance, swap, resume, save", 
     await section.waitFor({ state: "visible" });
     assert.equal(await section.getAttribute("role"), "dialog");
     assert.ok(await page.evaluate(() => document.body.classList.contains("session-open")));
-    assert.equal(await page.locator(".ses-title").innerText(), "Day 1:全身A");
+    assert.equal((await page.locator(".ses-title").innerText()).replace(/\s+/g, " "), "DAY 1 全身A");
     assert.equal(await page.locator(".ses-progress-text").innerText(), "0/8");
     const bench = card(page, "ベンチプレス");
     assert.match(await bench.locator(".ses-note").first().innerText(), /前回\s*9\/26\s*60kg×10,10,8/);
@@ -171,6 +173,11 @@ test("session mode: sets, rest timer, hold, pool distance, swap, resume, save", 
     const s2 = setRow(page, "ベンチプレス", 1);
     await checkBtn(s2).click();
     assert.ok(await page.evaluate(() => window.fixture.timerRunning()));
+    // ダブルタップの2回目(すぐ後のタップ)では ✓ は外れず、休憩も止まらない
+    await checkBtn(s2).click();
+    assert.equal(await checkBtn(s2).getAttribute("aria-pressed"), "true");
+    assert.ok(await page.evaluate(() => window.fixture.timerRunning()));
+    await settle(page);
     await checkBtn(s2).click();
     assert.equal(await checkBtn(s2).getAttribute("aria-pressed"), "false");
     assert.equal(await page.evaluate(() => window.fixture.timerRunning()), false);
@@ -225,6 +232,7 @@ test("session mode: sets, rest timer, hold, pool distance, swap, resume, save", 
     await sheet.waitFor({ state: "visible" });
     assert.deepEqual(await sheet.locator(".ses-sheet-btn").allInnerTexts(), ["保存して終了", "破棄", "続ける"]);
     await assertNoOverflow(page, "pause sheet");
+    await settle(page);
     await sheet.locator(".ses-sheet-btn", { hasText: "続ける" }).click();
     assert.equal(await page.locator(".ses-sheet").count(), 0);
   });
@@ -234,7 +242,7 @@ test("session mode: sets, rest timer, hold, pool distance, swap, resume, save", 
     await page.waitForFunction(() => document.documentElement.dataset.ready === "1");
     const banner = page.locator("#notices .session-resume");
     await banner.waitFor({ state: "visible" });
-    assert.match(await banner.innerText(), /途中のトレーニングがあります[\s\S]*Day 1:全身A・2\/8セット完了/);
+    assert.match(await banner.innerText(), /途中のトレーニングがあります[\s\S]*1日目・全身A・2\/8セット完了・たった今開始/);
     assert.equal(await page.evaluate(() => window.fixture.isOpen()), false);
     await banner.locator('[data-resume="resume"]').click();
     await page.locator("#session").waitFor({ state: "visible" });
@@ -253,6 +261,7 @@ test("session mode: sets, rest timer, hold, pool distance, swap, resume, save", 
     const confirm = page.locator(".ses-sheet");
     await confirm.waitFor({ state: "visible" });
     assert.match(await confirm.innerText(), /未完了の6セットは記録されません/);
+    await settle(page);
     await confirm.locator(".ses-sheet-btn", { hasText: "記録して終了" }).click();
     const summary = page.locator(".ses-sheet-layer.is-summary");
     await summary.waitFor({ state: "visible" });
@@ -287,6 +296,7 @@ test("session mode: sets, rest timer, hold, pool distance, swap, resume, save", 
     assert.deepEqual(saved.entries.map((e) => e.setDetails), [[{ weight: 67.5, reps: 8 }], [{ seconds: 10 }]]);
     assert.equal(await page.evaluate(() => window.fixture.stored()), null, "the active session is cleared");
 
+    await settle(page);
     await summary.locator(".ses-sheet-btn", { hasText: "閉じる" }).click();
     assert.ok(await page.locator("#session").isHidden());
     assert.equal(await page.evaluate(() => document.body.classList.contains("session-open")), false);
@@ -304,14 +314,49 @@ test("session mode: sets, rest timer, hold, pool distance, swap, resume, save", 
     await checkBtn(setRow(page, "ベンチプレス", 0)).click();
     await page.locator(".ses-pause").click();
     const discard = page.locator(".ses-sheet-btn", { hasText: "破棄" });
+    await settle(page);
     await discard.click();
     assert.equal(await discard.innerText(), "もう一度タップで破棄");
     assert.ok(await page.locator("#session").isVisible());
+    await settle(page);
     await discard.click();
     assert.ok(await page.locator("#session").isHidden());
     assert.equal(await page.evaluate(() => window.fixture.stored()), null);
     assert.equal((await calls(page)).closed.at(-1).discarded, true);
     assert.equal((await calls(page)).saved.length, 1, "nothing more was saved");
+  });
+
+  await t.test("exact target weights are kept and a loaded exercise without history starts at a confirmed 目安 weight", async () => {
+    const day = structuredClone(await page.evaluate(() => window.fixture.DAY));
+    day.exercises = [
+      { ...day.exercises[0], target: { weight: 61, reps: 8, text: "61kg×8回" } },
+      { name: "ダンベルカール", track: "weight", sets: 2, reps: "10〜12回", rest: "60秒", focused: false },
+    ];
+    day.cardio = null;
+    await page.evaluate((d) => window.fixture.open(d), day);
+    assert.equal(await value(setRow(page, "ベンチプレス", 0), "weight"), "61kg", "61kg is not snapped to 60kg (B30)");
+    const curl = card(page, "ダンベルカール");
+    assert.match(await curl.locator(".ses-note.is-guess").innerText(), /目安/);
+    const w = await value(setRow(page, "ダンベルカール", 0), "weight");
+    assert.notEqual(w, "0kg", "no silent 0kg for a dumbbell exercise");
+    // 1回目の ✓ は確認だけ。2回目で完了になる
+    await checkBtn(setRow(page, "ダンベルカール", 0)).click();
+    assert.equal(await checkBtn(setRow(page, "ダンベルカール", 0)).getAttribute("aria-pressed"), "false");
+    await waitMessage(page, /目安/);
+    await settle(page);
+    await checkBtn(setRow(page, "ダンベルカール", 0)).click();
+    assert.equal(await checkBtn(setRow(page, "ダンベルカール", 0)).getAttribute("aria-pressed"), "true");
+    await page.locator('#rest-timer [data-rest="stop"]').click();
+    await page.locator(".ses-pause").click();
+    await settle(page);
+    const discard = page.locator(".ses-sheet-btn", { hasText: "破棄" });
+    await discard.click();
+    // すぐ後の2回目のタップ(ダブルタップ)では破棄しない
+    await discard.click();
+    assert.ok(await page.locator("#session").isVisible(), "a double tap does not discard");
+    await settle(page);
+    await discard.click();
+    assert.ok(await page.locator("#session").isHidden());
   });
 
   await t.test("a recovery day opens with its cardio and saves without a rest timer", async () => {
@@ -337,6 +382,7 @@ test("session mode: sets, rest timer, hold, pool distance, swap, resume, save", 
     assert.equal(log.entries[0].minutes, 25);
     assert.equal(log.entries[0].distance, null);
     assert.equal(log.entries[0].unit, "km");
+    await settle(page);
     await page.locator(".ses-sheet-btn", { hasText: "閉じる" }).click();
   });
 
@@ -402,6 +448,7 @@ test("session mode at 320 px: no horizontal overflow, 44 px targets, timer butto
   const names = await page.locator(".ses-add-name option").allInnerTexts();
   assert.ok(names.some((n) => /水泳/.test(n)) && !names.includes("ベンチプレス"), "the list follows the chosen track");
   await page.locator(".ses-add-name").selectOption({ label: names.find((n) => /平泳ぎ/.test(n)) });
+  await settle(page);
   await page.locator(".ses-sheet-btn", { hasText: "追加" }).click();
   const added = card(page, "平泳ぎ");
   await added.waitFor({ state: "visible" });

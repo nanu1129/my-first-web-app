@@ -44,10 +44,11 @@ const MINUTES = numRange(1, 180);
 const POOL_METERS = numRange(25, 5000, 25);
 const KILOMETERS = [...numRange(0.1, 10, 0.1), ...numRange(10.5, 50, 0.5)];
 
-const OTHER_DAYS = 60;   // 「別の日」で選べる日数
+const OTHER_DAYS = 60;   // 「別の日」の一覧で選べる日数(それより前は「もっと前」で日付を入力)
 const PAGE = 10;         // 一覧に最初に出す件数
 const MORE = 20;         // 「もっと見る」で増やす件数
 const QUICK_MAX = 8;     // ワンタップ候補の数
+const CONFIRM_GUARD_MS = 500; // 確認の直後の2回目のタップでは確定しない
 
 let ctx = null;
 let body = null;
@@ -109,6 +110,9 @@ function scrollToEl(el) {
 
 // ---------- 記録の表示用テキスト ----------
 
+// 重量 0 の書き方: 重りを使う種目は「0kg」(重さを選ばずに記録したもの)、それ以外は「自重」
+const zeroWeight = (name) => (LOADED.has(getExerciseInfo(name)?.load) ? "0kg" : "自重");
+
 // セットごとの詳細 "60kg×10,10 / 62.5kg×8"(同じ重さはまとめる)
 function detailText(e) {
   const d = Array.isArray(e.setDetails) ? e.setDetails : [];
@@ -122,7 +126,7 @@ function detailText(e) {
     else groups.push({ w, reps: [s.reps ?? "-"] });
   }
   if (groups.length === 1 && groups[0].reps.every((r) => r === groups[0].reps[0])) return "";
-  return groups.map((g) => `${g.w > 0 ? `${fmt(g.w)}kg` : "自重"}×${g.reps.join(",")}`).join(" / ");
+  return groups.map((g) => `${g.w > 0 ? `${fmt(g.w)}kg` : zeroWeight(e.name)}×${g.reps.join(",")}`).join(" / ");
 }
 
 // 1種目の内容 "60kg × 10回 × 3セット"
@@ -133,7 +137,7 @@ function valueText(e) {
     return parts.filter(Boolean).join("・") || "-";
   }
   // 旧形式(プランクを回数で記録した等)は記録した数字をそのまま出す
-  const w = e.shapeMismatch ? "" : e.weight > 0 ? `${fmt(e.weight)}kg × ` : "自重 × ";
+  const w = e.shapeMismatch ? "" : e.weight > 0 ? `${fmt(e.weight)}kg × ` : `${zeroWeight(e.name)} × `;
   return `${w}${e.reps ?? "-"}回 × ${e.sets}セット`;
 }
 
@@ -353,7 +357,10 @@ function dateHtml() {
     `<label class="field date-other"${which === "other" ? "" : " hidden"}><span class="field-label">日付を選ぶ</span>` +
     `<select class="date-select" data-key="date-select">` +
     dates.map((d) => `<option value="${d}"${d === selected ? " selected" : ""}>${escapeHtml(formatJaDate(d, { withYear: d.slice(0, 4) !== today.slice(0, 4) }))}</option>`).join("") +
-    `</select></label></fieldset>`;
+    `<option value="pick">もっと前(日付を入力)</option>` +
+    `</select></label>` +
+    `<label class="field date-pick" hidden><span class="field-label">${OTHER_DAYS + 1}日以上前の日付</span>` +
+    `<input type="date" class="text-input date-input" max="${today}" data-key="date-input"></label></fieldset>`;
 }
 
 function selectHtml(r, field, label, aria, values, value, fmtFn, empty = null) {
@@ -449,6 +456,8 @@ function composeHtml(logs) {
 
 function renderCompose({ focus = null } = {}) {
   const el = body.querySelector("#log-compose");
+  // 画面を付けたまま日付をまたいでも、自分で選んでいない「今日」は今日の日付にする
+  if (form.mode === "new" && !form.dateTouched) form.date = localDateStr();
   const key = focus ?? activeKey();
   el.classList.toggle("is-editing", form.mode === "edit");
   el.innerHTML = composeHtml(ctx.storage.loadLogs());
@@ -668,16 +677,20 @@ function paintSave() {
   label.textContent = form.warned ? "このまま記録する" : form.mode === "edit" ? `更新する(${n}種目)` : `記録する(${n}種目)`;
 }
 
+let warnedAt = 0;
 function save() {
   const unset = form.rows.filter((r) => r.track === "weight" && r.weight == null).length;
   if (unset > 0 && !form.warned) {
     form.warned = true;
+    warnedAt = Date.now();
     const warn = body.querySelector("#log-compose .compose-warn");
-    warn.textContent = `重量が未選択の種目が${unset}つあります。このまま記録すると「自重」として保存され、重量のグラフには入りません。`;
+    warn.textContent = `重量を選んでいない種目が${unset}つあります。このまま記録すると重量なし(0kg)で保存され、重量のグラフや次回の目標の重さには使われません。`;
     warn.hidden = false;
     paintSave();
     return;
   }
+  // 確認を出した直後の2回目のタップ(ダブルタップ)では保存しない
+  if (form.warned && Date.now() - warnedAt < CONFIRM_GUARD_MS) return;
   const entries = form.rows.map(rowEntry);
   if (form.mode === "edit") updateExisting(entries);
   else addNew(entries);
@@ -993,7 +1006,20 @@ function onClick(e) {
 function onChange(e) {
   const t = e.target;
   if (t.name === "log-date") setDateChoice(t.value);
-  else if (t.matches(".date-select")) {
+  else if (t.matches(".date-select") && t.value === "pick") {
+    // 一覧より前の日: 日付の入力欄を出す(日付はまだ変えない)
+    const pick = body.querySelector("#log-compose .date-pick");
+    if (pick) pick.hidden = false;
+  } else if (t.matches(".date-input")) {
+    // 未来の日付は受け付けない(上限は入力した時点の今日)
+    if (!isDateStr(t.value) || t.value > localDateStr()) return;
+    form.date = t.value;
+    form.dateTouched = true;
+    const sub = body.querySelector("#log-compose .date-other-sub");
+    if (sub) sub.textContent = formatJaDate(form.date, { withYear: true });
+    persist();
+  } else if (t.matches(".date-select")) {
+    body.querySelector("#log-compose .date-pick")?.setAttribute("hidden", "");
     form.date = t.value;
     form.dateTouched = true;
     const sub = body.querySelector("#log-compose .date-other-sub");

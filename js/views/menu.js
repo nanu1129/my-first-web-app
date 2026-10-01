@@ -4,7 +4,7 @@
 // 描き直しても、開いている「やり方」・折りたたみの開閉とフォーカスは保つ(B16)。
 import {
   adjustPlanVolume, canAdjustVolume, shortenPlan, alternativeExercise, alternativeCardio, hasAlternative,
-  generatePlan, estimateMinutes, parseRestSeconds, getExerciseInfo, isPoolExercise,
+  generatePlan, estimateMinutes, parseRestSeconds, getExerciseInfo, isPoolExercise, weeklySets,
   WEIGHT_CHOICES, MUSCLE_LABELS, SUB_MUSCLES, GOALS,
 } from "../planner.js?v=14";
 import { lastWorkingSet } from "../stats.js?v=14";
@@ -16,6 +16,7 @@ const TIER_LABEL = { main: "メイン", secondary: "サブ" };
 // 重さを選ぶ種目(自重・バンドの種目は「自重」が初期値)
 const LOADED = new Set(["barbell", "smith", "dumbbell", "kettlebell", "cable", "machine"]);
 const PROFILE_KEYS = ["weight", "height", "age", "gender", "goal", "level", "frequency"];
+const CONFIRM_GUARD_MS = 500; // 確認の直後の2回目のタップ(ダブルタップ)では確定しない
 
 // 記録シートの選択肢
 const SETS = numRange(1, 10);
@@ -28,7 +29,7 @@ const KILOMETERS = numRange(0.5, 42, 0.5);
 const LIMIT_MSG = {
   harder: "これ以上セット数を増やせません(種目・部位ごとの上限に達しています)。",
   easier: "これ以上セット数を減らせません(各種目2セットが下限です)。",
-  shorter: "すでに時短版です。元の長さに戻すには「最初の提案に戻す」を押してください。",
+  shorter: "すでに時短版です(これ以上は短くなりません)。元の長さに戻すには「最初の提案に戻す」を押してください。",
 };
 
 let ctx = null;
@@ -64,6 +65,13 @@ const rangeHtml = (num) => escapeHtml(num).replace(/\s*[〜~～\-–]\s*/, `<spa
 const sameList = (a = [], b = []) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
 function sameProfile(a, b) {
   return PROFILE_KEYS.every((k) => a[k] === b[k]) && sameList(a.focus, b.focus) && sameList(a.equipment, b.equipment);
+}
+
+// 「時間を短く」でまだ変わるか(時短版にした後で「もっときつく」を押すと、また短くできる)
+function canShorten(plan) {
+  const copy = structuredClone(plan);
+  shortenPlan(copy);
+  return JSON.stringify(copy.days) !== JSON.stringify(plan.days);
 }
 
 function avgMinutes(plan) {
@@ -216,7 +224,7 @@ function todayHtml(rec, st) {
 function weekHeadHtml(rec) {
   const plan = rec.plan;
   const p = rec.profile;
-  const badges = [rec.modified ? "調整済み" : null, plan.shortened ? "時短版" : null]
+  const badges = [rec.modified ? "調整済み" : null, plan.shortened && !canShorten(plan) ? "時短版" : null]
     .filter(Boolean).map((b) => `<span class="badge">${b}</span>`).join("");
   const items = [
     plan.splitName,
@@ -226,7 +234,23 @@ function weekHeadHtml(rec) {
   ];
   return `<div class="section-head"><h2 id="week-title" class="section-title">1週間のメニュー</h2>` +
     (badges ? `<span class="badges">${badges}</span>` : "") + `</div>` +
-    `<p class="plan-line meta-line">${metaItemsHtml(items)}</p>`;
+    `<p class="plan-line meta-line">${metaItemsHtml(items)}</p>` +
+    volumeHtml(plan);
+}
+
+// 週のセット数(部位ごと)。入れ替え・調整のたびに今のメニューから数え直す(I17)
+function volumeHtml(plan) {
+  const totals = weeklySets(plan);
+  const byGroup = new Map();
+  for (const [key, sub] of Object.entries(SUB_MUSCLES)) {
+    if (!(totals[key] > 0)) continue;
+    byGroup.set(sub.group, (byGroup.get(sub.group) ?? 0) + totals[key]);
+  }
+  if (byGroup.size === 0) return "";
+  const chips = [...byGroup].map(([g, n]) =>
+    `<li class="vol-chip"><span>${escapeHtml(MUSCLE_LABELS[g] ?? g)}</span><b class="num">${n}</b></li>`).join("");
+  return `<div class="vol-row"><span class="vol-k" id="vol-title">週のセット数</span>` +
+    `<ul class="vol-list" aria-labelledby="vol-title">${chips}</ul></div>`;
 }
 
 // このメニューのポイント(回数と重さ・1週間の組み方・記録の反映)。普段は閉じておく
@@ -239,7 +263,7 @@ function notesHtml(rec) {
   ].filter(Boolean);
   const stamp = `${formatJaDate(localDateStr(new Date(rec.savedAt || Date.now())))}に作成`;
   return `<details id="menu-notes" class="fold card plan-notes" data-prep="notes"${openPrep.has("notes") ? " open" : ""}>` +
-    `<summary>${uiIcon("bulb", "fold-ico")}<span class="fold-label">このメニューのポイント</span>` +
+    `<summary>${uiIcon("bulb", "fold-ico")}<span class="fold-label">このメニューの<wbr>ポイント</span>` +
     `<span class="fold-count">${notes.length}</span>${uiIcon("chevronDown", "fold-chev")}</summary>` +
     `<dl class="note-list">${notes.map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}</dl>` +
     `<p class="plan-stamp">${escapeHtml(stamp)}</p></details>`;
@@ -262,10 +286,13 @@ function tabsHtml(days, st) {
 
 function dayHeadHtml(day, i, st) {
   const doneDate = st.done.get(i);
-  // 日の名前はすぐ上のタブに出ているので、見出しは読み上げ用にして、見た目は内容の要約だけにする
+  // 日の名前はすぐ上のタブに出ているので、見出しは読み上げ用にして、見た目は内容の要約だけにする。
+  // 今日のカード(TODAY)と同じ日なら、要約はそちらに出ているので繰り返さない
+  const meta = i === st.next && st.todayDone == null ? "" : `<p class="day-meta meta-line">${dayMetaHtml(day)}</p>`;
+  if (!meta && !doneDate) return `<div class="day-head is-empty"><h3 class="sr-only">${dayNum(i)} ${escapeHtml(dayName(day))}</h3></div>`;
   return `<div class="day-head">` +
     `<h3 class="sr-only">${dayNum(i)} ${escapeHtml(dayName(day))}</h3>` +
-    `<p class="day-meta meta-line">${dayMetaHtml(day)}</p>` +
+    meta +
     (doneDate ? `<span class="badge badge--done">${uiIcon("check")}${escapeHtml(formatJaDate(doneDate))} 完了</span>` : "") +
     `</div>`;
 }
@@ -283,7 +310,7 @@ function dayHtml(rec, i, st) {
     const profile = profileOf(rec);
     html += `<ol class="ex-list">${day.exercises.map((ex, j) => exHtml(profile, day, i, j, ex)).join("")}</ol>`;
   }
-  if (day.cardio) html += cardioHtml(i, day.cardio);
+  if (day.cardio) html += cardioHtml(i, day.cardio, (day.exercises?.length ?? 0) + 1);
   html += foldHtml(i, "cooldown", "wind", "クールダウン・ストレッチ", day.cooldown);
   if (recordable(day)) {
     html += `<div class="day-actions">` +
@@ -311,10 +338,14 @@ function targetHtml(note, target) {
   const text = String(note ?? "");
   if (!text && !target?.text) return "";
   const [prevPart, goalPart] = text.split(" → ");
-  const goal = target?.text ?? (goalPart ?? "").replace(/^目標\s*/, "");
+  const goalText = target?.text ?? (goalPart ?? "").replace(/^目標\s*/, "");
   const prev = (prevPart ?? "").replace(/^前回\((.+?)\):\s*/, "前回 $1 ");
+  // 「90kg×8回(同じ重量で回数を伸ばす)」の補足は別の行に(行末に1文字だけ残らないように)
+  const m = /^(.+?)(\(.+\))$/.exec(goalText);
+  const goal = m ? m[1] : goalText;
+  const hint = m ? `<span class="tg-hint">${escapeHtml(m[2])}</span>` : "";
   return `<p class="ex-target">${uiIcon("trend", "tg-ico")}` +
-    (goal ? `<span class="tg-goal"><span class="tg-k">目標</span>${escapeHtml(goal)}</span>` : "") +
+    (goal ? `<span class="tg-goal"><span class="tg-k">目標</span>${escapeHtml(goal)}${hint}</span>` : "") +
     (prev ? `<span class="tg-prev">${escapeHtml(prev)}</span>` : "") +
     `</p>`;
 }
@@ -355,19 +386,25 @@ function exHtml(profile, day, d, j, ex) {
     `</li>`;
 }
 
-function cardioHtml(d, c) {
+// 有酸素も筋トレの種目カードと同じ骨組み(番号+名前 / タグ / 数字の行 / 目標)で描く
+function cardioHtml(d, c, n) {
   const pool = c.isPool ?? isPoolExercise(c.name);
   const nm = escapeHtml(c.name);
-  return `<div class="cardio" id="cardio-${d}">` +
-    `<span class="cardio-ico">${uiIcon(pool ? "wave" : "pulse")}</span>` +
-    `<div class="cardio-body">` +
-    `<p class="cardio-label">有酸素${c.optional ? `<span class="tag">任意</span>` : ""}</p>` +
-    `<h4 class="cardio-name">${nm}${pool && c.distanceM ? `<span class="tag tag--dist">${escapeHtml(c.distanceM)}m</span>` : ""}</h4>` +
-    `<p class="cardio-dur">${escapeHtml(c.duration ?? "")}</p>` +
+  const tags = `<span class="tag tag--cardio">有酸素</span>` + (c.optional ? `<span class="tag">任意</span>` : "");
+  const metrics = [
+    pool && c.distanceM ? `<span class="rx"><b class="rx-n">${escapeHtml(c.distanceM)}</b>m</span>` : "",
+    c.minutes ? `<span class="rx"><b class="rx-n">${escapeHtml(c.minutes)}</b>分</span>` : "",
+  ].filter(Boolean).join(`<span class="rx-x" aria-hidden="true">·</span>`);
+  return `<div class="ex ex--cardio" id="cardio-${d}">` +
+    `<div class="ex-head">` +
+    `<span class="ex-num" aria-hidden="true">${String(n).padStart(2, "0")}</span>` +
+    `<div class="ex-title"><h4 class="ex-name">${nm}</h4><p class="ex-tags">${tags}</p></div>` +
+    `<div class="ex-actions"><button type="button" class="icon-btn swap-btn" data-act="swap-cardio" data-day="${d}" data-key="cswap-${d}" ` +
+    `aria-label="${nm}を別の有酸素に替える">${uiIcon("swap")}</button></div></div>` +
+    (metrics ? `<div class="ex-rx">${metrics}</div>` : "") +
+    (c.duration ? `<p class="ex-desc">${uiIcon(pool ? "wave" : "pulse", "desc-ico")}<span>${escapeHtml(c.duration)}</span></p>` : "") +
     targetHtml(c.note, c.target) +
-    `</div>` +
-    `<button type="button" class="icon-btn swap-btn" data-act="swap-cardio" data-day="${d}" data-key="cswap-${d}" ` +
-    `aria-label="${nm}を別の有酸素に替える">${uiIcon("swap")}</button></div>`;
+    `</div>`;
 }
 
 function consultHtml(rec) {
@@ -379,12 +416,13 @@ function consultHtml(rec) {
     `<span class="consult-label">${label}</span><span class="consult-cap">${caption}</span></button>`;
   const harder = canAdjustVolume(plan, 1);
   const easier = canAdjustVolume(plan, -1);
+  const shorter = canShorten(plan);
   return `<div class="section-head"><h2 id="consult-title" class="section-title">メニューを調整</h2></div>` +
     `<div class="consult-grid">` +
     btn("harder", "bolt", "もっときつく", harder, harder ? "セット数を増やす" : "上限です") +
     btn("easier", "moon", "もっと楽に", easier, easier ? "セット数を減らす" : "下限です") +
-    btn("shorter", "clock", "時間を短く", !plan.shortened, plan.shortened ? "時短版です" : `1日${shortTarget}分以内に`) +
-    btn("reset", "undo", "最初の提案に戻す", true, "最新の記録で作り直す") +
+    btn("shorter", "clock", "時間を短く", shorter, shorter ? `1日${shortTarget}分以内に` : "時短版です") +
+    btn("reset", "undo", "最初の提案に戻す", true, "最新の記録で<wbr>作り直す") +
     `</div>` +
     `<p class="consult-hint">${uiIcon("swap", "hint-ico")}種目ごとの入れ替えボタンで、同じ部位の別の種目に差し替えられます。</p>`;
 }
@@ -516,7 +554,7 @@ function swapCardio(d, btn) {
   rec.modified = true;
   ctx.setPlan(rec);
   const box = body.querySelector(`#cardio-${d}`);
-  if (box) box.outerHTML = cardioHtml(d, alt);
+  if (box) box.outerHTML = cardioHtml(d, alt, day.exercises.length + 1);
   refreshSummary(rec);
   if (hadFocus) body.querySelector(`[data-key="cswap-${d}"]`)?.focus({ preventScroll: true });
   flash(body.querySelector(`#cardio-${d}`));
@@ -683,8 +721,9 @@ function recordRows(day, logs) {
     rows.push({
       name: c.name,
       track: "cardio",
-      minutes: c.target?.minutes ?? c.minutes ?? midNumber(c.duration) ?? 20,
-      distance: pool ? (c.target?.distance ?? c.distanceM ?? null) : (c.target?.distance ?? null),
+      // 任意の軽い泳ぎは処方どおり(前回より伸ばす目標は使わない)
+      minutes: (c.optional ? null : c.target?.minutes) ?? c.minutes ?? midNumber(c.duration) ?? 20,
+      distance: pool ? ((c.optional ? null : c.target?.distance) ?? c.distanceM ?? null) : (c.optional ? null : c.target?.distance ?? null),
       unit: pool ? "m" : "km",
       optional: c.optional === true,
     });
@@ -703,15 +742,16 @@ function recRowHtml(r, k) {
     fields = selectHtml("f-min", `${nm}の時間(分)`, "時間(分)", MINUTES, r.minutes, String) +
       selectHtml("f-dist", `${nm}の距離(${unit})`, `距離(${unit})`, unit === "m" ? POOL_METERS : KILOMETERS, r.distance, String, "なし");
   } else {
-    fields = selectHtml("f-weight", `${nm}の重量(kg)`, "重量(kg)", WEIGHT_CHOICES, r.weight, (v) => (v === 0 ? "自重" : String(v)), r.weight == null ? "未選択" : null) +
+    fields = selectHtml("f-weight", `${nm}の重量(kg)`, "重量(kg)", WEIGHT_CHOICES, r.weight, (v) => (v === 0 ? "自重" : String(v)), r.weight == null ? "選ぶ" : null) +
       selectHtml("f-sets", `${nm}のセット数`, "セット", SETS, r.sets, String) +
       selectHtml("f-reps", `${nm}の回数`, "回数", REPS, r.reps, String);
   }
   const on = !r.optional;
+  const cols = r.track === "weight" ? " rec-fields--w" : "";
   return `<li class="rec-row${on ? "" : " is-off"}" data-k="${k}">` +
     `<div class="rec-row-head"><button type="button" class="rec-check" aria-pressed="${on}" aria-label="${nm}を記録に含める">${uiIcon("check")}</button>` +
     `<span class="rec-name">${nm}</span>${r.optional ? `<span class="tag">任意</span>` : ""}</div>` +
-    `<div class="rec-fields">${fields}</div></li>`;
+    `<div class="rec-fields${cols}">${fields}</div></li>`;
 }
 
 function entryFromRow(rowEl, r) {
@@ -737,6 +777,7 @@ function openRecordSheet(d, triggerKey) {
   const dateLabels = ["今日", "昨日", "2日前"];
   let date = today;
   let warned = false;
+  let warnedAt = 0;
 
   const sheetBody = document.createElement("div");
   sheetBody.className = "rec";
@@ -791,11 +832,14 @@ function openRecordSheet(d, triggerKey) {
     const unset = chosen.filter((row) => row.querySelector(".f-weight")?.value === "").length;
     if (unset > 0 && !warned) {
       warned = true;
-      warnEl.textContent = `重量が未選択の種目が${unset}つあります。このまま記録すると「自重」として保存され、重量のグラフには入りません。`;
+      warnedAt = Date.now();
+      warnEl.textContent = `重量を選んでいない種目が${unset}つあります。このまま記録すると重量なし(0kg)で保存され、重量のグラフや次回の目標の重さには使われません。`;
       warnEl.hidden = false;
       paint();
       return;
     }
+    // 確認を出した直後の2回目のタップ(ダブルタップ)では保存しない
+    if (warned && Date.now() - warnedAt < CONFIRM_GUARD_MS) return;
     const entries = chosen.map((row) => entryFromRow(row, rows[Number(row.dataset.k)]));
     const res = ctx.saveLog({ date, entries, planDay: { index: d, title: day.title } });
     if (res.ok) sheet.close();
@@ -807,8 +851,13 @@ function openRecordSheet(d, triggerKey) {
     body: sheetBody,
     footer: foot,
     // 記録後は画面が描き直されるので、同じ役割のボタンへフォーカスを戻す
+    // 記録して「今日は完了」に変わり元のボタンが無くなったときは、今日のカードの見出しへ
     onClose: () => {
-      if (triggerKey) requestAnimationFrame(() => body.querySelector(`[data-key="${triggerKey}"]`)?.focus({ preventScroll: true }));
+      if (!triggerKey) return;
+      requestAnimationFrame(() => {
+        const target = body.querySelector(`[data-key="${triggerKey}"]`) ?? body.querySelector("#today-title");
+        target?.focus({ preventScroll: true });
+      });
     },
   });
 }

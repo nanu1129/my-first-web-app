@@ -7,7 +7,7 @@
 // - バッジは獲得状態と条件・進み具合を文字で表示する(色だけに頼らない。B34)
 import {
   summarize, badges, calendar, trackedExercises, metricSeries, metricUnit, METRIC_LABELS, personalBests,
-  bodyweightSeries, monthlySummary, unknownExerciseNames,
+  bodyweightSeries, monthlySummary, unknownExerciseNames, prHistory,
 } from "../stats.js?v=14";
 import { lineChartSVG } from "../charts.js?v=14";
 import { exercisesByMuscle } from "../planner.js?v=14";
@@ -98,7 +98,12 @@ function calendarHtml(logs) {
   const grid = calendar(logs, WEEKS);
   const today = localDateStr();
   const month = today.slice(0, 7);
-  const monthDays = new Set(logs.filter((l) => l.date.slice(0, 7) === month).map((l) => l.date)).size;
+  const daysIn = (m) => new Set(logs.filter((l) => l.date.slice(0, 7) === m).map((l) => l.date)).size;
+  const monthDays = daysIn(month);
+  // 月初めで今月がまだ0日なら、先月の日数も並べる(「今月 0日」だけだと続けていないように見える)
+  const prevMonth = addDays(`${month}-01`, -1).slice(0, 7);
+  const prevDays = monthDays === 0 ? daysIn(prevMonth) : 0;
+  const monthMeta = prevDays > 0 ? `${Number(prevMonth.slice(5))}月 ${prevDays}日 · 今月 0日` : `今月 ${monthDays}日`;
   const rows = grid.map((week, w) => `<tr>${week.map((c, d) => {
     const first = (w === 0 && d === 0) || c.day === 1;
     const text = first ? `${Number(c.date.slice(5, 7))}/${c.day}` : String(c.day);
@@ -114,7 +119,7 @@ function calendarHtml(logs) {
       `<span class="sr-only">${label}</span></span></td>`;
   }).join("")}</tr>`).join("");
   return `<section id="pg-cal" class="card cal-card" aria-labelledby="cal-title">` +
-    sectionHead("cal-title", "カレンダー", `今月 ${monthDays}日`) +
+    sectionHead("cal-title", "カレンダー", monthMeta) +
     `<table class="cal"><caption class="sr-only">直近${WEEKS}週間のトレーニング(月曜始まり)。記録のある日を押すと内容を表示します</caption>` +
     `<thead><tr>${WEEKDAYS.map((d) => `<th scope="col">${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>` +
     `<ul class="cal-legend" aria-hidden="true"><li><i class="lg lg-rest"></i>記録なし</li><li><i class="lg lg-done"></i>記録あり</li>` +
@@ -252,12 +257,19 @@ function bestsHtml(logs) {
   if (!list.length) return "";
   const today = localDateStr();
   const shown = bestsOpen ? list : list.slice(0, BESTS_SHOWN);
+  // 「更新」は前の記録を上回った日だけ(その種目の最初の記録は「達成」)
+  const improved = new Set();
+  const byId = new Map(logs.map((l) => [l.id, l]));
+  for (const [id, prs] of prHistory(logs)) {
+    const l = byId.get(id);
+    if (l) for (const p of prs) improved.add(`${p.name}|${l.date}`);
+  }
   const rows = shown.map((b) => {
     const nm = escapeHtml(b.name);
     const others = Object.values(b.bests).filter((x) => x.kind !== b.best.kind)
       .map((x) => `${x.label} ${fmt(x.value, 2)}${x.unit}`);
     // 最近更新した種目は日付をライムで「更新」と書く(色だけに頼らず文言も変える)
-    const when = daysBetween(b.updated, today) <= RECENT_DAYS
+    const when = daysBetween(b.updated, today) <= RECENT_DAYS && improved.has(`${b.name}|${b.updated}`)
       ? `<span class="pb-new">${escapeHtml(formatShortDate(b.updated))} 更新</span>`
       : escapeHtml(`${formatShortDate(b.best.date)} 達成`);
     return `<li><button type="button" class="pb-row" data-act="chart" data-name="${nm}" data-key="pb-${nm}" aria-label="${nm}の推移をグラフで見る">` +

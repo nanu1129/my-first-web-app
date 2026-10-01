@@ -280,6 +280,29 @@ test("リセット restarts from the length of the last started rest", () => {
   stopRest();
 });
 
+test("restSnapshot/resumeRest: a rest saved before the app was killed continues on the wall clock", () => {
+  stopRest();
+  assert.equal(timer.restSnapshot(), null);
+  startRestTimer(120);
+  run(30_000);
+  const snap = timer.restSnapshot();
+  assert.equal(snap.initial, 120);
+  stopRest(); // アプリが落ちた
+  sleep(20_000);
+  assert.equal(timer.resumeRest(snap), true);
+  assert.equal(isRunning(), true);
+  assert.equal(time.textContent, "1:10");
+  assert.ok(barPct() > 55 && barPct() < 60, String(barPct()));
+  // リセットは最初の長さ(2分)から
+  resetRest();
+  assert.equal(time.textContent, "2:00");
+  stopRest();
+  // すでに終わった休憩は出さない
+  sleep(200_000);
+  assert.equal(timer.resumeRest(snap), false);
+  assert.equal(root.hidden, true);
+});
+
 test("focus returns to where it was when the timer closes from inside", () => {
   const outside = new El("button");
   doc.body.append(outside);

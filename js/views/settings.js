@@ -354,6 +354,7 @@ function backupDone(name) {
   ctx.storage.markBackup();
   ctx.storage.requestPersistentStorage();
   renderBackup();
+  ctx.backupNudge();
   ctx.toast(`バックアップを書き出しました(${name})`, { tone: "ok" });
 }
 

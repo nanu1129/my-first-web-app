@@ -90,6 +90,8 @@ const textWidth = (s, size, bold = false) =>
  *   highlight 強調する日付の Set/配列(points の pr:true も強調される)
  *   emptyText データが無いときの文言
  */
+const DENSE_POINTS = 40; // これ以上の点数では、点の印を自己ベストと最新だけにする
+
 export function lineChartSVG(points, opts = {}) {
   const {
     color, background, unit = "", decimals, title = "推移グラフ", ariaLabel, width = 360, height, minSpan = null,
@@ -164,7 +166,10 @@ export function lineChartSVG(points, opts = {}) {
     const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${f1(x(p.t))} ${f1(y(p.value))}`).join(" ");
     svg += `<path d="${d}" fill="none" style="stroke:${lineColor}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
   }
+  // 点が多い(長い期間の)グラフは、全部の点を描くと帯のように潰れるので、自己ベストと最新の点だけにする
+  const dense = pts.length >= DENSE_POINTS;
   for (const p of pts) {
+    if (dense && !isHl(p) && p !== last) continue;
     const cx = f1(x(p.t));
     const cy = f1(y(p.value));
     if (isHl(p)) {
@@ -197,7 +202,7 @@ export function lineChartSVG(points, opts = {}) {
       const mid = new Date(midT);
       const midDate = `${mid.getUTCFullYear()}-${String(mid.getUTCMonth() + 1).padStart(2, "0")}-${String(mid.getUTCDate()).padStart(2, "0")}`;
       svg += `<line x1="${f1(x(midT))}" y1="${padT + innerH}" x2="${f1(x(midT))}" y2="${padT + innerH + 4}" style="stroke:${gridColor}" stroke-width="1"/>`;
-      svg += `<text x="${f1(x(midT))}" y="${dateY}" text-anchor="middle" font-size="${AXIS_FONT}" style="fill:${dimColor}">${escapeHtml(formatShortDate(midDate))}</text>`;
+      svg += `<text x="${f1(x(midT))}" y="${dateY}" text-anchor="middle" font-size="${AXIS_FONT}" style="fill:${dimColor}">${escapeHtml(multiYear ? `${midDate.slice(0, 4)}/${formatShortDate(midDate)}` : formatShortDate(midDate))}</text>`;
     }
   }
   svg += `</g></svg>`;

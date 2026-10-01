@@ -80,22 +80,22 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-// 記録フォームの選択リストで、どの選択肢を選んでも文字が欠けないか(B29)。欠ける選択肢の一覧を返す
-async function clippedSelects(page) {
-  return page.evaluate(() => {
+// 記録フォーム・記録シートの選択リストで、どの選択肢を選んでも文字が欠けないか(B29)。欠ける選択肢の一覧を返す
+async function clippedSelects(page, selector = "#log-compose .entry select") {
+  return page.evaluate((selector) => {
     const c = document.createElement("canvas").getContext("2d");
     const out = [];
-    for (const s of document.querySelectorAll("#log-compose .entry select")) {
+    for (const s of document.querySelectorAll(selector)) {
       const cs = getComputedStyle(s);
       c.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
       const avail = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       for (const o of s.options) {
         const need = c.measureText(o.textContent).width;
-        if (need > avail + 0.5) out.push({ field: s.dataset.field, text: o.textContent, need: Math.round(need), avail: Math.round(avail) });
+        if (need > avail + 0.5) out.push({ field: s.dataset.field ?? s.className, text: o.textContent, need: Math.round(need), avail: Math.round(avail) });
       }
     }
     return out.slice(0, 10);
-  });
+  }, selector);
 }
 
 // 表示中のトーストの文言(無ければ "")
@@ -228,12 +228,20 @@ async function runViewport(browser, base, vp) {
     await page.locator('#menu-today [data-act="record"]').click();
     await page.waitForSelector("#sheet[open] .rec-row", { timeout: 3000 });
     const rows = await page.locator("#sheet .rec-row").count();
+    await page.waitForTimeout(400); // 開いた直後のタップはダブルタップとして無視される
     await shot("04-record-sheet");
     results.overflow.recordSheet = await overflow(page);
+    const clipped = await clippedSelects(page, "#sheet .rec-row select");
+    assert(clipped.length === 0, `record sheet select text clipped: ${JSON.stringify(clipped)}`);
     const save = page.locator("#sheet .rec-save");
     await save.click();
-    // 重量が未選択の種目があると確認が出るので、もう一度押す
-    if (await page.locator("#sheet[open]").count()) await save.click();
+    // 重量が未選択の種目があると確認が出る。すぐの2回目(ダブルタップ)では保存されず、少し待ってからなら保存される
+    if (await page.locator("#sheet .rec-warn:not([hidden])").count()) {
+      await save.click();
+      assert(await page.locator("#sheet[open]").count() === 1, "a double tap skipped the unset-weight warning");
+      await page.waitForTimeout(600);
+      await save.click();
+    }
     await page.waitForTimeout(300);
     assert(!(await page.locator("#sheet[open]").count()), "sheet still open");
     const logs = await page.evaluate(() => JSON.parse(localStorage.getItem("workout_logs") || "[]"));
@@ -482,17 +490,29 @@ async function runViewport(browser, base, vp) {
     await shot("08-session");
     results.overflow.session = await overflow(page);
     const tabBarHidden = await page.locator(".tab-bar").isHidden();
-    await page.locator("#session .ses-check").first().click();
+    const check = page.locator("#session .ses-check").first();
+    await check.click();
+    // 記録の無い重り種目は、目安の重さのまま記録してよいかを1回確かめる(0kg のまま記録しない)
+    const firstWeight = await page.locator("#session .ses-step-weight .ses-val-text").first().innerText().catch(() => "");
+    assert(!/^0\s*kg$/.test(firstWeight.replace(/\s+/g, "")), `loaded exercise starts at ${firstWeight}`);
+    if (await check.getAttribute("aria-pressed") !== "true") {
+      await page.waitForTimeout(600);
+      await check.click();
+    }
     await page.waitForTimeout(400);
     assert(await page.locator("#rest-timer").isVisible(), "✓ did not start the rest timer");
+    await shot("08b-session-timer");
+    results.overflow.sessionTimer = await overflow(page);
     await page.locator("#session .ses-finish").click();
     await page.waitForSelector(".ses-sheet-layer", { timeout: 3000 });
+    await page.waitForTimeout(400); // 開いた直後のタップは無視される
     if (!(await page.locator(".ses-sheet-layer.is-summary").count())) {
       await page.locator(".ses-sheet-layer .ses-sheet-btn.is-primary").click();
     }
     await page.waitForSelector(".ses-sheet-layer.is-summary", { timeout: 3000 });
     await page.waitForTimeout(400); // シートが開く動きが終わってから撮る
     await shot("09-session-summary");
+    await page.waitForTimeout(400);
     await page.locator(".ses-sheet-layer.is-summary .ses-sheet-btn.is-primary").click();
     await page.waitForSelector("#session", { state: "hidden", timeout: 3000 });
     const all = await storedLogs();
@@ -500,6 +520,25 @@ async function runViewport(browser, base, vp) {
     await tab("log").click(); await page.waitForTimeout(200);
     const title = await page.locator("#log-history .log-item .log-title-text").first().innerText();
     return { tabBarHidden, title, timerHidden: await page.locator("#rest-timer").isHidden() };
+  });
+
+  // 記録が増えたら、保存済みメニューの「前回」と「目標」も変わる(I02/I19)
+  await step(results, "targets-follow-new-logs", async () => {
+    await tab("menu").click(); await page.waitForTimeout(150);
+    const ex = page.locator('#menu-day .ex:not(.ex--cardio)').first();
+    const name = await ex.locator(".ex-name").innerText();
+    const before = await ex.locator(".ex-target").innerText().catch(() => "");
+    await page.evaluate((name) => {
+      const logs = JSON.parse(localStorage.getItem("workout_logs") || "[]");
+      const d = new Date(); // 今日の記録(同じ日の中では重いセットが前回の基準になる)
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      logs.push({ id: "e2e-target", date, entries: [{ name, track: "weight", weight: 47.5, reps: 9, sets: 3 }] });
+      localStorage.setItem("workout_logs", JSON.stringify(logs));
+    }, name);
+    await page.reload({ waitUntil: "load" }); await page.waitForTimeout(300);
+    const after = await page.locator('#menu-day .ex:not(.ex--cardio)').first().locator(".ex-target").innerText();
+    assert(after !== before && /47\.5kg/.test(after), `target did not follow the new log: ${before} → ${after}`);
+    return { name, before, after };
   });
 
   await full("09-final");

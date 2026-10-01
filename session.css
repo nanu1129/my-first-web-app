@@ -312,11 +312,32 @@ body.session-open {
 }
 
 .ses-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
   font-size: var(--fs-lg);
   font-weight: 800;
   line-height: 1.35;
   font-feature-settings: "palt";
   overflow-wrap: anywhere;
+}
+
+/* メニュー画面と同じ DAY 番号のチップ */
+.ses-day-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 3px 7px 0;
+  border-radius: 6px;
+  background: var(--grad-accent);
+  color: var(--accent-ink);
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .ses-pause {
@@ -552,6 +573,7 @@ body.timer-open .ses-body {
   line-height: 1.4;
   font-feature-settings: "palt";
   overflow-wrap: anywhere;
+  text-wrap: balance; /* 「インクラインダンベルプレ/ス」のように1文字だけ次の行に落ちないように */
 }
 
 .ses-star {
@@ -569,6 +591,20 @@ body.timer-open .ses-body {
 /* 「・」の区切りでだけ改行する */
 .ses-meta-part {
   white-space: nowrap;
+}
+
+/* カード右上: 完了数と、やり方・入れ替え(メニュー画面の種目カードと同じ位置) */
+.ses-card-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.ses-card-tools {
+  display: flex;
+  margin-right: -6px;
 }
 
 .ses-card-count {
@@ -628,6 +664,21 @@ body.timer-open .ses-body {
 
 .ses-note.is-target .ses-note-label {
   color: var(--accent);
+}
+
+/* 記録の無い重り種目の目安の重さ */
+.ses-note.is-guess {
+  border: 1px dashed var(--line-strong, var(--line));
+  background: transparent;
+}
+
+.ses-note.is-guess .ses-note-value {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.ses-step-weight.is-guess .ses-val-text b {
+  color: var(--text-dim);
 }
 
 /* ---------- セットの行 ---------- */
@@ -692,10 +743,15 @@ body.timer-open .ses-body {
   min-width: 0;
 }
 
-.ses-set.is-done .ses-set-a,
-.ses-set.is-done .ses-set-b,
+/* 完了したセット: 文字は透明度ではなく色で控えめにする(読める濃さ 4.5:1 以上を保つ)。完了の目印はライムの ✓ */
+.ses-set.is-done .ses-step-btn,
+.ses-set.is-done .ses-hold {
+  opacity: 0.4;
+}
+
+.ses-set.is-done .ses-val-text b,
 .ses-set.is-done .ses-set-no {
-  opacity: 0.55;
+  color: var(--text-dim);
 }
 
 .ses-check {
@@ -768,7 +824,8 @@ body.timer-open .ses-body {
 }
 
 .ses-val:focus-within {
-  box-shadow: 0 0 0 2px var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .ses-val-text {
@@ -1073,10 +1130,23 @@ body.timer-open .ses-body {
 /* ---------- 下部のボタン帯 ---------- */
 
 .ses-foot {
+  position: relative;
   flex: none;
   padding: 10px max(var(--sp-3), var(--sa-right)) calc(10px + var(--sa-bottom)) max(var(--sp-3), var(--sa-left));
   background: var(--ses-bar-glass);
   border-top: 1px solid var(--line);
+}
+
+/* 休憩タイマーと下のボタン帯のすき間から、後ろのカードの端がのぞかないよう背景色でふさぐ */
+body.timer-open .ses-foot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 20px;
+  background: linear-gradient(rgba(17, 19, 25, 0), var(--bg) 60%);
+  pointer-events: none;
 }
 
 .ses-foot-inner {
@@ -1164,6 +1234,11 @@ body.timer-open .ses-body {
   .ses-card-head {
     gap: 10px;
   }
+
+  /* 種目名が途中で折れないよう、狭い画面では器具アイコンを省く */
+  .ses-card-icon {
+    display: none;
+  }
 }
 
 /* 広い画面: セットを1行に [番号] [重量] [回数] [✓] */
@@ -1171,6 +1246,13 @@ body.timer-open .ses-body {
   .ses-set {
     grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr) 56px;
     grid-template-areas: "no a b check";
+    column-gap: var(--sp-3);
+  }
+
+  /* 重量と回数の2つのステッパーが1つに見えないよう、間に区切り線を入れる */
+  .ses-set-b {
+    padding-left: var(--sp-3);
+    border-left: 1px solid var(--line);
   }
 
   .ses-card.is-cardio .ses-set {

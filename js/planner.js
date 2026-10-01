@@ -722,6 +722,28 @@ function prevWeight(w, info) {
   }
 }
 const round25 = (m) => Math.max(25, Math.round(m / 25) * 25);
+// 重りの重さを選ぶ種目(自重・バンド以外)
+const LOADED_KINDS = new Set(["barbell", "smith", "dumbbell", "kettlebell", "machine", "cable"]);
+
+// 記録の無い重り種目の最初の目安(バーベルはバーのみ、ほかは軽めの重さ)。重りを使わない種目は null。
+// セッション画面で 0kg のまま記録されないよう、「目安」として表示する初期値に使う
+export function startingWeight(name) {
+  const info = NAME_TO_EXERCISE.get(name);
+  switch (info?.load) {
+    case "barbell":
+    case "smith":
+      return 20;
+    case "dumbbell":
+      return info.kind === "compound" ? 6 : 3;
+    case "kettlebell":
+      return 8;
+    case "machine":
+    case "cable":
+      return info.kind === "compound" ? 20 : 10;
+    default:
+      return null;
+  }
+}
 
 // 前回記録と今回の処方(ex.reps の回数範囲)から、今日の目標を返す。
 // 戻り値: { weight: number|null, reps: number|null, text, seconds?, minutes?, distance?, unit? }
@@ -771,6 +793,13 @@ export function progressionTarget(record, ex, profile, now) {
   if (!(r > 0)) return null;
   const lo = range?.lo ?? r;
   const hi = range?.hi ?? r + 2;
+
+  // 重りを使う種目なのに重量が 0(重さを選ばずに記録した)なら、重さの基準は無いものとして回数だけを示す。
+  // 自重扱いにすると、以後ずっと 0kg が目標になってしまう
+  if (!(w > 0) && LOADED_KINDS.has(info?.load)) {
+    const reps = r < lo ? lo : Math.min(hi, r + 1);
+    return { weight: null, reps, text: `${reps}回できる重さで` };
+  }
 
   // 3週間以上あいた種目は約8割の重さから再開
   if (now && w > 0 && record.date && daysSince(record.date, now) >= 21) {
@@ -1480,7 +1509,8 @@ function cardioScore(e, ctx, usage, mode) {
 function makeCardio(e, ctx, cfg, mode) {
   const rx = cardioRx(e, ctx, cfg, mode);
   const record = ctx.analysis?.lastRecordByName[e.name];
-  const target = record ? progressionTarget(record, { name: e.name }, ctx.profile, ctx.now) : null;
+  // 任意の軽い泳ぎは処方どおりの距離で行う(前回より伸ばす目標は付けない)
+  const target = record && mode !== "optional" ? progressionTarget(record, { name: e.name }, ctx.profile, ctx.now) : null;
   return {
     name: e.name,
     duration: rx.text,
@@ -1920,6 +1950,32 @@ function buildSwapRow(next, current, ctx, day) {
     if (target) row.target = target;
   }
   return row;
+}
+
+// 保存済みメニューの「前回」と「今日の目標」を最新の記録で付け直す(I02/I19)。
+// メニューを作った後に記録が増えても目標が進むように、記録が変わるたびに呼ぶ。
+// 最初の種目のウォームアップセット(kg)も新しい目標に合わせる。戻り値は内容が変わったかどうか
+export function refreshTargets(plan, logs, profile, now = new Date()) {
+  if (!Array.isArray(plan?.days)) return false;
+  const ctx = makeContext(profile, logs, now);
+  const before = JSON.stringify(plan.days);
+  const apply = (row, ex, allowTarget) => {
+    const record = ctx.analysis?.lastRecordByName[row.name];
+    const target = record && allowTarget ? progressionTarget(record, ex, ctx.profile, now) : null;
+    row.note = record ? progressionNote(record, target) : null;
+    if (target) row.target = target;
+    else delete row.target;
+  };
+  for (const day of plan.days) {
+    for (const ex of day.exercises ?? []) if (ex?.name) apply(ex, ex, true);
+    if (day.cardio?.name) apply(day.cardio, { name: day.cardio.name }, !day.cardio.optional);
+    const i = Array.isArray(day.warmup) ? day.warmup.findIndex((t) => String(t).startsWith(RAMP_PREFIX)) : -1;
+    if (i >= 0 && day.exercises?.length) {
+      const ramp = rampItem(day.exercises, ctx);
+      if (ramp) day.warmup[i] = ramp;
+    }
+  }
+  return JSON.stringify(plan.days) !== before;
 }
 
 // 現在の種目を、同じ動作パターン・使える器具・レベル内の「次の候補種目」に差し替えた行を返す。

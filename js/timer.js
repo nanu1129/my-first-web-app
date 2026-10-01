@@ -453,3 +453,29 @@ export function stopRest() {
 export function isRunning() {
   return state.running;
 }
+
+// 動いている休憩の状態(セッションと一緒に保存し、アプリが落ちても再開できるように)。止まっていれば null
+export function restSnapshot() {
+  if (!state.running) return null;
+  return { endAt: state.endAt, initial: state.initial, total: state.total };
+}
+
+// 保存しておいた休憩を続きから表示する。すでに終わっていれば何もしない(戻り値 false)
+export function resumeRest(snap) {
+  const endAt = Number(snap?.endAt);
+  if (!Number.isFinite(endAt) || endAt <= Date.now()) return false;
+  const initial = Math.max(1, Math.round(Number(snap.initial) || 0));
+  const total = Math.max(initial, Math.round(Number(snap.total) || 0));
+  ensureInit();
+  clearTimeout(hideId);
+  hideId = null;
+  hidePending = false;
+  Object.assign(state, { endAt, initial, total, running: true, done: false, shown: -1 });
+  root.classList.remove("is-done");
+  show();
+  paint();
+  startTicking();
+  acquireWakeLock("rest");
+  announce(`休憩 残り ${jaDuration(remainingSeconds(endAt))}`);
+  return true;
+}

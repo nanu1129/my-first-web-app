@@ -8,7 +8,7 @@
 // - 記録して終了で、セット詳細(setDetails)と要約値(最も重いセット)を持つ正規化済みの記録を作り、ctx.onSave に渡す
 import {
   WEIGHT_CHOICES, isPoolExercise, parseRestSeconds, alternativeExercise, alternativeCardio, hasAlternative,
-  exerciseChoices, getExerciseTrack, getExerciseTip, getExerciseInfo,
+  exerciseChoices, getExerciseTrack, getExerciseTip, getExerciseInfo, startingWeight,
 } from "./planner.js?v=14";
 import { loadSession, saveSession, clearSession, loadLogs, loadProfile, addLog, normalizeEntry } from "./storage.js?v=14";
 import { localDateStr, formatShortDate, escapeHtml, numRange, uid, formatNum } from "./util.js?v=14";
@@ -16,13 +16,17 @@ import { detectPRs, lastWorkingSet } from "./stats.js?v=14";
 import { EQUIPMENT_SVG, uiIcon } from "./icons.js?v=14";
 import {
   initTimer, startRestTimer, stopRest, isRunning, playBeep, vibrate, unlockAudio, acquireWakeLock, releaseWakeLock,
-  formatClock,
+  formatClock, restSnapshot, resumeRest,
 } from "./timer.js?v=14";
 
 const STALE_MS = 12 * 60 * 60 * 1000; // これより前に始めたセッションは再開せず、記録するか破棄するかを選ぶ
 const PREP_MS = 3000;                 // キープ開始前の準備時間
 const LATE_CUE_MS = 3000;
 const MAX_SETS = 10;
+const SHEET_GUARD_MS = 350;   // シートを開いた直後のタップ(ダブルタップの2回目)は受け付けない
+const CONFIRM_GUARD_MS = 500; // 「もう一度タップ」の確認は、これより速い2回目(ダブルタップ)では確定しない
+const UNCHECK_GUARD_MS = 400; // ✓ の直後の2回目のタップで完了を取り消さない
+const DAY_PREFIX = /^Day\s*(\d+)\s*[::]\s*/i;
 
 const REPS_CHOICES = numRange(1, 50);
 const SECONDS_CHOICES = numRange(5, 600, 5);
@@ -58,13 +62,6 @@ function midOf(text) {
   return Math.round((a + b) / 2);
 }
 
-// 昇順リストの中で最も近い値
-function nearest(list, v) {
-  const x = num(v);
-  if (x == null) return list[0];
-  return list.reduce((best, c) => (Math.abs(c - x) < Math.abs(best - x) ? c : best), list[0]);
-}
-
 // 昇順リストで v の1つ上/下の値(v がリストに無くても隣の値へ進む)
 function stepIn(list, v, dir) {
   const x = num(v) ?? list[0];
@@ -85,11 +82,26 @@ function elapsedText(ms) {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
 }
 
-function ago(ms) {
+// 始めた時刻の言い方: "たった今開始" / "5分前に開始" / "2時間前に開始"
+function startedText(ms) {
   const min = Math.max(0, Math.round(ms / 60000));
-  if (min < 1) return "たった今";
-  if (min < 60) return `${min}分前`;
-  return `${Math.floor(min / 60)}時間前`;
+  if (min < 1) return "たった今開始";
+  if (min < 60) return `${min}分前に開始`;
+  return `${Math.floor(min / 60)}時間前に開始`;
+}
+
+// メニューの日の名前。"Day 3:全身C" → { num: 3, name: "全身C" }(メニュー画面の DAY チップと同じ表し方)
+function dayLabel(day) {
+  const title = String(day?.title ?? "");
+  const m = DAY_PREFIX.exec(title);
+  const num = Number.isInteger(day?.index) && day.index >= 0 ? day.index + 1 : m ? Number(m[1]) : null;
+  return { num, name: title.replace(DAY_PREFIX, "") || "トレーニング" };
+}
+
+// 案内・確認の文中で使う "3日目・全身C"
+function dayText(day) {
+  const { num, name } = dayLabel(day);
+  return num ? `${num}日目・${name}` : name;
 }
 
 // ---------- 前回の記録 ----------
@@ -135,14 +147,20 @@ function liftCard(ex, planIndex, logs, extra = {}) {
   const prev = lastWorkingSet(logs, ex.name);
   const last = prev?.track === track ? prev : null;
   let base;
+  // 目標・前回の値は丸めずにそのまま使う(選択肢に無い 61kg なども、その値を選択肢に足して表示する。B30)
+  let guess = false;
   if (track === "time") {
-    base = { seconds: nearest(SECONDS_CHOICES, target?.seconds ?? midOf(ex.reps) ?? last?.seconds ?? 30) };
+    base = { seconds: Math.max(1, Math.round(num(target?.seconds) ?? midOf(ex.reps) ?? num(last?.seconds) ?? 30)) };
   } else {
-    const weight = num(target?.weight) ?? last?.weight ?? 0;
-    base = {
-      weight: weight > 0 ? nearest(WEIGHT_CHOICES, weight) : 0,
-      reps: nearest(REPS_CHOICES, target?.reps ?? midOf(ex.reps) ?? last?.reps ?? 10),
-    };
+    let weight = num(target?.weight) > 0 ? num(target.weight) : num(last?.weight) > 0 ? num(last.weight) : null;
+    if (weight == null) {
+      // 重りを使う種目で記録も目標も無いときは、0kg ではなく軽めの目安の重さから(「目安」と表示し、✓ の前に確かめる)
+      const start = isLoaded(ex.name) ? startingWeight(ex.name) : null;
+      guess = start > 0;
+      weight = guess ? start : 0;
+    }
+    const reps = Math.round(num(target?.reps) ?? midOf(ex.reps) ?? num(last?.reps) ?? 10);
+    base = { weight, reps: Math.min(REPS_CHOICES[REPS_CHOICES.length - 1], Math.max(1, reps)) };
   }
   return {
     key: uid(),
@@ -156,6 +174,7 @@ function liftCard(ex, planIndex, logs, extra = {}) {
     target: target?.text ? String(target.text) : null,
     tip: String(ex.tip || getExerciseTip(ex.name) || ""),
     added: !!extra.added,
+    guess,
     sets: Array.from({ length: count }, () => ({ ...base, done: false, touched: false })),
   };
 }
@@ -165,13 +184,15 @@ function cardioCard(c, logs, extra = {}) {
   const t = isObj(c.target) ? c.target : null;
   const last = lastWorkingSet(logs, c.name);
   const durMid = /分/.test(String(c.duration ?? "")) ? midOf(c.duration) : null;
-  const minutes = nearest(MINUTE_CHOICES, num(t?.minutes) ?? num(c.minutes) ?? durMid ?? num(last?.minutes) ?? 20);
+  // 任意の軽い泳ぎは処方どおり(前回より伸ばす目標は使わない)
+  const goal = c.optional ? null : t;
+  const minutes = Math.max(1, Math.round(num(goal?.minutes) ?? num(c.minutes) ?? durMid ?? num(last?.minutes) ?? 20));
   let distance = 0;
   if (pool) {
-    const m = t?.unit === "m" ? num(t.distance) : num(c.distanceM);
-    distance = m > 0 ? nearest(POOL_CHOICES, m) : 0;
-  } else if (t?.unit === "km" && num(t.distance) > 0) {
-    distance = nearest(KM_CHOICES, t.distance);
+    const m = goal?.unit === "m" ? num(goal.distance) : num(c.distanceM);
+    distance = m > 0 ? m : 0;
+  } else if (goal?.unit === "km" && num(goal.distance) > 0) {
+    distance = num(goal.distance);
   }
   return {
     key: uid(),
@@ -184,7 +205,7 @@ function cardioCard(c, logs, extra = {}) {
     duration: String(c.duration ?? ""),
     reps: "",
     rest: "",
-    target: t?.text ? String(t.text) : null,
+    target: goal?.text ? String(goal.text) : null,
     tip: String(c.tip || getExerciseTip(c.name) || ""),
     added: !!extra.added,
     sets: [{ minutes, distance, done: false, touched: false }],
@@ -322,8 +343,21 @@ function previousOf(name) {
 
 const findCard = (key) => state?.cards.find((c) => c.key === key) ?? null;
 
+let storageFailed = false;
+
+// 状態を保存する(動いている休憩タイマーも一緒に)。保存できなければ、この画面の中に消えない警告を出す
+// (トーストはオーバーレイの下に隠れることがあるため)
 function persist() {
-  if (state) saveSession(state);
+  if (!state) return;
+  state.rest = restSnapshot();
+  const ok = saveSession(state);
+  if (!ok && !storageFailed) {
+    storageFailed = true;
+    message("端末の保存容量が不足しているため、途中経過を保存できません。アプリを閉じる前に「記録して終了」で保存してください", "error", { sticky: true });
+  } else if (ok && storageFailed) {
+    storageFailed = false;
+    message("途中経過を保存できるようになりました");
+  }
 }
 
 export function isSessionOpen() {
@@ -442,7 +476,8 @@ function stepperHtml(c, i, field) {
   const [big, unit] = f.show(v, c);
   const where = `${escapeHtml(c.name)} ${i + 1}セット目`;
   const attrs = (act) => `data-act="${act}" data-card="${c.key}" data-set="${i}" data-field="${field}" data-fk="${c.key}:${i}:${field}:${act}"`;
-  return `<div class="ses-step ses-step-${field}" role="group" aria-label="${where}の${f.name}">` +
+  const guess = field === "weight" && c.guess && !set.done ? " is-guess" : "";
+  return `<div class="ses-step ses-step-${field}${guess}" role="group" aria-label="${where}の${f.name}">` +
     `<button type="button" class="ses-step-btn" ${attrs("dec")} aria-label="${f.name}を減らす(${where})"${v <= list[0] ? " disabled" : ""}>${ICON_MINUS}</button>` +
     `<label class="ses-val"><span class="ses-val-text" aria-hidden="true"><b${valueClass(big)}>${escapeHtml(big)}</b>` +
     `${unit ? `<small>${escapeHtml(unit)}</small>` : ""}</span>` +
@@ -539,6 +574,10 @@ function cardHtml(c, next) {
   if (c.target) {
     notes.push(`<p class="ses-note is-target"><span class="ses-note-label">目標</span><span class="ses-note-value">${escapeHtml(c.target)}</span></p>`);
   }
+  if (c.guess && !anyDone) {
+    notes.push(`<p class="ses-note is-guess"><span class="ses-note-label">目安</span>` +
+      `<span class="ses-note-value">記録が無いので軽めの${escapeHtml(fmtNum(c.sets[0].weight))}kgを入れています。実際の重さに合わせてください</span></p>`);
+  }
   const tools = [];
   if (c.tip) {
     tools.push(toolHtml(c, "tip", uiIcon("info"), `${name}のやり方`, { expanded: tipOpen }));
@@ -548,9 +587,7 @@ function cardHtml(c, next) {
   } else if (c.kind === "cardio" || c.planIndex != null) {
     tools.push(toolHtml(c, "swap", uiIcon("swap"), `${name}を別の種目に替える`, { disabled: anyDone || !canSwap(c) }));
   }
-  if (complete) {
-    tools.push(toolHtml(c, "collapse", uiIcon("chevronDown"), `${name}をたたむ`, { expanded: true }));
-  }
+  const collapse = complete ? toolHtml(c, "collapse", uiIcon("chevronDown"), `${name}をたたむ`, { expanded: true }) : "";
   const setBtn = (act, icon, label, disabled) =>
     `<button type="button" class="ses-setcount-btn" data-act="${act}" data-card="${c.key}" data-fk="${c.key}:${act}"` +
     ` aria-label="${label}(${name})"${disabled ? " disabled" : ""}>${icon}</button>`;
@@ -565,10 +602,11 @@ function cardHtml(c, next) {
     `<div class="ses-card-titles"><h3 class="ses-card-name">` +
     `${c.focused ? `<span class="ses-star" aria-hidden="true">★</span><span class="sr-only">強化部位:</span>` : ""}${name}</h3>` +
     `<p class="ses-card-meta">${meta}</p></div>` +
-    `<p class="ses-card-count"><b>${doneN}</b>/${total}<span class="sr-only">セット完了</span></p></div>` +
+    `<div class="ses-card-side"><p class="ses-card-count"><b>${doneN}</b>/${total}<span class="sr-only">セット完了</span></p>` +
+    (tools.length ? `<div class="ses-card-tools">${tools.join("")}</div>` : "") + `</div></div>` +
     (notes.length ? `<div class="ses-notes">${notes.join("")}</div>` : "") +
     `<ol class="ses-sets">${c.sets.map((_, i) => setRowHtml(c, i, next)).join("")}</ol>` +
-    `<div class="ses-card-foot">${tools.join("")}${setTools}</div>` +
+    (collapse || setTools ? `<div class="ses-card-foot">${collapse}${setTools}</div>` : "") +
     (c.tip ? `<div class="ses-card-tip" id="tip-${c.key}"${tipOpen ? "" : " hidden"}>${uiIcon("bulb")}<p>${escapeHtml(c.tip)}</p></div>` : "") +
     `</li>`;
 }
@@ -587,7 +625,9 @@ function renderHeader() {
   const total = countSets(state);
   const done = countDone(state);
   section.querySelector(".ses-kicker").textContent = state.day.type === "recovery" ? "アクティブレスト(回復日)" : "トレーニング中";
-  section.querySelector(".ses-title").textContent = state.day.title;
+  const { num: dayNum, name: dayName } = dayLabel(state.day);
+  section.querySelector(".ses-title").innerHTML =
+    (dayNum ? `<span class="ses-day-chip" lang="en">DAY ${dayNum}</span>` : "") + `<span>${escapeHtml(dayName)}</span>`;
   section.querySelector(".ses-progress-text").textContent = `${done}/${total}`;
   section.querySelector(".ses-progress-fill").style.width = `${total ? (done / total) * 100 : 0}%`;
   section.querySelector(".ses-finish").classList.toggle("is-ready", total > 0 && done === total);
@@ -637,14 +677,14 @@ function refresh(keys = []) {
   renderHeader();
 }
 
-function message(text, kind = "info") {
+function message(text, kind = "info", { sticky = false } = {}) {
   const el = section?.querySelector(".ses-msg");
   if (!el) return;
   clearTimeout(msgId);
   el.textContent = "";
   el.dataset.kind = kind;
   setTimeout(() => { el.textContent = text; }, 30);
-  msgId = setTimeout(() => { el.textContent = ""; }, kind === "error" ? 9000 : 5000);
+  msgId = sticky ? null : setTimeout(() => { el.textContent = ""; }, kind === "error" ? 9000 : 5000);
 }
 
 // 本文(.ses-body)だけをスクロールして el を見える範囲の中央へ。scrollIntoView は後ろのページまで動かすので使わない。
@@ -670,6 +710,7 @@ function focusCheck(key, i) {
 
 function setValue(c, i, field, value) {
   const sets = c.sets;
+  if (field === "weight") c.guess = false; // 重さを自分で選んだら「目安」ではなくなる
   sets[i][field] = value;
   sets[i].touched = true;
   // 後ろの「まだ触っていない・未完了」のセットへ引き継ぐ
@@ -695,6 +736,21 @@ function stopRestFrom(c, i) {
 
 function toggleDone(c, i, { auto = false } = {}) {
   const set = c.sets[i];
+  // ダブルタップの2回目で、付けたばかりの ✓ を外さない(休憩タイマーも止めない)
+  if (set.done && !auto && Date.now() - (set.doneAt ?? 0) < UNCHECK_GUARD_MS) return;
+  // 記録も目標も無い重り種目は、目安の重さのまま記録してよいかを1回だけ確かめる(0kg や思い込みの重さを残さない)
+  if (!set.done && !auto && c.track === "weight" && c.guess) {
+    const now = Date.now();
+    if (!(c.guessArmedAt > 0) || now - c.guessArmedAt > 8000) {
+      c.guessArmedAt = now;
+      message(`${c.name}の重さは目安(${fmtNum(set.weight)}kg)のままです。合っていればもう一度 ✓ を押してください`);
+      return;
+    }
+    if (now - c.guessArmedAt < CONFIRM_GUARD_MS) return;
+    c.guess = false;
+    delete c.guessArmedAt;
+    message("");
+  }
   set.done = !set.done;
   set.touched = true;
   if (set.done) set.doneAt = Date.now();
@@ -941,6 +997,7 @@ function openSheet({ title, body = "", actions, onCancel, className = "" }) {
       `<button type="button" class="ses-sheet-btn is-${a.kind ?? "ghost"}" data-sheet-act="${i}"${a.disabled ? " disabled" : ""}>${escapeHtml(a.label)}</button>`).join("")}</div>` +
     `</div>`;
   doc.body.appendChild(layer);
+  const openedAt = Date.now();
   sheet = { layer, prevFocus: doc.activeElement };
   if (section && !section.hidden) section.inert = true;
   const cancel = () => {
@@ -948,13 +1005,17 @@ function openSheet({ title, body = "", actions, onCancel, className = "" }) {
     onCancel?.();
   };
   layer.addEventListener("click", (e) => {
+    // シートを開いたボタンへのダブルタップの2回目は、背景(閉じる)やボタンに当てない
+    if (Date.now() - openedAt < SHEET_GUARD_MS) return;
     if (e.target.closest("[data-sheet-cancel]")) return cancel();
     const btn = e.target.closest("[data-sheet-act]");
     if (!btn || btn.disabled) return;
     const a = actions[Number(btn.dataset.sheetAct)];
-    if (a.confirm && btn.dataset.armed !== "1") {
-      // 取り消せない操作は2回タップで確定
+    if (a.confirm && (btn.dataset.armed !== "1" || Date.now() - Number(btn.dataset.armedAt) < CONFIRM_GUARD_MS)) {
+      // 取り消せない操作は2回タップで確定(ダブルタップの2回目では確定しない)
+      if (btn.dataset.armed === "1") return;
       btn.dataset.armed = "1";
+      btn.dataset.armedAt = String(Date.now());
       btn.textContent = a.confirm;
       setTimeout(() => {
         if (btn.isConnected) {
@@ -1178,7 +1239,10 @@ function showOverlay(s, context) {
   section.hidden = false;
   section.inert = false;
   doc.body.classList.add("session-open");
+  storageFailed = false;
   renderCards();
+  // 休憩中にアプリが落ちた・再読み込みした場合は、残りの休憩を続きから表示する
+  if (s.rest && !isRunning()) resumeRest(s.rest);
   persist();
   clearInterval(elapsedId);
   elapsedId = setInterval(updateElapsed, 1000);
@@ -1273,7 +1337,7 @@ function conflictSheet(stored, fresh, daySnapshot, context) {
   actions.push({ label: "キャンセル", kind: "ghost", run: () => closeSheet() });
   openSheet({
     title: "記録していないトレーニングがあります",
-    body: `<p class="ses-sheet-text">${escapeHtml(stored.day.title)}・${countDone(stored)}/${countSets(stored)}セット完了(${escapeHtml(ago(Date.now() - stored.startedAt))}に開始)</p>`,
+    body: `<p class="ses-sheet-text">${escapeHtml(dayText(stored.day))}・${countDone(stored)}/${countSets(stored)}セット完了(${escapeHtml(startedText(Date.now() - stored.startedAt))})</p>`,
     actions,
   });
 }
@@ -1310,12 +1374,12 @@ export function resumeSessionIfAny(context = {}) {
   banner.className = "session-resume";
   banner.setAttribute("role", "region");
   banner.setAttribute("aria-label", "途中のトレーニング");
-  const when = fresh ? `${ago(age)}に開始` : `${formatShortDate(localDateStr(new Date(stored.startedAt)))}に開始`;
+  const when = fresh ? startedText(age) : `${formatShortDate(localDateStr(new Date(stored.startedAt)))}に開始`;
   banner.innerHTML =
     `<span class="session-resume-ico" aria-hidden="true">${uiIcon("timer")}</span>` +
     `<div class="session-resume-body">` +
     `<p class="session-resume-text"><strong>${fresh ? "途中のトレーニングがあります" : "記録していないトレーニングがあります"}</strong>` +
-    `<span>${[stored.day.title, `${doneN}/${countSets(stored)}セット完了`, when]
+    `<span>${[dayText(stored.day), `${doneN}/${countSets(stored)}セット完了`, when]
       .map((t) => `<span class="ses-meta-part">${escapeHtml(t)}</span>`).join("・")}</span></p>` +
     `<div class="session-resume-actions">` +
     `<button type="button" class="session-resume-btn is-primary" data-resume="${fresh ? "resume" : "save"}">` +
@@ -1338,8 +1402,10 @@ export function resumeSessionIfAny(context = {}) {
         btn.disabled = false;
       }
     } else if (act === "discard") {
-      if (doneN > 0 && btn.dataset.armed !== "1") {
+      if (doneN > 0 && (btn.dataset.armed !== "1" || Date.now() - Number(btn.dataset.armedAt) < CONFIRM_GUARD_MS)) {
+        if (btn.dataset.armed === "1") return; // ダブルタップの2回目では破棄しない
         btn.dataset.armed = "1";
+        btn.dataset.armedAt = String(Date.now());
         btn.textContent = "もう一度タップで破棄";
         setTimeout(() => {
           if (btn.isConnected) {

@@ -208,3 +208,20 @@ test("empty or invalid input renders an empty-state paragraph", () => {
   assert.match(lineChartSVG([{ date: "bad", value: 1 }, { date: "2026-09-01", value: NaN }]), /chart-empty/);
   assert.doesNotThrow(() => lineChartSVG([{ date: "2026-09-01", value: 1 }, null, { value: 3 }]));
 });
+
+test("long histories: only PR and latest markers are drawn, the middle date label carries the year", () => {
+  const many = [];
+  for (let i = 0; i < 300; i++) {
+    const d = new Date(Date.UTC(2024, 9, 13) + i * 2.4 * 86400000);
+    many.push({ date: d.toISOString().slice(0, 10), value: 60 + (i % 7), pr: i === 150 });
+  }
+  const svg = lineChartSVG(many, { unit: "kg", width: 360 });
+  const circles = elements(svg, "circle");
+  // 自己ベストの輪(2つの円)+最新の点 = 3
+  assert.equal(circles.length, 3, `circles: ${circles.length}`);
+  const dates = elements(svg, "text").map((t) => t.text).filter((t) => /\//.test(t ?? "") && !/kg/.test(t));
+  assert.ok(dates.length === 3 && dates.every((t) => /^\d{4}\//.test(t)), JSON.stringify(dates));
+  // 点が少なければ全部の点を描く
+  const few = lineChartSVG(many.slice(0, 10), { unit: "kg", width: 360 });
+  assert.ok(elements(few, "circle").length >= 10);
+});

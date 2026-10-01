@@ -5,9 +5,11 @@
 //   section には固定の見出し(.view-head の h1#<name>-title と、補足を書ける p.view-sub)と、
 //   各ビューが中身を描く div.view-body がある。モジュールは次を export する:
 //     mount(section, ctx)  起動時に1回だけ呼ばれる。.view-body を組み立て、イベントを結線する。
-//     update(reason)       データが変わったとき、表示中かどうかに関係なく呼ばれる。reason は
+//     update(reason)       データが変わったときに呼ばれる。reason は
 //                          "logs"(記録の追加・削除・編集)/ "plan"(メニューの作成・変更)/ "profile"(プロフィール保存)/
 //                          "import"(バックアップの読み込み・取り消し)/ "day"(日付が変わった)。
+//                          表示中のビューにはすぐ、隠れているビューにはそのタブを開いたときにまとめて(起きた順に)届く
+//                          (記録が何年分あっても、保存や「元に戻す」が隠れた画面の描き直しで遅くならないように)。
 //     show(detail)         (任意)そのタブが表示された直後に呼ばれる。navigate(name, {detail}) で渡した値が
 //                          detail に入る(例: 進捗のカレンダーから記録画面へ {logId} を渡して、その記録を開く)。
 //   ビューどうしは直接 import しない。画面をまたぐ処理はすべて ctx を通す。
@@ -16,7 +18,8 @@
 //   storage                  js/storage.js のモジュール(localStorage に触れるのはこれだけ)
 //   navigate(name, {focus, detail})
 //                            タブ切り替え。focus=true(既定)で切り替え先の見出しへフォーカス。detail は show(detail) へ渡す
-//   refresh(reason)          全ビューの update(reason) を呼ぶ
+//   refresh(reason)          全ビューの update(reason) を呼ぶ(隠れているビューは次に表示したとき)
+//   backupNudge()            バックアップの促し(記録が増えたら「書き出す」へ誘う)を出し直す。書き出した直後に呼ぶ
 //   toast(message, {action, onAction, tone, duration})
 //                            画面下の通知。action を渡すとボタン(「元に戻す」など)が付く。
 //                            tone: "ok" | "info" | "error" | "pr"(自己ベスト)。読み上げも行う
@@ -51,7 +54,7 @@
 import * as storage from "./storage.js?v=14";
 import { APP_VERSION } from "./version.js?v=14";
 import { formatJaDate, localDateStr, uid } from "./util.js?v=14";
-import { generatePlan, alternativeExercise } from "./planner.js?v=14";
+import { generatePlan, alternativeExercise, refreshTargets } from "./planner.js?v=14";
 import { detectPRs } from "./stats.js?v=14";
 import { uiIcon } from "./icons.js?v=14";
 import { initTimer, startRestTimer } from "./timer.js?v=14";
@@ -65,6 +68,8 @@ const $ = (sel, root = document) => root.querySelector(sel);
 
 const VIEWS = { menu: menuView, log: logView, progress: progressView, settings: settingsView };
 const UPDATE_CHECK_INTERVAL = 10 * 60 * 1000;
+const DAY_CHECK_INTERVAL = 60 * 1000;
+const SHEET_GUARD_MS = 350; // シートを開いた直後のタップ(ダブルタップの2回目)は受け付けない
 
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
 const motion = () => !reducedMotion?.matches;
@@ -150,6 +155,7 @@ function toast(message, { action = null, onAction = null, tone = "info", duratio
 // ---------- シート(<dialog>)・確認 ----------
 
 let sheetState = null; // { onClose, returnFocus }
+let sheetGuard = 0;
 
 function fill(el, content) {
   if (content == null) el.replaceChildren();
@@ -199,6 +205,10 @@ function openSheet({ title, body, footer = null, onClose = null }) {
     else sheet.setAttribute("open", "");
   }
   placeToastRegion();
+  // 開いたボタンへのダブルタップの2回目が、シートの中(閉じる・選択欄など)に当たらないようにする
+  sheet.classList.add("is-opening");
+  clearTimeout(sheetGuard);
+  sheetGuard = setTimeout(() => sheet.classList.remove("is-opening"), SHEET_GUARD_MS);
   bodyEl.scrollTop = 0;
   // 入力欄に自動でフォーカスすると iOS ではピッカーが開いてしまうので、見出しへ
   $("#sheet-title").focus({ preventScroll: true });
@@ -242,6 +252,7 @@ function confirmSheet({ title, message, ok = "OK", cancel = "キャンセル", d
 let current = null;
 const scrollPos = new Map();
 const mounted = new Set();
+const pending = new Map(); // 隠れているビュー → まだ届けていない update の理由(起きた順)
 
 const viewFromHash = () => {
   const h = location.hash.slice(1);
@@ -262,6 +273,7 @@ function showView(name, { focus = false, detail = null } = {}) {
     window.scrollTo(0, scrollPos.get(name) ?? 0);
   }
   if (focus) $(`#${name}-title`)?.focus({ preventScroll: true });
+  flushPending(name);
   if (mounted.has(name) && (switching || detail != null)) {
     try { VIEWS[name].show?.(detail); } catch (err) { viewFailed(name, err); }
   }
@@ -283,6 +295,11 @@ function setupRouter() {
       navigate(tab.dataset.tab);
     });
   }
+  // 「本文へ移動」: ハッシュ(#main)を書き換えずに、表示中の画面の見出しへ
+  $(".skip-link")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    $(`#${current}-title`)?.focus();
+  });
   window.addEventListener("hashchange", () => {
     const name = viewFromHash();
     if (name) showView(name, { focus: true });
@@ -306,11 +323,32 @@ function viewFailed(name, err) {
   });
 }
 
+function runUpdate(name, reason) {
+  try { VIEWS[name].update?.(reason); } catch (err) { viewFailed(name, err); }
+}
+
+function flushPending(name) {
+  const reasons = pending.get(name);
+  if (!reasons) return;
+  pending.delete(name);
+  for (const reason of reasons) runUpdate(name, reason);
+}
+
 function refresh(reason) {
   if (reason === "import") planRecord = undefined;
+  // 記録・日付が変わったら、保存済みメニューの「前回」と「今日の目標」を付け直す(I02/I19)
+  if (reason === "logs" || reason === "import" || reason === "day") syncTargets();
   for (const name of mounted) {
-    try { VIEWS[name].update?.(reason); } catch (err) { viewFailed(name, err); }
+    if (name === current) {
+      runUpdate(name, reason);
+    } else {
+      const reasons = pending.get(name) ?? new Set();
+      reasons.delete(reason); // 同じ理由は最後の1回だけ(順序は最新の位置)
+      reasons.add(reason);
+      pending.set(name, reasons);
+    }
   }
+  backupNudge();
 }
 
 // ---------- お知らせ(画面上部・通常の配置) ----------
@@ -353,7 +391,8 @@ function setupNotices() {
   if (meta.legacyKeyNotice) {
     showNotice({
       id: "legacy-key",
-      text: "以前のバージョンで保存されていた API キーを端末から削除しました。このアプリは端末内の内蔵アルゴリズムだけで動作し、外部には何も送信しません。",
+      text: "以前のバージョンで保存されていた API キーを端末から削除しました。このアプリは端末内の内蔵アルゴリズムだけで動作し、外部には何も送信しません。" +
+        "以前このキーを入力したことがある場合は、安全のため Anthropic Console(console.anthropic.com → API Keys)でそのキーを無効化してください。",
       onDismiss: () => storage.setMeta({ legacyKeyNotice: undefined }),
     });
   }
@@ -372,6 +411,31 @@ function setupNotices() {
   }
 }
 
+// I26: 記録が増えたのに書き出していなければ、どの画面からも見える場所でバックアップを促す
+function backupNudge() {
+  const st = storage.backupStatus();
+  const box = $("#notices");
+  if (!st.shouldNudge) {
+    box.querySelector('[data-notice="backup-nudge"]')?.remove();
+    return;
+  }
+  const text = st.lastBackupAt
+    ? `前回のバックアップから記録が${st.newLogs}件増えました。端末の故障や機種変更に備えて書き出しておきましょう。`
+    : `記録が${st.logCount}件になりました。端末の故障や機種変更に備えて、バックアップを書き出しておきましょう。`;
+  const shown = box.querySelector('[data-notice="backup-nudge"] .notice-text');
+  if (shown?.textContent === text) return;
+  showNotice({
+    id: "backup-nudge",
+    text,
+    action: "書き出す",
+    onAction: () => {
+      navigate("settings", { focus: false });
+      $("#backup")?.scrollIntoView({ behavior: motion() ? "smooth" : "auto", block: "start" });
+      $("#export-btn")?.focus({ preventScroll: true });
+    },
+  });
+}
+
 // ---------- メニュー・記録(ビュー共通の処理) ----------
 
 let planRecord; // undefined = まだ読んでいない / null = 無し
@@ -379,6 +443,13 @@ let planRecord; // undefined = まだ読んでいない / null = 無し
 function getPlan() {
   if (planRecord === undefined) planRecord = storage.loadPlan();
   return planRecord;
+}
+
+// 保存済みメニューの「前回」と「今日の目標」を今の記録から付け直し、変わっていれば保存する
+function syncTargets() {
+  const rec = getPlan();
+  if (!rec?.plan) return;
+  if (refreshTargets(rec.plan, storage.loadLogs(), rec.profile ?? storage.loadProfile())) storage.savePlan(rec);
 }
 
 function setPlan(record) {
@@ -441,7 +512,8 @@ function saveLog(log, { notify = true, message = null, ownPR = false } = {}) {
 
 function sessionContext(profile) {
   return {
-    logs: storage.loadLogs(),
+    // 再開の案内を出したあとに記録が増えても、前回値・自己ベストの判定が最新の記録を使うよう毎回読む
+    get logs() { return storage.loadLogs(); },
     profile: profile ?? storage.loadProfile(),
     onSave: (log) => saveLog(log, { notify: false }).ok,
     startRestTimer,
@@ -460,6 +532,7 @@ function startWorkout(dayIndex) {
   if (!day) return;
   // セッション中にメニューを調整しても影響しないよう、その日の内容を複製して渡す
   const snapshot = { ...structuredClone(day), index: dayIndex };
+  dismissToast(); // 前の画面のトーストをセッション画面に持ち込まない
   openSession(snapshot, sessionContext(record.profile));
 }
 
@@ -467,15 +540,18 @@ function startWorkout(dayIndex) {
 
 let swRegistration = null;
 
+// 更新の案内は、ほかの通知やシートで消えないよう画面上部のお知らせとして出す
 function offerUpdate(worker) {
   // 初回インストール(まだ制御されていない)ときは知らせない
   if (!worker || !navigator.serviceWorker.controller) return;
-  toast("新しいバージョンがあります", {
-    tone: "info",
+  showNotice({
+    id: "update",
+    text: "新しいバージョンがあります。",
     action: "更新",
-    duration: Infinity,
     onAction: () => worker.postMessage({ type: "SKIP_WAITING" }),
+    onDismiss: () => {},
   });
+  announce("新しいバージョンがあります。画面上部の「更新」で切り替えられます");
 }
 
 function watchInstalling(reg) {
@@ -499,7 +575,10 @@ function registerSW() {
     reg.addEventListener("updatefound", () => watchInstalling(reg));
     let lastCheck = Date.now();
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible" || Date.now() - lastCheck < UPDATE_CHECK_INTERVAL) return;
+      if (document.visibilityState !== "visible") return;
+      // 待機中の新しいバージョンがあれば、案内を閉じていても戻ってきたときにもう一度出す
+      if (reg.waiting && !$('#notices [data-notice="update"]')) offerUpdate(reg.waiting);
+      if (Date.now() - lastCheck < UPDATE_CHECK_INTERVAL) return;
       lastCheck = Date.now();
       reg.update().catch(() => {});
     });
@@ -545,6 +624,8 @@ function watchDayChange() {
   };
   document.addEventListener("visibilitychange", check);
   window.addEventListener("pageshow", check);
+  // 画面を付けたまま日付をまたいだとき(スリープ防止中など)にも気づけるよう、表示中は1分ごとにも確かめる
+  setInterval(check, DAY_CHECK_INTERVAL);
 }
 
 function boot() {
@@ -563,12 +644,15 @@ function boot() {
   reloadBtn.hidden = !env.standalone;
   reloadBtn.addEventListener("click", () => location.reload());
 
+  // 記録が増えた後に開いても、メニューの目標は最新の記録から(I02/I19)
+  syncTargets();
   const ctx = {
-    storage, navigate, refresh, toast, announce, openSheet, confirm: confirmSheet,
+    storage, navigate, refresh, backupNudge, toast, announce, openSheet, confirm: confirmSheet,
     getPlan, setPlan, createPlan, saveLog, startWorkout, startRestTimer, checkForUpdate, env, motion,
   };
   mountViews(ctx);
   setupNotices();
+  backupNudge();
   if (!status.available) {
     showNotice({ id: "storage", tone: "error", text: storage.MESSAGES.unavailable });
   }

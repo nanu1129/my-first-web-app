@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="session.css?v=14">
 </head>
 <body>
+  <a class="skip-link" href="#main">本文へ移動</a>
   <header class="app-bar">
     <div class="app-bar-inner">
       <p class="brand">
@@ -33,6 +34,14 @@
       <button type="button" id="app-reload" class="icon-btn app-bar-btn" aria-label="アプリを再読み込み" hidden><span data-icon="refresh"></span></button>
     </div>
   </header>
+
+  <!-- 広い画面ではアプリバーの中に並ぶので、キーボードの順番も見た目どおり本文より先にする -->
+  <nav class="tab-bar" aria-label="画面の切り替え">
+    <a class="tab" href="#menu" data-tab="menu"><span class="tab-ico" data-icon="dumbbell"></span><span class="tab-label">メニュー</span></a>
+    <a class="tab" href="#log" data-tab="log"><span class="tab-ico" data-icon="clipboard"></span><span class="tab-label">記録</span></a>
+    <a class="tab" href="#progress" data-tab="progress"><span class="tab-ico" data-icon="chart"></span><span class="tab-label">進捗</span></a>
+    <a class="tab" href="#settings" data-tab="settings"><span class="tab-ico" data-icon="sliders"></span><span class="tab-label">設定</span></a>
+  </nav>
 
   <main id="main" class="app-main">
     <noscript><p class="notice">このアプリを使うには JavaScript を有効にしてください。</p></noscript>
@@ -71,11 +80,11 @@
     </section>
   </main>
 
-  <div id="rest-timer" class="rest-timer" hidden role="timer" aria-label="休憩タイマー">
+  <div id="rest-timer" class="rest-timer" hidden role="region" aria-label="休憩タイマー">
     <div class="rest-timer-track" aria-hidden="true"><div class="rest-timer-bar"></div></div>
     <div class="rest-timer-main">
       <span class="rest-timer-label" aria-hidden="true">休憩</span>
-      <span class="rest-timer-time">0:00</span>
+      <span class="rest-timer-time" role="timer">0:00</span>
     </div>
     <div class="rest-timer-actions">
       <button type="button" class="rest-mini" data-rest="+15">+15秒</button>
@@ -86,14 +95,8 @@
     <span class="rest-timer-live sr-only" aria-live="polite"></span>
   </div>
 
-  <nav class="tab-bar" aria-label="画面の切り替え">
-    <a class="tab" href="#menu" data-tab="menu"><span class="tab-ico" data-icon="dumbbell"></span><span class="tab-label">メニュー</span></a>
-    <a class="tab" href="#log" data-tab="log"><span class="tab-ico" data-icon="clipboard"></span><span class="tab-label">記録</span></a>
-    <a class="tab" href="#progress" data-tab="progress"><span class="tab-ico" data-icon="chart"></span><span class="tab-label">進捗</span></a>
-    <a class="tab" href="#settings" data-tab="settings"><span class="tab-ico" data-icon="sliders"></span><span class="tab-label">設定</span></a>
-  </nav>
 
-  <div id="toast-region" class="toast-region"></div>
+  <section id="toast-region" class="toast-region" aria-label="通知"></section>
   <p id="sr-status" class="sr-only" role="status" aria-live="polite"></p>
 
   <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">

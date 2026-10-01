@@ -23,7 +23,8 @@
 //      (clients.claim() は呼ばないので、初回インストール時には controllerchange は起きない)
 //   その他のメッセージ: { type: "GET_VERSION" } → { type: "VERSION", version } を
 //   MessageChannel のポート(無ければ送信元)に返す。
-//   例外: 旧世代(キャッシュ名 workout-vNN、SKIP_WAITING 非対応)からの更新時だけは待機せず有効化する。
+//   例外: 旧世代(キャッシュ名 workout-vNN、SKIP_WAITING 非対応)からの更新時だけは待機せず有効化し、
+//   開いている(ap-study 以外の)ページを claim して開き直す(旧ページは自分では再読み込みしないため)。
 const VERSION = "14";
 const CACHE_PREFIX = "workout-";
 const CACHE = `${CACHE_PREFIX}${VERSION}`;
@@ -71,11 +72,20 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE).map((k) => caches.delete(k)))
-    )
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    const fromLegacy = keys.some((k) => /^workout-v\d+$/.test(k));
+    await Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE).map((k) => caches.delete(k)));
+    if (!fromLegacy) return;
+    // 旧世代のページは更新の案内も controllerchange での再読み込みも持たないので、こちらから開き直して
+    // 最初の起動で新しい版に切り替える(隣のアプリ ap-study/ のページには触れない)
+    // 旧世代の SW が制御していたページだけ(初めて開いたページは含まれない)
+    const wins = await self.clients.matchAll({ type: "window" });
+    await self.clients.claim();
+    await Promise.all(wins
+      .filter((c) => !new URL(c.url).pathname.startsWith(SIBLING_APP))
+      .map((c) => c.navigate(c.url).catch(() => null)));
+  })());
 });
 
 self.addEventListener("message", (event) => {
