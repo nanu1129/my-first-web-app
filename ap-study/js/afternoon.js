@@ -29,9 +29,10 @@ const Afternoon = (() => {
   function guide() {
     return `
       <details class="guide-box">
-        <summary>午後試験のしくみと、分野の選び方</summary>
+        <summary>科目B(旧午後)のしくみと、分野の選び方</summary>
         <ul class="guide-list">
           <li><b>問1 情報セキュリティは必須</b>。残りの10分野から<b>4問を選んで</b>解答します(計5問・150分。1問あたり約30分)。</li>
+          <li>令和8年度からは<b>CBT方式</b>で、パソコンの画面で長文を読み、記述式の解答はキーボードで入力します。このサイトの記述式も同じように入力して練習できます。</li>
           <li>選択できる分野: ${FIELDS.slice(0).map((f) => (COVERED[f]
             ? `<span class="pill pill-accent">${f}</span>` : `<span class="pill pill-muted">${f}</span>`)).join(' ')}
             <br><small>色つきの分野は、このサイトで練習できます。</small></li>
@@ -48,8 +49,8 @@ const Afternoon = (() => {
     const cases = AP.cases.slice().sort((a, b) => (b.partId === 'security') - (a.partId === 'security'));
     $view().innerHTML = `
       <div class="crumb"><button data-back>実践トレーニング</button> › 午後演習</div>
-      <h2 class="view-title">午後演習(ケーススタディ)</h2>
-      <p class="view-lead">本番の午後試験と同じ「長文を読んで設問に答える」形式の学習用オリジナル問題です。
+      <h2 class="view-title">午後演習(科目B形式)</h2>
+      <p class="view-lead">科目B(旧午後)と同じ「長文を読んで設問に答える」形式の学習用オリジナル問題です。
         選択式に加えて、本番と同じ<b>記述式</b>の設問もあります。記述式は解答例と照らし合わせて自己採点します。</p>
       ${guide()}
       <div class="practice-menu">
@@ -229,6 +230,7 @@ const Afternoon = (() => {
     const percent = Math.round((score / total) * 100);
     const pass = percent >= 60;
     Store.setCaseResult(cs.id, percent, pass);
+    Store.logAct('case');
     Store.addHistory({ kind: '午後演習', label: cs.title, score: Math.round(score * 10) / 10, total, pass });
     $view().innerHTML = `
       <div class="quiz-shell"><div class="quiz-result">

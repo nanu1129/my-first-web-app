@@ -4,6 +4,7 @@
 const Store = (() => {
   const KEY = 'ap-study-v1';
   const SRS_STEPS = [1, 3, 7, 16, 35, 60]; // 間隔反復の間隔(日)
+  const CARD_STEPS = [1, 3, 7, 16, 35, 60]; // 用語カードの間隔(日)。箱(box)1〜6に対応
   const DAY = 86400000;
 
   const ymd = (t) => {
@@ -21,12 +22,13 @@ const Store = (() => {
     units: {},      // unitId -> { cleared, best, total, at }
     partExams: {},  // partId -> { cleared, best(%), at }
     cases: {},      // caseId -> { cleared, best(%), at }
-    cards: {},      // termKey -> true(覚えた)
+    cards: {},      // termKey -> true(覚えた。旧方式。cardSrs が無いカードだけ参照)
+    cardSrs: {},    // termKey -> { box(0〜6), due(ms), at(最終回答ms) }
     srs: {},        // qid -> { reps, interval(日), due(ms) }
     lastWrong: {},  // qid -> 最後に間違えた時刻(ms)
     lastRight: {},  // qid -> 最後に正解した時刻(ms)
     history: [],    // { kind, label, score, total, pass, at }
-    counters: {},   // deviceId -> { answers: {partId:{c,t}}, reasons: {}, days: {'YYYY-MM-DD': n} }
+    counters: {},   // deviceId -> { answers: {partId:{c,t}}, reasons: {}, days: {'YYYY-MM-DD': n}, acts: {'YYYY-MM-DD|種類': n} }
     prefs: {},      // { recall, goal, examDate, planStart, ... }
     prefsAt: 0,     // prefs の最終更新時刻(同期時は新しい方を採用)
   });
@@ -77,7 +79,9 @@ const Store = (() => {
     }
     cache = migrate(cache);
     if (!cache.deviceId) cache.deviceId = newId();
-    if (!cache.counters[cache.deviceId]) cache.counters[cache.deviceId] = { answers: {}, reasons: {}, days: {} };
+    if (!cache.counters[cache.deviceId]) cache.counters[cache.deviceId] = { answers: {}, reasons: {}, days: {}, acts: {} };
+    if (!cache.counters[cache.deviceId].acts) cache.counters[cache.deviceId].acts = {};
+    if (!cache.cardSrs) cache.cardSrs = {};
     return cache;
   }
 
@@ -128,11 +132,19 @@ const Store = (() => {
           total: x.total || y.total,
           at: Math.max(x.at || 0, y.at || 0),
         };
+        const ca = [x.clearedAt, y.clearedAt].filter(Boolean);
+        if (ca.length) out[k][id].clearedAt = Math.min(...ca);
       });
     });
 
     // 覚えたカード: 和集合
     out.cards = Object.assign({}, a.cards, b.cards);
+    // 用語カードの間隔反復: 最後に回答した方を採用(別の端末での「まだ」も正しく伝わる)
+    const ck = new Set([...Object.keys(a.cardSrs || {}), ...Object.keys(b.cardSrs || {})]);
+    ck.forEach((id) => {
+      const x = (a.cardSrs || {})[id], y = (b.cardSrs || {})[id];
+      out.cardSrs[id] = (!x || (y && (y.at || 0) > (x.at || 0))) ? y : x;
+    });
 
     // 間隔反復: 学習が進んでいる方(反復回数が多い、同数なら次回が先の方)を採用
     const sk = new Set([...Object.keys(a.srs || {}), ...Object.keys(b.srs || {})]);
@@ -154,13 +166,13 @@ const Store = (() => {
     const dev = new Set([...Object.keys(a.counters || {}), ...Object.keys(b.counters || {})]);
     dev.forEach((id) => {
       const x = (a.counters || {})[id] || {}, y = (b.counters || {})[id] || {};
-      const bucket = { answers: {}, reasons: {}, days: {} };
+      const bucket = { answers: {}, reasons: {}, days: {}, acts: {} };
       const ak = new Set([...Object.keys(x.answers || {}), ...Object.keys(y.answers || {})]);
       ak.forEach((p) => {
         const p1 = (x.answers || {})[p] || { c: 0, t: 0 }, p2 = (y.answers || {})[p] || { c: 0, t: 0 };
         bucket.answers[p] = { c: Math.max(p1.c, p2.c), t: Math.max(p1.t, p2.t) };
       });
-      ['reasons', 'days'].forEach((f) => {
+      ['reasons', 'days', 'acts'].forEach((f) => {
         const ks = new Set([...Object.keys(x[f] || {}), ...Object.keys(y[f] || {})]);
         ks.forEach((k) => { bucket[f][k] = Math.max((x[f] || {})[k] || 0, (y[f] || {})[k] || 0); });
       });
@@ -187,6 +199,7 @@ const Store = (() => {
   }
 
   return {
+    CARD_STEPS,
     // --- 同期用 ---
     deviceId() { return load().deviceId; },
     snapshot() { return JSON.parse(JSON.stringify(load())); },
@@ -194,7 +207,9 @@ const Store = (() => {
       const own = load().deviceId;
       cache = Object.assign(defaults(), state);
       cache.deviceId = own; // 端末IDは常に自分のものを保つ
-      if (!cache.counters[own]) cache.counters[own] = { answers: {}, reasons: {}, days: {} };
+      if (!cache.counters[own]) cache.counters[own] = { answers: {}, reasons: {}, days: {}, acts: {} };
+      if (!cache.counters[own].acts) cache.counters[own].acts = {};
+      if (!cache.cardSrs) cache.cardSrs = {};
       save(true);
     },
     mergeStates,
@@ -226,6 +241,8 @@ const Store = (() => {
         total,
         at: Date.now(),
       };
+      if (prev.clearedAt) d.units[unitId].clearedAt = prev.clearedAt;
+      else if (cleared) d.units[unitId].clearedAt = Date.now();
       save();
     },
 
@@ -270,8 +287,28 @@ const Store = (() => {
       return out;
     },
 
-    // --- 暗記カード ---
-    isCardKnown(key) { return !!load().cards[key]; },
+    // --- 暗記カード(間隔反復) ---
+    // 状態: 新規(未学習) / 学習中(box 0) / 覚えた(box 1以上)。旧方式で「覚えた」のカードは box 1 として扱う
+    cardState(key) {
+      const d = load();
+      const s = d.cardSrs[key];
+      if (s) return s;
+      return d.cards[key] ? { box: 1, due: 0, at: 0, legacy: true } : null;
+    },
+    isCardKnown(key) {
+      const s = this.cardState(key);
+      return !!(s && s.box >= 1);
+    },
+    cardReview(key, known) {
+      const d = load();
+      const prev = this.cardState(key) || { box: 0 };
+      const box = known ? Math.min((prev.box || 0) + 1, CARD_STEPS.length) : 0;
+      const due = known ? Date.now() + CARD_STEPS[box - 1] * DAY : Date.now();
+      d.cardSrs[key] = { box, due, at: Date.now() };
+      if (known) d.cards[key] = true;
+      save();
+      return d.cardSrs[key];
+    },
     setCardKnown(key, known) {
       const d = load();
       if (known) d.cards[key] = true;
@@ -312,6 +349,22 @@ const Store = (() => {
       const now = Date.now();
       return qids.filter((id) => d.srs[id] && d.srs[id].due <= now);
     },
+    // 正解したが自信がなかった問題: 正誤の記録はそのまま、間隔反復だけ「明日もう一度」にする
+    srsUnsure(qid) {
+      if (!qid) return;
+      const d = load();
+      d.srs[qid] = { reps: 0, interval: 1, due: Date.now() + DAY };
+      save();
+    },
+    // 今日の復習キュー: 期限切れが古い順(忘れかけている順)に最大 limit 問
+    reviewQueue(qids, limit) {
+      const d = load();
+      const now = Date.now();
+      return qids.filter((id) => d.srs[id] && d.srs[id].due <= now)
+        .sort((x, y) => d.srs[x].due - d.srs[y].due)
+        .slice(0, limit || qids.length);
+    },
+    srsState(qid) { return load().srs[qid] || null; },
 
     // --- 学習ストリーク・今日の目標(全端末の学習日を合算) ---
     studyTick() {
@@ -349,6 +402,20 @@ const Store = (() => {
     setGoal(n) { this.setPref('goal', n); },
     // 日ごとの学習問題数(全端末の合計) { 'YYYY-MM-DD': 件数 }
     dayCounts() { return sumBucket('days'); },
+    // 今日のメニューの達成記録(種類ごとの回数。全端末の合計)
+    logAct(kind, n) {
+      const acts = mine().acts || (mine().acts = {});
+      const key = `${ymd(Date.now())}|${kind}`;
+      acts[key] = (acts[key] || 0) + (n || 1);
+      save();
+    },
+    actsToday() {
+      const prefix = `${ymd(Date.now())}|`;
+      const out = {};
+      Object.entries(sumBucket('acts')).forEach(([k, v]) => { if (k.startsWith(prefix)) out[k.slice(prefix.length)] = v; });
+      return out;
+    },
+    today() { return ymd(Date.now()); },
 
     // --- 間違い理由の集計 ---
     addReason(reason) {
@@ -384,7 +451,7 @@ const Store = (() => {
       const id = load().deviceId;
       cache = defaults();
       cache.deviceId = id;
-      cache.counters[id] = { answers: {}, reasons: {}, days: {} };
+      cache.counters[id] = { answers: {}, reasons: {}, days: {}, acts: {} };
       save();
     },
   };

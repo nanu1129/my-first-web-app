@@ -2,7 +2,7 @@
 const Stats = (() => {
   const $view = () => document.getElementById('view-stats');
 
-  // ---- 合格予測モデル(午前シミュレーション) ----
+  // ---- 合格予測モデル(科目A・旧午前のシミュレーション) ----
   // このサイトの教材が各分野の頻出論点をカバーしている割合(推定)
   const COVERAGE = {
     basics: 0.70, computer: 0.70, database: 0.75, network: 0.75,
@@ -76,8 +76,8 @@ const Stats = (() => {
       </div>
 
       <div class="panel">
-        <h3>合格予測(午前シミュレーション)</h3>
-        <p class="panel-note">これまでの分野別正答率と、本サイトの出題カバー範囲をもとにした「いま本番の午前を受けたら」の推定です。学習の目安としてどうぞ。</p>
+        <h3>合格予測(科目A・旧午前のシミュレーション)</h3>
+        <p class="panel-note">これまでの分野別正答率と、本サイトの出題カバー範囲をもとにした「いま本番の科目Aを受けたら」の推定です。学習の目安としてどうぞ。</p>
         <div class="forecast-row">
           <p class="forecast-score">${fc.score}<small> 点 / 100</small></p>
           <div class="forecast-main">
@@ -103,11 +103,11 @@ const Stats = (() => {
       <div class="panel">
         <h3>分野別正答率</h3>
         <p class="panel-note">一問一答・本番レベル演習・模擬試験など、すべての解答の累積です。</p>
-        ${totals.t ? chartSvg(answers) : '<p class="chart-empty">まだ解答がありません。ホームの学習マップから始めましょう。</p>'}
+        ${totals.t ? accuracyBars(answers) : '<p class="chart-empty">まだ解答がありません。ホームの学習マップから始めましょう。</p>'}
         ${weak ? `
           <div class="weak-callout">
-            <span><span class="pill pill-ng">弱点</span> <b>${esc(weak.part.name)}</b> が苦手みたい(正答率 ${Math.round(weak.rate * 100)}%)。教材から復習してみよう。</span>
-            <button class="btn btn-primary" id="weak-review" data-part="${weak.part.id}">この分野を復習</button>
+            <span><span class="pill pill-ng">弱点</span> <b>${esc(weak.part.name)}</b> が苦手みたい(正答率 ${Math.round(weak.rate * 100)}%)。間違えた問題や定着が浅い問題を集中的に解こう。</span>
+            <button class="btn btn-primary" id="weak-review" data-part="${weak.part.id}">${Coach.studiedQuestions(weak.part.id).length ? '弱点ドリル(10問)' : '教材から復習する'}</button>
           </div>` : ''}
       </div>
 
@@ -185,10 +185,11 @@ const Stats = (() => {
     if (weakBtn) {
       weakBtn.addEventListener('click', () => {
         const partId = weakBtn.dataset.part;
+        if (Coach.startWeakDrill(partId, () => App.navigate('stats'))) return;
         App.goHome();
         requestAnimationFrame(() => {
           const el = document.getElementById(`part-${partId}`);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (el) { el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
         });
       });
     }
@@ -231,43 +232,19 @@ const Stats = (() => {
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
-  // 横棒グラフ(単一系列・SVG)
-  function chartSvg(answers) {
-    const W = 640, ROW = 36, PAD_TOP = 6;
-    const LABEL_W = 128, BAR_X = LABEL_W + 10, BAR_W = W - BAR_X - 96, BAR_H = 10;
-    const H = PAD_TOP + AP.parts.length * ROW;
-
-    const rows = AP.parts.map((p, i) => {
-      const y = PAD_TOP + i * ROW + ROW / 2;
+  // 分野別正答率の横棒(HTML。スマホでも文字が小さくならない)
+  function accuracyBars(answers) {
+    return `<div class="acc-bars" role="list">${AP.parts.map((p) => {
       const a = answers[p.id];
-      const label = `<text x="${LABEL_W}" y="${y}" text-anchor="end" dominant-baseline="middle"
-        font-size="12.5" font-weight="700" fill="var(--ink-2)">${esc(p.name)}</text>`;
-      const track = `<rect x="${BAR_X}" y="${y - BAR_H / 2}" width="${BAR_W}" height="${BAR_H}"
-        rx="5" fill="var(--surface-2)"/>`;
-      if (!a || !a.total) {
-        return `${label}${track}
-          <text x="${BAR_X + BAR_W + 10}" y="${y}" dominant-baseline="middle"
-            font-size="12" fill="var(--ink-3)">未学習</text>`;
-      }
-      const pct = a.correct / a.total;
-      const w = Math.max(BAR_H, BAR_W * pct);
-      const bar = `<path d="${roundedRight(BAR_X, y - BAR_H / 2, w, BAR_H, 5)}" fill="var(--accent)"/>`;
-      const value = `<text x="${BAR_X + BAR_W + 10}" y="${y}" dominant-baseline="middle"
-        font-size="12.5" font-weight="900" fill="var(--ink)">${Math.round(pct * 100)}%</text>
-        <text x="${BAR_X + BAR_W + 50}" y="${y}" dominant-baseline="middle"
-        font-size="11" fill="var(--ink-3)">${a.correct}/${a.total}</text>`;
-      return `${label}${track}${bar}${value}`;
-    }).join('');
-
-    return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img"
-      aria-label="分野別正答率の横棒グラフ" style="width:100%;height:auto">${rows}</svg>`;
-  }
-
-  // 右端だけ角丸の横棒
-  function roundedRight(x, y, w, h, r) {
-    const rr = Math.min(r, w / 2);
-    return `M${x},${y} H${x + w - rr} A${rr},${rr} 0 0 1 ${x + w},${y + rr}
-      V${y + h - rr} A${rr},${rr} 0 0 1 ${x + w - rr},${y + h} H${x} Z`;
+      const pct = a && a.total ? Math.round((a.correct / a.total) * 100) : null;
+      const cls = pct === null ? '' : pct >= 80 ? 'is-good' : pct >= 60 ? '' : 'is-weak';
+      return `
+        <div class="acc-row" role="listitem">
+          <span class="acc-name">${esc(p.name)}</span>
+          <span class="acc-bar"><span class="acc-fill ${cls}" style="width:${pct || 0}%"></span><span class="acc-pass" title="合格ライン60%"></span></span>
+          <span class="acc-val">${pct === null ? '<span class="acc-none">未学習</span>' : `<b>${pct}%</b> <small>${a.correct}/${a.total}</small>`}</span>
+        </div>`;
+    }).join('')}</div>`;
   }
 
   function backupMsg(text, ok) {

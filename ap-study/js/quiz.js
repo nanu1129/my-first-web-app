@@ -179,13 +179,27 @@ const Quiz = (() => {
            </div>
          </div>`
       : '';
+    // 正解でも自信がなければ、間隔反復で明日もう一度出す(まぐれ当たりを定着と見なさない)
+    const unsure = correct && q.qid
+      ? `<div class="unsure-box">
+           <button class="reason-chip" id="unsure-btn">自信がなかった(まぐれ)</button>
+           <span class="unsure-note">押すと、明日もう一度出題します</span>
+         </div>`
+      : '';
     document.getElementById('quiz-feedback').innerHTML = `
       <div class="feedback ${correct ? 'ok' : 'ng'}">
         <p class="feedback-head">${correct ? '正解!この調子!' : `残念、不正解… 正解は「${KEYS[q.answer]}」。解説を読んで整理しよう`}</p>
         <p class="feedback-exp">${esc(q.exp || '')}</p>
-        ${reasons}
+        ${reasons}${unsure}
       </div>`;
-    $view().querySelectorAll('.reason-chip').forEach((chip) => {
+    const unsureBtn = document.getElementById('unsure-btn');
+    if (unsureBtn) unsureBtn.addEventListener('click', () => {
+      Store.srsUnsure(q.qid);
+      unsureBtn.classList.add('on');
+      unsureBtn.disabled = true;
+      unsureBtn.nextElementSibling.textContent = '明日もう一度出題します';
+    });
+    $view().querySelectorAll('.reason-box .reason-chip').forEach((chip) => {
       chip.addEventListener('click', () => {
         Store.addReason(chip.dataset.r);
         const box = chip.closest('.reason-box');
@@ -252,6 +266,7 @@ const Quiz = (() => {
     const wrong = cfg.questions
       .map((q, i) => ({ q, a: state.answers[i] }))
       .filter((x) => !x.a || !x.a.correct);
+    const unitOf = (qid) => (qid && qid.startsWith('chk-') ? qid.slice(4, qid.lastIndexOf('-')) : null);
     const review = wrong.length
       ? `<div class="review-list">
            <h3 style="font-size:14px;font-weight:900;margin-bottom:10px">見直し(${wrong.length}問)</h3>
@@ -259,11 +274,14 @@ const Quiz = (() => {
              <div class="review-item">
                <p class="rv-q">${esc(q.q)}</p>
                <p><span class="rv-a">正解: ${KEYS[q.answer]} ${esc(q.choices[q.answer])}</span>
-               ${a ? ` / <span class="rv-your">自分の解答: ${KEYS[a.picked]}</span>` : ' / <span class="rv-your">未回答</span>'}</p>
+               ${a ? ` / <span class="rv-your">自分の解答: ${KEYS[a.picked]} ${esc(q.choices[a.picked])}</span>` : ' / <span class="rv-your">未回答</span>'}</p>
                <p class="rv-exp">${esc(q.exp || '')}</p>
+               ${unitOf(q.qid) ? `<button class="btn-mini rv-lesson" data-unit="${unitOf(q.qid)}">教材で確認 →</button>` : ''}
              </div>`).join('')}
          </div>`
       : '';
+    const actions = typeof cfg.nextActions === 'function' ? cfg.nextActions(r) : (cfg.nextActions || []);
+    const hasPrimary = actions.some((x) => x.primary);
 
     const passLabel = cfg.passLabel || (r.pass ? 'CLEAR!' : 'NOT CLEAR');
     $view().innerHTML = `
@@ -274,14 +292,39 @@ const Quiz = (() => {
           <p class="result-sub">${esc(cfg.resultNote ? cfg.resultNote(r) : '')}${r.timeUp ? '(時間切れで終了しました)' : ''}</p>
           ${breakdown}
           <div class="btn-row" style="justify-content:center">
-            <button class="btn btn-primary" id="result-back">${esc(cfg.backLabel || '戻る')}</button>
-            <button class="btn btn-ghost" id="result-retry">もう一度挑戦</button>
+            ${actions.map((x, i) => `<button class="btn ${x.primary ? 'btn-primary' : 'btn-ghost'}" data-action="${i}">${esc(x.label)}</button>`).join('')}
+            ${wrong.length && wrong.length < r.total ? `<button class="btn ${hasPrimary ? 'btn-ghost' : 'btn-primary'}" id="result-retry-wrong">間違えた${wrong.length}問だけ解き直す</button>` : ''}
+            <button class="btn ${hasPrimary || (wrong.length && wrong.length < r.total) ? 'btn-ghost' : 'btn-primary'}" id="result-back">${esc(cfg.backLabel || '戻る')}</button>
+            <button class="btn btn-ghost" id="result-retry">${cfg.retryLabel || 'もう一度挑戦'}</button>
           </div>
           ${review}
         </div>
       </div>`;
 
     document.getElementById('result-back').addEventListener('click', quit);
+    $view().querySelectorAll('[data-action]').forEach((b) => {
+      b.addEventListener('click', () => { const fn = actions[Number(b.dataset.action)].fn; state = null; fn(); });
+    });
+    $view().querySelectorAll('.rv-lesson').forEach((b) => {
+      b.addEventListener('click', () => { state = null; Course.openLesson(b.dataset.unit); });
+    });
+    const retryWrong = document.getElementById('result-retry-wrong');
+    if (retryWrong) retryWrong.addEventListener('click', () => {
+      const base = state.cfg;
+      start({
+        title: `解き直し: ${base.title.replace(/^解き直し: /, '')}`,
+        questions: shuffle(wrong.map((x) => x.q)),
+        mode: base.mode === 'mock' ? 'practice' : base.mode,
+        passRate: 1,
+        passLabel: null,
+        backLabel: base.backLabel,
+        onBack: base.onBack,
+        retryLabel: 'もう一度解き直す',
+        resultNote: (r2) => (r2.pass
+          ? '全問正解!解き直した問題も、間隔反復で日をあけてもう一度出題されます。'
+          : 'まだ間違えた問題があります。解説を読み、教材に戻って確かめよう。'),
+      });
+    });
     document.getElementById('result-retry').addEventListener('click', () => {
       const cfg2 = state.cfg;
       start(Object.assign({}, cfg2, {
