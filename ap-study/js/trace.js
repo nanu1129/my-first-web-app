@@ -126,7 +126,7 @@ const Trace = (() => {
     $view().innerHTML = `
       <div class="crumb"><button data-back>実践トレーニング</button> › アルゴリズムトレース</div>
       <h2 class="view-title">アルゴリズムトレース</h2>
-      <p class="view-lead">「コードを読んで変数の変化を正確に追う」力は午後試験の得点源です。1行ずつ実行して、聞かれた変数の値を答えましょう。</p>
+      <p class="view-lead">「コードを読んで変数の変化を正確に追う」力は科目B(旧午後)の得点源です。1行ずつ実行して、聞かれた変数の値を答えましょう。</p>
       <div class="practice-menu">
         ${EXERCISES.map((e) => `
           <button class="practice-card" data-ex="${e.id}">
@@ -221,6 +221,7 @@ const Trace = (() => {
 
   function finish() {
     const pass = asked === 0 ? true : correct / asked >= 0.6;
+    Store.logAct('trace');
     Store.addHistory({ kind: 'トレース', label: ex.title, score: correct, total: asked, pass });
     $view().innerHTML = `
       <div class="quiz-shell"><div class="quiz-result">

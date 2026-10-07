@@ -66,6 +66,8 @@ const App = (() => {
     // 間隔反復・今日の復習で使う全問題の一覧
     const checks = AP.lessons.flatMap((l) => l.units.flatMap((u) => u.checks));
     AP.allQuestions = AP.questions.concat(checks);
+    // 令和8年度から午前は「科目A」。出典の表記をそろえる
+    AP.questions.forEach((q) => { if (q.source) q.source = q.source.replace(/^午前 /, '科目A '); });
     initTheme();
 
     document.querySelectorAll('#main-nav .tab').forEach((t) => {

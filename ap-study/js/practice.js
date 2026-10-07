@@ -10,7 +10,7 @@ const Practice = (() => {
 
     $view().innerHTML = `
       <h2 class="view-title">実践トレーニング</h2>
-      <p class="view-lead">知識を「使える力」に変える演習です。計算は手を動かし、コードは1行ずつ追い、長文は本番の午後試験形式で。</p>
+      <p class="view-lead">知識を「使える力」に変える演習です。計算は手を動かし、コードは1行ずつ追い、長文は科目B(旧午後)の形式で。</p>
       <div class="practice-menu">
         <button class="practice-card" data-go="drill">
           <span class="pc-title">計算ドリル</span>
@@ -19,12 +19,12 @@ const Practice = (() => {
         </button>
         <button class="practice-card" data-go="trace">
           <span class="pc-title">アルゴリズムトレース</span>
-          <span class="pc-desc">擬似言語のコードを1行ずつ実行し、変数の値を予測しながら追いかける。午後のアルゴリズム問題の基礎体力に。</span>
+          <span class="pc-desc">擬似言語のコードを1行ずつ実行し、変数の値を予測しながら追いかける。科目Bのアルゴリズム問題の基礎体力に。</span>
           <span class="pc-cta">挑戦する →</span>
         </button>
         <button class="practice-card" data-go="afternoon">
-          <span class="pc-title">午後演習(ケーススタディ)</span>
-          <span class="pc-desc">本番の午後試験風の長文シナリオを読み、選択式と記述式の設問に答える演習。セキュリティ(必須)2題に加え、DB・ネットワーク・PM・サービスマネジメント・システム監査・経営戦略・アルゴリズムの計${AP.cases.length}題。</span>
+          <span class="pc-title">午後演習(科目B形式)</span>
+          <span class="pc-desc">科目B(旧午後)と同じ形式の長文シナリオを読み、選択式と記述式の設問に答える演習。セキュリティ(必須)2題に加え、DB・ネットワーク・PM・サービスマネジメント・システム監査・経営戦略・アルゴリズムの計${AP.cases.length}題。</span>
           <span class="pc-cta">${clearedCases} / ${AP.cases.length} 題クリア →</span>
         </button>
       </div>`;

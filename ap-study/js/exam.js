@@ -13,7 +13,7 @@ const Exam = (() => {
     const total = AP.questions.length;
     $view().innerHTML = `
       <h2 class="view-title">模擬試験</h2>
-      <p class="view-lead">全分野の本番レベル問題から、本試験の分野配分に合わせてランダムに出題します。制限時間つき・採点は最後にまとめて行います(合格ライン60%)。</p>
+      <p class="view-lead">科目A(旧午前)と同じ80問・150分の形式です。全分野の本番レベル問題から、本試験の分野配分に合わせてランダムに出題します。制限時間つき・採点は最後にまとめて行います(合格ライン60%)。</p>
       <div class="exam-options">
         ${PLANS.map((p, i) => `
           <button class="exam-option" data-plan="${i}">
@@ -21,7 +21,7 @@ const Exam = (() => {
             <p class="eo-desc">${p.desc}</p>
           </button>`).join('')}
       </div>
-      <p class="exam-note">収録問題: ${total}問(午前試験の頻出テーマをもとに作成した演習問題)。途中でやめると採点されません。
+      <p class="exam-note">本番はCBT方式で、パソコンの画面で解答します。この模試も画面で解くので、そのまま本番の練習になります。<br>収録問題: ${total}問(科目A・旧午前の頻出テーマをもとに作成した演習問題)。途中でやめると採点されません。
         本物の過去問題は <a href="https://www.ipa.go.jp/shiken/" target="_blank" rel="noopener">IPA 公式サイト</a> で公開されています。仕上げに解いておきましょう。</p>`;
 
     $view().querySelectorAll('.exam-option').forEach((btn) => {
@@ -61,6 +61,7 @@ const Exam = (() => {
         ? '合格ライン(60%)を突破しました!この調子で仕上げていきましょう。'
         : '合格ラインは60%です。分野別の内訳から弱点を確認しましょう。'),
       onFinish: (r) => {
+        Store.logAct('mock');
         Store.addHistory({ kind: '模擬試験', label: `${r.total}問`, score: r.score, total: r.total, pass: r.pass });
       },
     });
