@@ -11,6 +11,7 @@ const Plan = (() => {
   const OLD_DEFAULT = '2027-02-21'; // 旧版の既定値(紙の試験を想定していた頃)
   const REVIEW_LIMIT = 30; // 1回の復習で出す最大問題数
   const IPA_URL = 'https://www.ipa.go.jp/shiken/';
+  const PAST_URL = 'https://www.ipa.go.jp/shiken/mondai-kaiotu/index.html'; // IPAの過去問題(問題冊子・解答例)
 
   const midnight = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
   const parse = (s) => midnight(new Date(`${s}T00:00:00`));
@@ -59,7 +60,8 @@ const Plan = (() => {
     const sched = scheduleOf(fmt(exam));
 
     // 進捗の実測
-    const units = AP.lessons.flatMap((l) => l.units);
+    const units = Order.units(); // 学習順(Udemy講座の順 / サイト標準)
+    const udemy = Order.active();
     const unitsTotal = units.length;
     const unitsDone = units.filter((u) => Store.isUnitCleared(u.id)).length;
     const nextUnit = units.find((u) => !Store.isUnitCleared(u.id)) || null;
@@ -89,9 +91,9 @@ const Plan = (() => {
     const aEnd = new Date(start.getTime() + Math.round(totalDays * 0.5) * DAY);
     const bEnd = new Date(start.getTime() + Math.round(totalDays * 0.8) * DAY);
     const phases = [
-      { key: 'input', name: '基礎固め', desc: '教材と一問一答で全ユニットを一周し、復習で定着させる', end: aEnd },
-      { key: 'drill', name: '演習期', desc: '本番レベル演習・弱点ドリル・計算ドリルで解く力をつける', end: bEnd },
-      { key: 'final', name: '科目A 仕上げ', desc: '模試で時間配分を固め、弱点と復習をゼロに近づける', end: exam },
+      { key: 'input', name: '基礎固め', desc: udemy ? 'Udemyの講義(§2〜13)と一問一答で全範囲を一周し、復習で定着させる' : '教材と一問一答で全ユニットを一周し、復習で定着させる', end: aEnd },
+      { key: 'drill', name: '演習期', desc: udemy ? '過去問とUdemyの解説・弱点ドリル・計算ドリルで解く力をつける' : '本番レベル演習・弱点ドリル・計算ドリルで解く力をつける', end: bEnd },
+      { key: 'final', name: '科目A 仕上げ', desc: udemy ? '残りの過去問で時間配分を固め、弱点と復習をゼロに近づける' : '模試で時間配分を固め、弱点と復習をゼロに近づける', end: exam },
       { key: 'b', name: '科目B 対策', desc: '午後演習(長文・記述)とトレースに集中する', end: examB },
     ];
     const phaseIdx = stage !== 'A' ? 3 : (today >= bEnd ? 2 : (today >= aEnd ? 1 : 0));
@@ -139,12 +141,21 @@ const Plan = (() => {
     if (stage === 'A' && unitsRemaining > 0) {
       const n = Math.max(1, Math.ceil(unitsPerDay));
       const done = unitsClearedToday >= n;
-      add({
-        act: 'unit', id: nextUnit.id, done,
-        label: phaseIdx === 0 ? `教材を ${n}ユニット 進める` : '残りの教材を進める',
-        sub: done ? `今日 ${unitsClearedToday}ユニット 完了` : `次: ${nextUnit.title}${unitsClearedToday ? `(今日 ${unitsClearedToday}/${n})` : ''}`,
-        mins: nextUnit.minutes + 5,
-      });
+      const sec = udemy ? Order.sectionOf(nextUnit.id) : null;
+      const progress = unitsClearedToday ? `(今日 ${unitsClearedToday}/${n})` : '';
+      add(sec
+        ? {
+          act: 'unit', id: nextUnit.id, done,
+          label: `Udemy §${sec.no}「${sec.title}」→ 一問一答 ${n}ユニット`,
+          sub: done ? `今日 ${unitsClearedToday}ユニット 完了` : `次: ${nextUnit.title}${progress}。動画を見てから要点まとめと一問一答へ`,
+          mins: AP.udemy.minsPerUnit,
+        }
+        : {
+          act: 'unit', id: nextUnit.id, done,
+          label: phaseIdx === 0 ? `教材を ${n}ユニット 進める` : '残りの教材を進める',
+          sub: done ? `今日 ${unitsClearedToday}ユニット 完了` : `次: ${nextUnit.title}${progress}`,
+          mins: nextUnit.minutes + 5,
+        });
     }
     // パートを終えたら、基礎固めの時期でも一度は本番レベル演習に挑戦する(覚えた直後に本番形式で確かめる)
     if (stage === 'A' && nextPart && (phaseIdx >= 1 || !Store.partExamState(nextPart.id))) {
@@ -156,11 +167,26 @@ const Plan = (() => {
     if (stage === 'A' && phaseIdx >= 1) {
       add({ act: 'drill', label: '計算ドリル 10問', sub: '数値が変わっても解ける状態に', done: (acts.drill || 0) >= 10, mins: 10 });
     }
-    if (stage === 'A' && phaseIdx === 2 && (!mockRecent || acts.mock)) {
+    // Udemy講座の過去問解説(§14〜23): 演習期からは、本物の過去問を解いてから解説動画で見直す(3日に1回)
+    const past = udemy ? Order.pastStatus() : null;
+    if (past && stage === 'A' && phaseIdx >= 1 && (past.today || (past.next && !past.recent))) {
+      add(past.today
+        ? { act: 'udemy', label: '過去問1回分 + Udemyの解説', sub: `今日1回分を終えました(${past.done}/${past.total}回)`, done: true }
+        : {
+          act: 'udemy', label: `過去問(${past.next.exam})→ Udemy §${past.next.no} の解説`,
+          sub: 'IPAの過去問題80問を150分で解き、間違えた問題の解説動画を見る。終えたら講座の進み具合にチェック', mins: 180,
+        });
+    }
+    // 模試: Udemy講座を使う場合は、過去問をすべて終えてから(本物の過去問を優先する)
+    if (stage === 'A' && phaseIdx === 2 && (!mockRecent || acts.mock) && (!past || !past.next)) {
       add({ act: 'mock', label: '模擬試験(科目A形式・80問)', sub: '3日に1回。本番と同じ150分で時間配分を練習', done: !!acts.mock, mins: 150 });
     }
     if (stage === 'B' || (stage === 'A' && phaseIdx === 2)) {
       if (nextCase) add({ act: 'case', id: nextCase.id, label: `午後演習: ${nextCase.title}`, sub: '長文から根拠を拾い、記述は字数内でまとめる', done: !!acts.case, mins: 30 });
+    }
+    if (stage === 'B' && udemy && (!Order.watched()[24] || Order.sameDay(Order.watched()[24]))) {
+      const w24 = Order.watched()[24];
+      add({ act: 'udemy', label: 'Udemy §24「午後問題対策用 小問題」', sub: w24 ? '見終えました' : '記述式の答え方に慣れる。見終えたら講座の進み具合にチェック', done: !!w24, mins: 60 });
     }
     if (stage === 'B') {
       add({ act: 'trace', label: 'アルゴリズムトレース 1題', sub: '変数の変化を1行ずつ正確に追う', done: !!acts.trace, mins: 10 });
@@ -182,11 +208,11 @@ const Plan = (() => {
       unitsTotal, unitsDone, unitsRemaining, nextUnit,
       partsDone, casesDone, dueCount,
       paceLabel, recommended, onTrack, diff, expectedUnits,
-      tasks, nextTask, apply, jp,
+      tasks, nextTask, apply, jp, udemy,
     };
   }
 
   function markApplied(key, v) { Store.setPref(key, v); }
 
-  return { compute, examDate, examBDate, setExamDate, setExamBDate, markApplied, DEFAULT_A, REVIEW_LIMIT, IPA_URL, SCHEDULES };
+  return { compute, examDate, examBDate, setExamDate, setExamBDate, markApplied, DEFAULT_A, REVIEW_LIMIT, IPA_URL, PAST_URL, SCHEDULES };
 })();

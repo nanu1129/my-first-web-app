@@ -91,3 +91,13 @@ test('用語は重複がなく、午後演習の設問がそろっている', ()
     }
   }
 });
+
+test('Udemy講座の対応表: 全ユニットがちょうど1回ずつ、セクションは1〜24の順', () => {
+  const ids = AP.udemy.sections.flatMap((s) => s.units || []);
+  const all = units.map((u) => u.id);
+  assert.equal(ids.length, all.length, '対応表のユニット数が全ユニット数と違う');
+  assert.equal(new Set(ids).size, ids.length, '対応表に重複したユニットがある');
+  const missing = all.filter((id) => !ids.includes(id));
+  assert.equal(missing.length, 0, `対応表にないユニット: ${missing}`);
+  assert.equal(AP.udemy.sections.map((s) => s.no).join(','), Array.from({ length: 24 }, (_, i) => i + 1).join(','));
+});
