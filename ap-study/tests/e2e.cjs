@@ -90,7 +90,7 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await page.waitForSelector('.today-card');
     ok(await page.locator('.intro-card').count() === 1, `${tag}: はじめての人には使い方を表示`);
     const tasks = await page.locator('.task-row .tr-label').allInnerTexts();
-    ok(tasks[0].startsWith('教材を') && tasks.some((t) => t.startsWith('用語カード 10枚')), `${tag}: 最初のメニューは「教材」と「用語カード10枚」`, tasks);
+    ok(tasks[0].startsWith('Udemy §2「情報システム開発」') && tasks.some((t) => t.startsWith('用語カード 10枚')), `${tag}: 最初のメニューは「Udemy §2 → 一問一答」と「用語カード10枚」`, tasks);
     ok(await page.locator('details.part-card[open]').count() === 1 && await page.locator('.unit-row.is-next').count() === 1,
       `${tag}: 学習中のパートだけ開き、「次はここ」は1か所だけ`);
     if (tag === 'pc') await page.screenshot({ path: path.join(OUT, `${tag}-home-new.png`), fullPage: true });
@@ -111,7 +111,7 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok((await nextBtn.innerText()).startsWith('次のユニットへ'), `${tag}: 合格すると「次のユニットへ」が主ボタンになる`);
     await nextBtn.click();
     await page.waitForSelector('#view-lesson .lesson-title');
-    ok((await page.locator('#view-lesson .lesson-title').innerText()) === '論理演算・シフト演算と誤り検出', `${tag}: 次のユニットの教材が開く`);
+    ok((await page.locator('#view-lesson .lesson-title').innerText()) === '設計手法とオブジェクト指向', `${tag}: 講座の順で次のユニットの教材が開く`);
     await page.evaluate(() => App.goHome());
     const unitRow = await page.locator('.task-row[data-act="unit"] .tr-sub').innerText();
     ok(/今日 1/.test(unitRow) || await page.locator('.task-row[data-act="unit"].is-done').count() === 1, `${tag}: 今日進めたユニット数がメニューに反映`, unitRow);
@@ -238,6 +238,59 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
   {
     const { ctx, page } = await at('2027-03-16T09:00:00');
     ok((await page.locator('.today-card').innerText()).includes('試験日を過ぎました'), '科目Bの日を過ぎたら終了の案内');
+    await ctx.close();
+  }
+
+  // ---- D. Udemy講座の順序: 並び順の切替・対応表・過去問解説のタスク ----
+  {
+    const { ctx, page } = await newPage(browser, { width: 390, height: 844 }, null, errors, 'udemy');
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    const partsOrder = await page.locator('details.part-card').evaluateAll((ds) => ds.map((d) => d.dataset.part));
+    ok(partsOrder.join(',') === 'dev,management,basics,computer,database,network,security,strategy', 'Udemy順: 学習マップは講座の順', partsOrder);
+    const basicsUnits = await page.locator('#part-basics .unit-row').evaluateAll((rs) => rs.map((r) => r.dataset.unit));
+    ok(basicsUnits.join(',') === 'basics-3,basics-1,basics-2,basics-5,basics-4', 'Udemy順: 基礎理論はアルゴリズム → 基礎理論 → 応用数学の順', basicsUnits);
+    ok((await page.locator('#part-dev .udemy-tag').first().innerText()) === 'Udemy §2', 'ユニットに対応するセクションを表示');
+    await page.evaluate(() => Course.openLesson('basics-1'));
+    ok((await page.locator('.udemy-banner').innerText()).includes('セクション7「基礎理論」'), '教材の冒頭に対応するセクションを表示');
+    await page.evaluate(() => App.goHome());
+    await page.click('#udemy-progress summary');
+    await page.check('#udemy-progress input[data-sec="2"]');
+    ok(await page.locator('#udemy-progress[open] .uc-item.is-watched').count() === 1 && (await page.locator('.uc-count').innerText()).includes('1/24'),
+      '視聴チェックが記録され、カードは開いたまま');
+    ok(await overflow(page) <= 0, 'Udemy講座の進み具合で横はみ出しなし');
+    await page.selectOption('#order-mode', 'site');
+    ok((await page.locator('.task-row[data-act="unit"] .tr-label').innerText()).startsWith('教材を') && await page.locator('#udemy-progress').count() === 0,
+      'サイト標準に戻すと元の表示');
+    ok(await page.locator('details.part-card').first().getAttribute('data-part') === 'basics', 'サイト標準: 基礎理論から');
+    await ctx.close();
+  }
+  {
+    // 演習期: 本物の過去問 → Udemyの解説を3日に1回
+    const { ctx, page } = await at('2026-12-10T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-06' });
+    const label = () => page.locator('.task-row[data-act="udemy"] .tr-label').innerText();
+    ok((await label()).includes('令和7年秋') && (await label()).includes('§14'), '演習期: 過去問(令和7年秋)→ Udemy §14 の解説');
+    await page.locator('.task-row[data-act="udemy"]').click();
+    ok(await page.locator('#udemy-progress[open]').count() === 1, 'タスクを押すと講座の進み具合が開く');
+    await page.check('#udemy-progress input[data-sec="14"]');
+    ok(await page.locator('.task-row[data-act="udemy"].is-done').count() === 1, 'チェックすると今日のタスクに完了の印');
+    await page.clock.setFixedTime(new Date('2026-12-11T09:00:00'));
+    await page.evaluate(() => App.goHome());
+    ok(await page.locator('.task-row[data-act="udemy"]').count() === 0, '翌日は過去問を休む(3日に1回)');
+    await page.clock.setFixedTime(new Date('2026-12-14T09:00:00'));
+    await page.evaluate(() => App.goHome());
+    ok((await label()).includes('§15'), '3日たつと次の過去問(§15)');
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await at('2027-01-20T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-06' });
+    const acts = await page.locator('.task-row').evaluateAll((r) => r.map((x) => x.dataset.act));
+    ok(acts.includes('udemy') && !acts.includes('mock'), '仕上げ期も、過去問が残っている間はサイトの模試より過去問を優先', acts);
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await at('2027-02-20T09:00:00');
+    ok((await page.locator('.task-row[data-act="udemy"] .tr-label').innerText()).includes('§24'), '科目B期: Udemy §24(午後問題対策用 小問題)');
     await ctx.close();
   }
 

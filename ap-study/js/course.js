@@ -33,6 +33,7 @@ const Course = (() => {
 
   // ---------- ホーム: 今日のメニュー → 学習マップ ----------
   const openParts = new Set(); // 利用者が開いたパート(画面を作り直しても開いたままにする)
+  let udemyOpen = false;       // Udemy講座の進み具合を開いているか
 
   function renderHome() {
     const p = Plan.compute();
@@ -58,10 +59,18 @@ const Course = (() => {
       <div class="map-head">
         <h2 class="map-title">学習マップ</h2>
         <span class="map-progress">ユニット <b>${doneUnits}/${allUnits}</b> ・ 本番レベル演習 <b>${clearedExams}/${AP.parts.length}</b></span>
+        ${AP.udemy ? `<label class="order-select"><span>並び順</span>
+          <select id="order-mode" aria-label="学習の並び順">
+            ${Object.entries(Order.MODES).map(([k, v]) => `<option value="${k}" ${Order.mode() === k ? 'selected' : ''}>${v}</option>`).join('')}
+          </select></label>` : ''}
       </div>
-      ${AP.parts.map((x) => renderPartCard(x, p.nextUnit, x.id === activePart || openParts.has(x.id))).join('')}`;
+      ${Order.active() ? renderUdemyCard() : ''}
+      ${Order.parts().map((x) => renderPartCard(x, p.nextUnit, x.id === activePart || openParts.has(x.id))).join('')}`;
 
     // イベント
+    $home().querySelectorAll('.uc-unit').forEach((b) => {
+      b.addEventListener('click', () => openLesson(b.dataset.unit));
+    });
     $home().querySelectorAll('.unit-row').forEach((row) => {
       row.addEventListener('click', () => openLesson(row.dataset.unit));
     });
@@ -73,6 +82,15 @@ const Course = (() => {
         if (d.open) openParts.add(d.dataset.part); else openParts.delete(d.dataset.part);
       });
     });
+    const orderSel = document.getElementById('order-mode');
+    if (orderSel) orderSel.addEventListener('change', () => { Order.setMode(orderSel.value); renderHome(); });
+    const uc = document.getElementById('udemy-progress');
+    if (uc) {
+      uc.addEventListener('toggle', () => { udemyOpen = uc.open; });
+      uc.querySelectorAll('input[data-sec]').forEach((cb) => {
+        cb.addEventListener('change', () => { udemyOpen = true; Order.setWatched(Number(cb.dataset.sec), cb.checked); renderHome(); });
+      });
+    }
     const goalSel = document.getElementById('daily-goal');
     if (goalSel) goalSel.addEventListener('change', () => {
       Store.setGoal(Number(goalSel.value));
@@ -111,6 +129,19 @@ const Course = (() => {
 
   // はじめての人向けの使い方(学習を始めると表示しない)
   function renderIntro() {
+    if (Order.active()) {
+      return `
+      <div class="intro-card">
+        <h2>Udemy講座と一緒に進める方法</h2>
+        <ol class="intro-steps">
+          <li><b>Udemyの講義</b>を見る<span>今日のメニューに、見るセクションが出ます</span></li>
+          <li><b>要点まとめ</b>と例題を確認<span>教材は流し読みでOK(図解とハンズオンは役立ちます)</span></li>
+          <li><b>一問一答</b>で確かめる<span>80%以上でユニット完了</span></li>
+          <li><b>復習</b>は自動で出題<span>忘れかけた頃に出るので、記憶に残る</span></li>
+        </ol>
+        <p class="intro-note">ユニットの順序は「${esc(AP.udemy.title)}」に合わせています(学習マップの「並び順」でサイト標準にも戻せます)。後半は、本物の過去問を解いてからUdemyの過去問解説を見ます。</p>
+      </div>`;
+    }
     return `
       <div class="intro-card">
         <h2>マナビットの進め方</h2>
@@ -122,6 +153,42 @@ const Course = (() => {
         </ol>
         <p class="intro-note">毎日「今日のメニュー」を上から順にこなすだけで、試験日から逆算した計画どおりに進みます。</p>
       </div>`;
+  }
+
+  // ---------- Udemy講座の進み具合(セクションの視聴チェックと、サイトのユニットとの対応) ----------
+  function renderUdemyCard() {
+    const w = Order.watched();
+    const secs = AP.udemy.sections;
+    const watchedN = secs.filter((s) => w[s.no]).length;
+    const rows = secs.map((s) => {
+      let meta = '';
+      if (s.units && s.units.length) {
+        const us = s.units.map((id) => findUnit(id)).filter(Boolean).map((f) => f.unit);
+        const done = us.filter((u) => Store.isUnitCleared(u.id)).length;
+        meta = `<span class="uc-units">${us.map((u) => `<button class="uc-unit ${Store.isUnitCleared(u.id) ? 'is-done' : ''}" data-unit="${u.id}">${esc(u.title)}</button>`).join('')}</span>
+          <span class="uc-prog ${done === us.length ? 'is-done' : ''}">一問一答 ${done}/${us.length}</span>`;
+      } else if (s.kind === 'past') {
+        meta = '<span class="uc-hint">過去問を解いてから解説を見る</span>';
+      } else if (s.kind === 'pm') {
+        meta = '<span class="uc-hint">科目B(旧午後)の記述対策</span>';
+      }
+      return `
+        <li class="uc-item ${w[s.no] ? 'is-watched' : ''}">
+          <label class="uc-check"><input type="checkbox" data-sec="${s.no}" ${w[s.no] ? 'checked' : ''}>
+            <span class="uc-name"><b>§${s.no}</b> ${esc(s.title)}</span></label>
+          ${meta}
+        </li>`;
+    }).join('');
+    return `
+      <details class="udemy-card" id="udemy-progress" ${udemyOpen ? 'open' : ''}>
+        <summary>
+          <span class="uc-title">Udemy講座の進み具合</span>
+          <span class="uc-count">視聴 ${watchedN}/${secs.length}セクション</span>
+        </summary>
+        <p class="uc-note">「${esc(AP.udemy.title)}」(全${secs.length}セクション・${esc(AP.udemy.length)})と、このサイトのユニットの対応です。
+          見終えたセクションにチェックしましょう。過去問解説(§14〜23)は、<a href="${Plan.PAST_URL}" target="_blank" rel="noopener">IPAの過去問題</a>を本番と同じ150分で解いてから見ると効果的です。</p>
+        <ol class="uc-list">${rows}</ol>
+      </details>`;
   }
 
   // ---------- 今日のメニューと学習計画(試験日から逆算) ----------
@@ -309,6 +376,12 @@ const Course = (() => {
     if (act === 'case') { App.navigate('practice'); return id ? Afternoon.start(id) : Afternoon.renderMenu(); }
     if (act === 'cards') return App.navigate('cards');
     if (act === 'apply') return window.open(Plan.IPA_URL, '_blank', 'noopener');
+    if (act === 'udemy') {
+      udemyOpen = true;
+      renderHome();
+      const el = document.getElementById('udemy-progress');
+      if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
+    }
   }
 
   // ---------- 毎日の記録(連続学習・今日の解答数) ----------
@@ -338,7 +411,7 @@ const Course = (() => {
 
   // パートのカード(折りたたみ)。いま学習中のパートだけ最初から開く
   function renderPartCard(part, globalNext, open) {
-    const units = lessonsOf(part.id);
+    const units = Order.unitsOfPart(part.id);
     const prog = partProgress(part.id);
     const pct = prog.total ? Math.round((prog.done / prog.total) * 100) : 0;
     const nextUnit = globalNext && units.some((u) => u.id === globalNext.id) ? globalNext : null;
@@ -352,7 +425,7 @@ const Course = (() => {
           <span class="unit-badge">${cleared ? IC.check : i + 1}</span>
           <span class="unit-row-main">
             <span class="unit-row-title">${esc(u.title)}</span><br>
-            <span class="unit-row-sub">教材 約${u.minutes}分 + 一問一答${u.checks.length}問${
+            <span class="unit-row-sub">${Order.active() && Order.sectionOf(u.id) ? `<span class="udemy-tag">Udemy §${Order.sectionOf(u.id).no}</span>` : ''}教材 約${u.minutes}分 + 一問一答${u.checks.length}問${
               st && !cleared ? ` ・ 前回 ${st.best}/${st.total}` : ''}</span>
           </span>
           <span class="unit-row-cta">${cleared ? '完了・復習する' : isNext ? '学習する →' : ''}</span>
@@ -437,6 +510,11 @@ const Course = (() => {
         <h2 class="lesson-title">${esc(unit.title)}</h2>
         <p class="lesson-meta">読了目安 約${unit.minutes}分 ・ 確認テスト ${unit.checks.length}問(80%で合格)${cleared ? ' ・ 完了済み' : ''}</p>
         ${unit.story ? `<div class="story-box"><p><span class="sb-label">たとえると…</span>${esc(unit.story)}</p></div>` : ''}
+        ${Order.active() && Order.sectionOf(unit.id) ? `
+        <div class="udemy-banner">
+          <span class="udemy-tag">Udemy §${Order.sectionOf(unit.id).no}</span>
+          <span>講座のセクション${Order.sectionOf(unit.id).no}「${esc(Order.sectionOf(unit.id).title)}」に対応しています。講義を見たあとなら、ここは<b>図解・例題・要点まとめ</b>を確認して、一問一答へ進めばOKです。</span>
+        </div>` : ''}
         <nav class="lesson-toc" aria-label="このユニットの目次">
           <p class="toc-label">このユニットで学ぶこと</p>
           <ol>${unit.sections.map((sec, i) => `<li><button data-sec="${i}">${esc(sec.h)}</button></li>`).join('')}</ol>
@@ -524,8 +602,15 @@ const Course = (() => {
         : `合格ラインは${Math.round(AP.PASS_RATE * 100)}%。間違えた問題の解説と教材を見直して、もう一度挑戦しましょう。`),
       nextActions: (r) => {
         if (!r.pass) return [{ label: '教材を読み直す', primary: true, fn: () => openLesson(unit.id) }];
-        const next = AP.lessons.flatMap((l) => l.units).find((u) => !Store.isUnitCleared(u.id));
-        return next ? [{ label: `次のユニットへ: ${next.title} →`, primary: true, fn: () => openLesson(next.id) }] : [];
+        const next = Order.units().find((u) => !Store.isUnitCleared(u.id));
+        if (!next) return [];
+        const now = Order.active() ? Order.sectionOf(unit.id) : null;
+        const sec = Order.active() ? Order.sectionOf(next.id) : null;
+        // 講座の次のセクションに進む場合は、先に講義を見るよう案内する
+        const label = sec && (!now || sec.no !== now.no)
+          ? `次へ: Udemy §${sec.no}「${sec.title}」→ ${next.title}`
+          : `次のユニットへ: ${next.title} →`;
+        return [{ label, primary: true, fn: () => openLesson(next.id) }];
       },
       onFinish: (r) => {
         Store.setUnitResult(unit.id, r.score, r.total, r.pass);
