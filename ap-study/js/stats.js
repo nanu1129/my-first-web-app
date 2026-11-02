@@ -35,6 +35,51 @@ const Stats = (() => {
     return 'まだ伸びしろたっぷり。学習マップを順番に進めていこう。';
   }
 
+  // 本物の過去問の記録: 直近3回の平均など
+  function pastSummary() {
+    const recs = Store.pastExams();
+    if (!recs.length) return null;
+    const recent = recs.slice(-3);
+    const avg = Math.round(recent.reduce((n, r) => n + r.score / r.total, 0) / recent.length * 100);
+    return { recs, recent, avg };
+  }
+  const examName = (id) => ((AP.pastExamList || []).find((e) => e.id === id) || { name: id }).name;
+
+  function pastPanel() {
+    const sum = pastSummary();
+    const done = new Set(Store.pastExams().map((r) => r.id));
+    const firstTodo = (AP.pastExamList || []).find((e) => !done.has(e.id));
+    const verdict = !sum ? '' : sum.avg >= 70 ? '合格ラインを余裕をもって超えています。この調子で本番まで維持しよう。'
+      : sum.avg >= 60 ? '合格ライン(60%)を超えています。間違えた問題の解説を見直して、安定させよう。'
+        : `合格ラインまであと${Math.ceil(0.6 * 80 - sum.avg * 0.8)}問ほど。間違えた問題の分野を、弱点ドリルと教材で補強しよう。`;
+    return `
+      <div class="panel" id="past-panel">
+        <h3>本物の過去問(IPA)の得点</h3>
+        <p class="panel-note">IPAが公開している科目A(旧午前)の過去問題を、本番と同じ150分で解いた結果を記録します。本物の過去問の得点は、実力のいちばん確かな目安です。
+          <a href="${Plan.PAST_URL}" target="_blank" rel="noopener">IPAの過去問題</a></p>
+        <form class="past-form" id="past-form">
+          <select id="past-id" aria-label="過去問の回">
+            ${(AP.pastExamList || []).map((e) => `<option value="${e.id}" ${firstTodo && firstTodo.id === e.id ? 'selected' : ''}>${esc(e.name)}${done.has(e.id) ? '(記録済み)' : ''}</option>`).join('')}
+          </select>
+          <label class="past-score"><input type="number" id="past-score" min="0" max="80" inputmode="numeric" placeholder="正解数" required> / 80問</label>
+          <button class="btn btn-primary" type="submit">記録する</button>
+        </form>
+        ${sum ? `
+          <div class="acc-bars past-bars">${sum.recs.map((r) => {
+            const pct = Math.round((r.score / r.total) * 100);
+            return `
+            <div class="acc-row past-row">
+              <span class="acc-name">${esc(examName(r.id))}</span>
+              <span class="acc-bar"><span class="acc-fill ${pct >= 60 ? 'is-good' : 'is-weak'}" style="width:${pct}%"></span><span class="acc-pass"></span></span>
+              <span class="acc-val"><b>${pct}%</b> <small>${r.score}/${r.total}</small></span>
+              <button class="past-del" data-del="${r.id}" aria-label="${esc(examName(r.id))}の記録を削除">×</button>
+            </div>`;
+          }).join('')}</div>
+          <p class="past-summary">直近${sum.recent.length}回の平均 <b class="${sum.avg >= 60 ? 'ok' : 'ng'}">${sum.avg}%</b>(合格ライン60%)<br><span>${verdict}</span></p>`
+          : '<p class="chart-empty">まだ記録がありません。12月ごろから、1回分(80問)ずつ解いて記録していきましょう。</p>'}
+      </div>`;
+  }
+
   function esc(s) {
     const div = document.createElement('div');
     div.textContent = s;
@@ -85,9 +130,14 @@ const Stats = (() => {
               <div class="meter-fill ${fc.score >= 60 ? 'is-pass' : ''}" style="width:${Math.min(100, fc.score)}%"></div>
               <div class="meter-mark" style="left:60%"><span>合格ライン 60</span></div>
             </div>
-            <p class="forecast-comment">${forecastComment(fc.score, totals.t)}</p>
+            <p class="forecast-comment">${pastSummary() ? 'この点数は、サイトで解いた問題の正答率からの推定です。下の「本物の過去問」の結果のほうを優先して判断しよう。' : forecastComment(fc.score, totals.t)}</p>
           </div>
         </div>
+        ${(() => {
+          const ps = pastSummary();
+          return ps ? `<p class="forecast-real"><span class="pill ${ps.avg >= 60 ? 'pill-ok' : 'pill-ng'}">本物の過去問</span>
+            直近${ps.recent.length}回の平均 <b>${ps.avg}点</b>。こちらのほうが実力に近い目安です。</p>` : '';
+        })()}
         <div class="forecast-parts">
           ${fc.parts.map((x) => `
             <div class="fp-row">
@@ -97,6 +147,8 @@ const Stats = (() => {
             </div>`).join('')}
         </div>
       </div>
+
+      ${pastPanel()}
 
       ${calendarPanel()}
 
@@ -212,6 +264,19 @@ const Stats = (() => {
         });
       });
     }
+    const pastForm = document.getElementById('past-form');
+    if (pastForm) pastForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const n = Number(document.getElementById('past-score').value);
+      if (!Number.isFinite(n) || n < 0 || n > 80) return;
+      Store.setPastExam(document.getElementById('past-id').value, Math.round(n), 80);
+      render();
+      const el = document.getElementById('past-panel');
+      if (el) el.scrollIntoView({ block: 'start' });
+    });
+    $view().querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
+      if (confirm(`${examName(b.dataset.del)} の記録を削除しますか?`)) { Store.removePastExam(b.dataset.del); render(); }
+    }));
     document.getElementById('backup-export').addEventListener('click', exportBackup);
     const fileInput = document.getElementById('backup-file');
     document.getElementById('backup-import').addEventListener('click', () => fileInput.click());

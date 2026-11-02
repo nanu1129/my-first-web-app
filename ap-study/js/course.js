@@ -87,6 +87,15 @@ const Course = (() => {
     const uc = document.getElementById('udemy-progress');
     if (uc) {
       uc.addEventListener('toggle', () => { udemyOpen = uc.open; });
+      uc.querySelectorAll('input[data-past]').forEach((inp) => {
+        inp.addEventListener('change', () => {
+          udemyOpen = true;
+          const v = inp.value.trim();
+          if (v === '') Store.removePastExam(inp.dataset.past);
+          else if (Number(v) >= 0 && Number(v) <= 80) Store.setPastExam(inp.dataset.past, Math.round(Number(v)), 80);
+          renderHome();
+        });
+      });
       uc.querySelectorAll('input[data-sec]').forEach((cb) => {
         cb.addEventListener('change', () => { udemyOpen = true; Order.setWatched(Number(cb.dataset.sec), cb.checked); renderHome(); });
       });
@@ -168,7 +177,9 @@ const Course = (() => {
         meta = `<span class="uc-units">${us.map((u) => `<button class="uc-unit ${Store.isUnitCleared(u.id) ? 'is-done' : ''}" data-unit="${u.id}">${esc(u.title)}</button>`).join('')}</span>
           <span class="uc-prog ${done === us.length ? 'is-done' : ''}">一問一答 ${done}/${us.length}</span>`;
       } else if (s.kind === 'past') {
-        meta = '<span class="uc-hint">過去問を解いてから解説を見る</span>';
+        const rec = Store.pastExams().find((r) => r.id === s.pastId);
+        meta = `<label class="uc-score">得点 <input type="number" min="0" max="80" inputmode="numeric" data-past="${s.pastId}" value="${rec ? rec.score : ''}" aria-label="${esc(s.exam)}の得点"> /80</label>
+          <span class="uc-hint">過去問を解いて得点を記録 → 解説を見たらチェック</span>`;
       } else if (s.kind === 'pm') {
         meta = '<span class="uc-hint">科目B(旧午後)の記述対策</span>';
       }

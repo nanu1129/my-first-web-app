@@ -174,7 +174,7 @@ const Plan = (() => {
         ? { act: 'udemy', label: '過去問1回分 + Udemyの解説', sub: `今日1回分を終えました(${past.done}/${past.total}回)`, done: true }
         : {
           act: 'udemy', label: `過去問(${past.next.exam})→ Udemy §${past.next.no} の解説`,
-          sub: 'IPAの過去問題80問を150分で解き、間違えた問題の解説動画を見る。終えたら講座の進み具合にチェック', mins: 180,
+          sub: 'IPAの過去問題80問を150分で解き、得点を記録してから、間違えた問題の解説動画を見る', mins: 180,
         });
     }
     // 模試: Udemy講座を使う場合は、過去問をすべて終えてから(本物の過去問を優先する)

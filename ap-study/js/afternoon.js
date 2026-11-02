@@ -95,22 +95,28 @@ const Afternoon = (() => {
     const q = cs.questions[qIdx];
     const isWrite = q.type === 'write';
     const done = answers[qIdx] !== undefined;
+    // 広い画面では本文を左に固定して表示する。描き直しても、本文を読んでいた位置はそのままにする
+    const prevPaper = $view().querySelector('.case-paper');
+    const paperScroll = prevPaper ? prevPaper.scrollTop : 0;
     $view().innerHTML = `
-      <div class="crumb"><button data-back>午後演習</button> › ${esc(cs.title)}</div>
+      <div class="case-layout">
+      <div class="crumb case-crumb"><button data-back>午後演習</button> › ${esc(cs.title)}</div>
       <div class="case-paper">
         <span class="lesson-part-tag">${esc(cs.field)}</span>
         <h2 class="lesson-title" style="font-size:19px">${esc(cs.title)}</h2>
         <p class="case-intro">${esc(cs.intro)}</p>
         ${cs.text.map(paragraph).join('')}
       </div>
-      <div class="q-card" style="margin-top:16px">
+      <div class="q-card case-q">
         <p class="q-source">設問 ${qIdx + 1} / ${cs.questions.length}${isWrite ? ' ・ <span class="pill pill-accent">記述式</span>' : ''}</p>
         <p class="q-text">${esc(q.q)}</p>
         ${isWrite ? writeBody(q, done) : choiceBody(q, done)}
         <div id="case-feedback">${feedback || ''}</div>
         ${done ? `<div class="quiz-next"><button class="btn btn-primary" id="case-next">
           ${qIdx + 1 >= cs.questions.length ? '結果を見る' : '次の設問へ'}</button></div>` : ''}
+      </div>
       </div>`;
+    $view().querySelector('.case-paper').scrollTop = paperScroll;
 
     $view().querySelector('[data-back]').addEventListener('click', renderMenu);
     if (done) {
@@ -120,7 +126,11 @@ const Afternoon = (() => {
         draft = '';
         revealed = false;
         if (qIdx >= cs.questions.length) finish();
-        else { paint(); window.scrollTo(0, document.querySelector('.q-card').offsetTop - 80); }
+        else {
+          paint();
+          const top = document.querySelector('.case-q').getBoundingClientRect().top;
+          if (top < 0 || top > window.innerHeight * 0.6) window.scrollTo(0, window.scrollY + top - 90);
+        }
       });
       btn.focus();
       return;

@@ -125,3 +125,23 @@ test('旧データ(v1)は移行され、acts と cardSrs の器が用意され�
   assert.equal(Store.actsToday().review, 1);
   assert.equal(Store.cardState('none'), null);
 });
+
+test('過去問の得点: マージは記録の新しい方を採用し、削除も別の端末に伝わる', () => {
+  const { Store } = freshStore();
+  const now = Date.now();
+  Store.setPastExam('r07a', 46);
+  Store.setPastExam('r07s', 40);
+  // スマホでは r07a を後から記録し直し、r06a も記録していた
+  const phone = plain(Store.snapshot());
+  phone.deviceId = 'phone';
+  phone.pastExams = { r07a: { score: 52, total: 80, at: now + 60000 }, r06a: { score: 55, total: 80, at: now - 60000 } };
+  Store.applyState(Store.mergeStates(Store.snapshot(), phone));
+  assert.deepEqual(plain(Store.pastExams()).map((r) => `${r.id}:${r.score}`).sort(), ['r06a:55', 'r07a:52', 'r07s:40']);
+  // PCで r07s を削除 → 古い記録をもつ端末と何度マージしても復活しない
+  Store.removePastExam('r07s');
+  const old = plain(phone);
+  old.pastExams = { r07s: { score: 40, total: 80, at: now - 120000 } };
+  const m1 = Store.mergeStates(Store.snapshot(), old);
+  Store.applyState(Store.mergeStates(m1, old));
+  assert.deepEqual(plain(Store.pastExams()).map((r) => r.id).sort(), ['r06a', 'r07a']);
+});

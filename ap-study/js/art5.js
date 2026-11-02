@@ -575,4 +575,128 @@
       frames: [{ svg: svg(214, s), cap: 'アンゾフの成長マトリクス: 「製品」と「市場」がそれぞれ今のままか新しいかで、成長の方向を4つに分ける。右下(多角化)ほどリスクが大きい。' }],
     };
   }
+
+  // ---- アムダールの法則(アニメ): コアを増やしても、並列化できない部分は縮まない ----
+  {
+    const X0 = 104, W = 400, H = 30;
+    const sx = (t) => X0 + t * W;
+    const rowLabel = (y, t) => txt(X0 - 12, y + H / 2, t, { fs: 12, w: 900, col: C.ink, a: 'end' });
+    const serial = (y) => box(sx(0), y, 0.2 * W, H, '0.2', { fs: 12, fill: C.goldSoft, stroke: C.gold, col: C.gold, r: 4 });
+    const ghost = (y) => box(sx(0), y - 4, W, H + 8, '', { fill: 'none', stroke: C.ink3, dash: true, r: 6 }) +
+      txt(sx(1) - 6, y - 12, 'コア1つのときの時間', { fs: 10, w: 700, col: C.ink3, a: 'end' });
+    const rows = [
+      (y) => rowLabel(y, 'コア1つ') + serial(y) +
+        box(sx(0.2), y, 0.8 * W, H, '並列化できる部分 0.8', { fs: 12, fill: C.accSoft, stroke: C.acc, col: C.acc, r: 4 }),
+      (y) => {
+        let t = ghost(y) + rowLabel(y, 'コア4つ') + serial(y);
+        for (let i = 0; i < 4; i++) t += `<rect x="${sx(0.2)}" y="${y + i * 7.75}" width="${0.2 * W}" height="6.5" rx="2" fill="${C.acc}" opacity="0.85"/>`;
+        return t + txt(sx(0.4) + 10, y + H / 2, '合計 0.4 → 速さ 2.5倍', { fs: 12, w: 900, col: C.ok, a: 'start' });
+      },
+      (y) => {
+        let t = ghost(y) + rowLabel(y, 'コアを無限に') + serial(y);
+        for (let i = 0; i < 8; i++) t += `<rect x="${sx(0.2)}" y="${y + i * 3.9}" width="3" height="3" fill="${C.acc}"/>`;
+        return t + txt(sx(0.2) + 14, y + H / 2, '合計 0.2 に近づく → 最大でも 5倍', { fs: 12, w: 900, col: C.ng, a: 'start' });
+      },
+    ];
+    const legend = `<rect x="${X0}" y="8" width="12" height="12" rx="2" fill="${C.goldSoft}" stroke="${C.gold}"/>` +
+      txt(X0 + 18, 14, '並列化できない部分', { fs: 11, w: 700, col: C.ink2, a: 'start' }) +
+      `<rect x="${X0 + 150}" y="8" width="12" height="12" rx="2" fill="${C.accSoft}" stroke="${C.acc}"/>` +
+      txt(X0 + 168, 14, '並列化できる部分(コアで分けて同時に進める)', { fs: 11, w: 700, col: C.ink2, a: 'start' });
+    const Y = [42, 108, 168];
+    const frame = (k) => svg(208, legend + rows.slice(0, k + 1).map((r, i) => r(Y[i])).join(''));
+    AP.art['amdahl'] = {
+      frames: [
+        { svg: frame(0), cap: 'コア1つで処理すると、並列化できない部分が0.2、並列化できる部分が0.8(全体の時間を1とする)。' },
+        { svg: frame(1), cap: 'コアを4つにすると、並列化できる0.8を4つに分けて同時に進めるので0.2で済む。合計0.4で、速さは 1 ÷ 0.4 = 2.5倍。4倍にはならない。' },
+        { svg: frame(2), cap: 'コアをいくら増やしても、並列化できない0.2は縮まない。速さは最大でも 1 ÷ 0.2 = 5倍。これがアムダールの法則。' },
+      ],
+    };
+  }
+
+  // ---- CSMA/CD と CSMA/CA(アニメ) ----
+  {
+    const pc = (x, y, t) => box(x, y, 84, 38, t, { fs: 12.5 });
+    const burst = (cx, cy, r1, r2) => {
+      const pts = [];
+      for (let i = 0; i < 16; i++) {
+        const r = i % 2 ? r2 : r1, a = (Math.PI * 2 * i) / 16;
+        pts.push(`${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`);
+      }
+      return `<polygon points="${pts.join(' ')}" fill="${C.ngSoft}" stroke="${C.ng}" stroke-width="1.5"/>`;
+    };
+    const steps = (list) => list.map((t, i) => txt(40, 170 + i * 20, t, { fs: 11.5, w: 700, col: C.ink2, a: 'start' })).join('');
+    // 有線: 送信中に衝突を検知したら、待って送り直す
+    let cd = txt(280, 16, 'CSMA/CD(有線LAN): 衝突を「検知」する', { fs: 13, w: 900, col: C.ink });
+    cd += line(30, 120, 530, 120, C.ink3, { sw: 4 });
+    cd += txt(530, 136, 'ケーブル(共有)', { fs: 10.5, w: 700, col: C.ink3, a: 'end' });
+    cd += pc(58, 42, 'PC A') + line(100, 80, 100, 118, C.ink3) + pc(418, 42, 'PC B') + line(460, 80, 460, 118, C.ink3);
+    cd += arrow(104, 104, 246, 104, { col: C.acc, sw: 2.5 }) + arrow(456, 104, 314, 104, { col: C.gold, sw: 2.5 });
+    cd += burst(280, 100, 32, 19) + txt(280, 100, '衝突!', { fs: 12, w: 900, col: C.ng });
+    cd += steps(['① ケーブルが空いているか確かめてから送信する', '② 送信中に衝突を検知したら、送信をやめる', '③ それぞれランダムな時間待ってから送り直す']);
+    // 無線: 待ってから送り、ACKで成功を確かめる
+    let ca = txt(280, 16, 'CSMA/CA(無線LAN): 衝突を「避ける」', { fs: 13, w: 900, col: C.ink });
+    ca += pc(40, 70, 'PC A') + box(370, 64, 150, 50, 'アクセスポイント', { fs: 12.5, fill: C.accSoft, stroke: C.acc, col: C.acc });
+    ca += txt(82, 50, '⏳ 少し待つ', { fs: 11.5, w: 900, col: C.gold });
+    ca += arrow(126, 80, 366, 80, { col: C.acc, sw: 2.5, label: 'データ', dy: -10 });
+    ca += arrow(366, 102, 126, 102, { col: C.ok, sw: 2.5, dash: true, label: 'ACK(届いたよ)', dy: 14 });
+    ca += steps(['① 電波が空いていても、すぐには送らずランダムな時間待つ', '② 待ってから送信する(無線は送信中に衝突を検知しにくい)', '③ ACKが返ってきたら成功。返ってこなければ送り直す']);
+    AP.art['csma'] = {
+      frames: [
+        { svg: svg(236, cd), cap: '有線LANのCSMA/CD: 送信中に衝突を検知(Collision Detection)したら、ランダムな時間待って送り直す。' },
+        { svg: svg(236, ca), cap: '無線LANのCSMA/CA: 衝突を避ける(Collision Avoidance)ため、待ってから送信し、ACKで届いたことを確かめる。' },
+      ],
+    };
+  }
+
+  // ---- サプライチェーン攻撃 ----
+  {
+    let s = '';
+    s += box(10, 84, 86, 44, '攻撃者', { fs: 13, fill: C.ngSoft, stroke: C.ng, col: C.ng });
+    s += box(150, 14, 150, 50, '委託先・取引先\n(守りが弱い)', { fs: 12, fill: C.goldSoft, stroke: C.gold, col: C.gold });
+    s += box(150, 148, 150, 50, 'ソフトの更新・部品\n(ライブラリなど)', { fs: 12, fill: C.goldSoft, stroke: C.gold, col: C.gold });
+    s += box(412, 76, 138, 60, '本来の標的\n(守りが固い)', { fs: 12.5, fill: C.accSoft, stroke: C.acc, col: C.acc });
+    s += line(396, 60, 396, 152, C.ink, { sw: 5 }) + txt(396, 48, '防御', { fs: 11, w: 900, col: C.ink });
+    s += arrow(98, 106, 384, 106, { col: C.ng, dash: true, label: '直接はねらいにくい', dy: -10 });
+    s += txt(386, 106, '✕', { fs: 16, w: 900, col: C.ng });
+    s += arrow(70, 82, 146, 46, { col: C.ng }) + arrow(70, 130, 146, 168, { col: C.ng });
+    s += arrow(302, 38, 470, 72, { col: C.ng, sw: 2.5 }) + arrow(302, 174, 470, 140, { col: C.ng, sw: 2.5 });
+    s += txt(468, 168, '信頼されている経路に', { fs: 11, w: 700, col: C.ng }) + txt(468, 184, 'まぎれて入り込む', { fs: 11, w: 700, col: C.ng });
+    s += box(10, 214, 540, 34, 'SBOM(ソフトウェア部品表)があれば、危ない部品がどの製品に入っているかすぐ分かる', { fs: 12, fill: C.okSoft, stroke: C.ok, col: C.ok });
+    AP.art['supply-chain'] = {
+      frames: [{ svg: svg(256, s), cap: 'サプライチェーン攻撃: 守りの固い標的を直接ねらわず、守りの弱い委託先・取引先や、ソフトの更新・部品にまぎれ込んで入り込む。' }],
+    };
+  }
+
+  // ---- フレックスタイム制と裁量労働制(アニメ) ----
+  {
+    const T0 = 6, T1 = 22, X0 = 92, X1 = 540;
+    const hx = (h) => X0 + ((h - T0) / (T1 - T0)) * (X1 - X0);
+    let ax = '';
+    [6, 8, 10, 12, 14, 16, 18, 20, 22].forEach((h) => {
+      ax += line(hx(h), 44, hx(h), 196, C.line, { sw: 1 }) + txt(hx(h), 206, `${h}時`, { fs: 10, w: 700, col: C.ink3 });
+    });
+    // フレックス
+    let fx = txt(280, 14, 'フレックスタイム制: 始業・終業の時刻を自分で決める', { fs: 13, w: 900, col: C.ink }) + ax;
+    fx += box(hx(7), 32, hx(10) - hx(7), 22, 'フレキシブル', { fs: 10.5, fill: C.s2, stroke: C.line, col: C.ink2, r: 4 });
+    fx += box(hx(10), 32, hx(15) - hx(10), 22, 'コアタイム(必ず働く)', { fs: 11, fill: C.goldSoft, stroke: C.gold, col: C.gold, r: 4 });
+    fx += box(hx(15), 32, hx(20) - hx(15), 22, 'フレキシブル', { fs: 10.5, fill: C.s2, stroke: C.line, col: C.ink2, r: 4 });
+    [['Aさん', 7, 16, '7時〜16時'], ['Bさん', 10, 19, '10時〜19時'], ['Cさん', 8.5, 17.5, '8時半〜17時半']].forEach(([n, a, b, t], i) => {
+      const y = 74 + i * 38;
+      fx += txt(X0 - 10, y + 12, n, { fs: 12, w: 900, col: C.ink, a: 'end' });
+      fx += box(hx(a), y, hx(b) - hx(a), 24, t, { fs: 11, fill: C.accSoft, stroke: C.acc, col: C.acc, r: 5 });
+    });
+    // 裁量労働
+    let dx = txt(280, 14, '裁量労働制: 決めた時間だけ働いたと「みなす」', { fs: 13, w: 900, col: C.ink });
+    const bar = (y, label, hours, col, soft) => txt(110, y + 15, label, { fs: 12, w: 900, col: C.ink, a: 'end' }) +
+      box(124, y, hours * 24, 30, `実際は ${hours}時間`, { fs: 12, fill: soft, stroke: col, col, r: 5 });
+    dx += bar(52, 'ある日', 6, C.acc, C.accSoft) + bar(110, '別の日', 10, C.gold, C.goldSoft);
+    dx += line(124 + 8 * 24, 40, 124 + 8 * 24, 152, C.ok, { sw: 2, dash: true }) + txt(124 + 8 * 24, 164, '8時間', { fs: 11, w: 900, col: C.ok });
+    dx += box(40, 180, 480, 32, 'どちらの日も「8時間働いた」とみなす(研究開発・システム設計などの業務)', { fs: 12, fill: C.okSoft, stroke: C.ok, col: C.ok });
+    AP.art['work-style'] = {
+      frames: [
+        { svg: svg(216, fx), cap: 'フレックスタイム制: 1か月などの期間の総労働時間を守れば、毎日の始業・終業の時刻は自分で決められる。コアタイムを設けた場合は、その時間帯は必ず働く。' },
+        { svg: svg(220, dx), cap: '裁量労働制: 仕事の進め方を本人に任せる業務で、実際に働いた時間にかかわらず、あらかじめ決めた時間働いたものとみなす。' },
+      ],
+    };
+  }
 })();

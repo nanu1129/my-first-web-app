@@ -970,7 +970,21 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
   box-shadow: var(--shadow); padding: 22px clamp(16px, 3.5vw, 30px);
   max-width: var(--content-max); margin: 0 auto;
 }
-.case-paper + .q-card { max-width: var(--content-max); margin-left: auto; margin-right: auto; }
+.case-paper + .q-card { max-width: var(--content-max); margin-left: auto; margin-right: auto; margin-top: 16px; }
+/* 広い画面: 本文(左・固定)と設問(右)を並べて、行き来せずに解けるようにする */
+@media (min-width: 1100px) {
+  .case-layout {
+    --case-w: min(1240px, calc(100vw - 64px));
+    width: var(--case-w); margin-left: calc((100% - var(--case-w)) / 2);
+    display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 22px; align-items: start;
+  }
+  .case-layout .case-paper {
+    max-width: none; margin: 0; position: sticky; top: 76px;
+    max-height: calc(100vh - 96px); overflow-y: auto; overscroll-behavior: contain;
+  }
+  .case-layout .case-paper + .q-card { max-width: none; margin: 0; }
+  .case-layout .case-crumb { grid-column: 1 / -1; margin-bottom: -8px; }
+}
 .case-intro { font-size: 13px; color: var(--ink-2); font-weight: 700; margin: 8px 0 12px; }
 .case-text { font-size: 15px; margin-bottom: 10px; line-height: 1.9; }
 
@@ -979,6 +993,8 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
   border-top: 1px solid var(--line); padding: 22px 16px 34px;
   max-width: 880px; margin: 0 auto; color: var(--ink-3); font-size: 11.5px; line-height: 1.8;
 }
+
+.site-footer a { color: var(--accent); font-weight: 700; text-underline-offset: 3px; }
 
 /* ---------- レスポンシブ ---------- */
 @media (max-width: 560px) {
@@ -1274,3 +1290,158 @@ details.part-card[open] .part-chevron { transform: rotate(-135deg); margin-top: 
   .uc-note { padding: 0 14px 10px; }
 }
 .uc-item .uc-hint { grid-column: 1 / -1; padding-left: 28px; }
+
+/* ===== 模試(CBT形式) ===== */
+.cbt .q-card-top { align-items: center; }
+.cbt-no { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--accent); }
+.cbt-no small { font-size: 12px; color: var(--ink-3); font-weight: 700; }
+.cbt .q-source { display: block; margin: 2px 0 6px; }
+.cbt-flag {
+  font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 999px; border: 1.5px solid var(--line);
+  color: var(--ink-2); background: var(--surface);
+}
+.cbt-flag::before { content: '☆ '; }
+.cbt-flag.on { border-color: var(--gold); background: var(--gold-soft); color: var(--gold); }
+.cbt-flag.on::before { content: '★ '; }
+.choice.is-picked { background: var(--accent-soft); border-color: var(--accent); }
+.choice.is-picked .choice-key { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cbt-nav { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 10px; margin-top: 16px; }
+.cbt-nav .btn { padding-left: 10px; padding-right: 10px; }
+.cbt-nav .btn:disabled { opacity: .45; cursor: default; }
+.cbt-sub { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.cbt-sub-actions { margin-left: auto; display: flex; gap: 16px; }
+.btn-text { font-size: 12.5px; font-weight: 700; color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; padding: 4px 0; }
+.btn-text:hover { color: var(--ink); }
+.cbt-overlay {
+  position: fixed; inset: 0; z-index: 50; background: rgba(20, 20, 28, .45);
+  display: grid; place-items: center; padding: 16px;
+}
+.cbt-panel {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-raised);
+  width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 18px 20px;
+}
+.cbt-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.cbt-panel-head b { font-size: 16px; }
+.cbt-panel-head .btn-mini { margin-left: 0; }
+.cbt-panel-sub { font-size: 12.5px; color: var(--ink-2); margin: 6px 0 12px; }
+.cbt-panel-sub .ng { color: var(--ng); }
+.cbt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.cbt-cell {
+  height: 40px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--surface);
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-2); position: relative;
+}
+.cbt-cell.is-ans { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.cbt-cell.is-flag::after { content: '★'; position: absolute; top: -7px; right: -4px; font-size: 12px; color: var(--gold); }
+.cbt-cell.is-cur { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cbt-legend { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; font-size: 11.5px; color: var(--ink-3); margin-top: 12px; }
+.cbt-legend .cbt-cell { display: inline-block; width: 16px; height: 16px; border-radius: 4px; vertical-align: -3px; margin-right: 4px; }
+.cbt-legend .cbt-cell.is-flag::after { top: -9px; right: -6px; font-size: 10px; }
+.cbt-confirm { text-align: center; }
+.cbt-confirm-title { font-size: 16px; font-weight: 900; margin-top: 4px; }
+.time-analysis {
+  text-align: left; background: var(--surface-2); border-radius: 11px; padding: 12px 16px; margin: 14px auto 6px; max-width: 560px;
+}
+.ta-row { font-size: 13px; line-height: 1.8; color: var(--ink-2); }
+.ta-row b { color: var(--ink); margin-right: 4px; }
+.ta-note { font-size: 11.5px; color: var(--ink-3); }
+.rv-meta { font-size: 11.5px; font-weight: 700; color: var(--ink-3); margin-bottom: 4px; }
+@media (max-width: 560px) {
+  .cbt-nav { grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; }
+  .cbt-nav .btn { font-size: 13.5px; }
+}
+.exam-cbt { font-size: 13px; color: var(--ink-2); line-height: 1.8; margin: -10px 0 18px; }
+
+/* ===== 本物の過去問の得点 ===== */
+.past-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+.past-form select, .past-score input {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--radius-input); padding: 8px 10px;
+}
+.past-score { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); font-weight: 700; }
+.past-score input { width: 6em; }
+.past-form .btn { padding: 9px 18px; }
+.past-row { grid-template-columns: 8.5em 1fr 6.5em 1.6em; }
+.past-del { color: var(--ink-3); font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 6px; }
+.past-del:hover { color: var(--ng); background: var(--ng-soft); }
+.past-summary { font-size: 13px; color: var(--ink-2); margin-top: 10px; line-height: 1.7; }
+.past-summary b { font-size: 16px; }
+.past-summary b.ok { color: var(--ok); }
+.past-summary b.ng { color: var(--ng); }
+.past-summary span { font-size: 12.5px; }
+.forecast-real { font-size: 13px; color: var(--ink-2); margin: 4px 0 12px; line-height: 1.8; }
+.forecast-real b { color: var(--ink); font-size: 15px; }
+.uc-score { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--ink-3); font-weight: 700; white-space: nowrap; }
+.uc-score input {
+  width: 3.6em; font: inherit; font-size: 13px; color: var(--ink); text-align: right;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px;
+}
+@media (max-width: 560px) {
+  .past-row { grid-template-columns: 7.4em 1fr 5em 1.4em; }
+  .past-form select { flex: 1 1 100%; }
+}
+.panel-note a { color: var(--accent); font-weight: 700; }
+
+/* ===== 暗記タブ: 用語カード / 公式集 / 要点まとめ ===== */
+.memo-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); margin: 6px 0 16px; }
+.memo-tab { padding: 9px 8px; border-radius: 9px; font-size: 13.5px; font-weight: 700; color: var(--ink-2); }
+.memo-tab.is-active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.formula-group, .pt-part { margin-bottom: 22px; }
+.fg-title { font-size: 15px; font-weight: 900; margin: 0 2px 10px; padding-left: 10px; border-left: 4px solid var(--accent); }
+.formula-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 13px 16px; margin-bottom: 10px;
+}
+.fc-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.fc-name { font-weight: 900; font-size: 14px; }
+.fc-head .btn-mini { margin-left: 0; flex: none; }
+.fc-formula {
+  font-family: var(--font-mono); font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--accent-soft); color: var(--ink); border-radius: 8px; padding: 9px 12px; margin: 8px 0 6px; font-weight: 500;
+}
+.fc-note { font-size: 12.5px; color: var(--ink-2); }
+.fc-ex { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
+.fc-ex span { font-size: 10.5px; font-weight: 900; color: var(--gold); background: var(--gold-soft); border-radius: 999px; padding: 1px 8px; margin-right: 6px; }
+.fc-reveal { display: none; }
+.formula-card.is-quiz:not(.is-open) .fc-formula,
+.formula-card.is-quiz:not(.is-open) .fc-ex { display: none; }
+.formula-card.is-quiz:not(.is-open) .fc-reveal {
+  display: block; width: 100%; margin: 8px 0 6px; padding: 13px 12px; border-radius: 8px;
+  border: 1.5px dashed var(--accent); background: var(--surface-2); color: var(--accent); font-size: 13px; font-weight: 700; text-align: center;
+}
+.formula-card.is-quiz:not(.is-open) .fc-reveal:hover { background: var(--accent-soft); }
+.formula-card.is-open .fc-formula { animation: fc-in .25s ease; }
+@keyframes fc-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.pt-tools { display: flex; gap: 10px; margin-bottom: 10px; }
+.pt-tools .search-input { flex: 1; }
+.pt-count { font-size: 12px; color: var(--ink-3); margin: -4px 2px 12px; }
+.pt-unit { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin-bottom: 10px; break-inside: avoid; }
+.pt-unit-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; }
+.pt-unit-title { font-weight: 900; font-size: 13.5px; }
+.pt-done { color: var(--ok); margin-right: 6px; }
+.pt-unit .btn-mini { margin-left: 0; flex: none; }
+.pt-unit ul { list-style: none; margin: 0; padding: 0; }
+.pt-unit li { font-size: 13px; line-height: 1.7; padding-left: 18px; position: relative; margin-bottom: 3px; }
+.pt-unit li::before { content: '✓'; position: absolute; left: 1px; color: var(--accent); font-weight: 900; }
+@media (max-width: 560px) {
+  #view-cards .pt-chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px 12px; padding: 2px 16px 6px; scrollbar-width: none; }
+  #view-cards .pt-chips .chip { flex: none; }
+  .memo-tab { font-size: 13px; padding: 9px 4px; }
+}
+
+/* 印刷: 要点まとめ・公式集だけを紙に */
+@media print {
+  .site-header, .site-footer, .memo-tabs, .pt-tools, .pt-chips, .btn-mini, .pt-count, .view-lead { display: none !important; }
+  body { background: #fff; }
+  main { padding: 0; max-width: none; }
+  .pt-unit, .formula-card { border: 1px solid #ccc; box-shadow: none; }
+  .fc-formula { background: #f2f2f2; }
+  .fc-reveal { display: none !important; }
+  .formula-card .fc-formula, .formula-card .fc-ex { display: block !important; }
+}
+
+/* 動きを減らす設定の人には、アニメーションと切り替えの動きを止める */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important;
+  }
+}

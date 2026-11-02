@@ -120,7 +120,7 @@ const App = (() => {
       }
       // ボタンにフォーカスがあるときはブラウザ標準の Enter 動作に任せる(二重実行防止)
       if (e.key === 'Enter' && tag !== 'BUTTON' && tag !== 'A') {
-        const btn = view.querySelector('#recall-reveal, #quiz-next-btn, #case-next, #drill-next, #trace-next');
+        const btn = view.querySelector('#recall-reveal, #quiz-next-btn, #cbt-next, #case-next, #drill-next, #trace-next');
         if (btn) { e.preventDefault(); btn.click(); }
       }
     });
