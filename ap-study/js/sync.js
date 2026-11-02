@@ -1,19 +1,60 @@
 // 端末間同期: Googleログイン + Firestore に学習データを保存し、PC/スマホで共有する
-// 設定(js/firebase-config.js)が空のときは何もせず、従来どおり端末内保存で動作する。
+// 設定(js/firebase-config.js)が空のときは自動同期は使えないが、記録をファイルで送って移すことはできる。
 const Sync = (() => {
   const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
+  const GUIDE = 'https://github.com/nanu1129/my-first-web-app/blob/main/ap-study/SYNC-SETUP.md';
   const DEBOUNCE = 1500;
 
-  let state = 'off';   // off | ready | signing | on | error
+  let state = 'off';   // off(未設定) | ready(ログイン前) | signing | on(同期中) | error
   let user = null;
   let db = null, auth = null;
   let unsub = null;
   let timer = null;
   let lastPushed = '';
+  let dirty = false;   // 送れなかった変更がある
   let message = '';
+  let fileMsg = '';
 
   const cfg = () => window.AP_FIREBASE_CONFIG || {};
   const configured = () => !!(cfg().apiKey && cfg().projectId && cfg().appId);
+  const now = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+  // 中身の比較用: キーの順番と端末IDの違いは無視する
+  function stable(v) {
+    if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`;
+    if (v && typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`;
+    return JSON.stringify(v);
+  }
+  const content = (st) => (st ? stable(Object.assign({}, st, { deviceId: '' })) : '');
+
+  // つまずきやすい失敗の理由を、直し方が分かる言葉にする
+  function errText(e) {
+    const code = String((e && e.code) || '');
+    const map = {
+      'auth/unauthorized-domain': 'このサイトのドメインがFirebaseで許可されていません(Authenticationの承認済みドメインに nanu1129.github.io を追加)',
+      'auth/operation-not-allowed': 'FirebaseでGoogleログインが有効になっていません(Authenticationのログイン方法でGoogleを有効に)',
+      'auth/popup-blocked': 'ログイン画面(ポップアップ)がブロックされました。ブラウザでこのサイトのポップアップを許可して、もう一度押してください',
+      'auth/popup-closed-by-user': 'ログインが途中で閉じられました',
+      'auth/cancelled-popup-request': 'ログインが途中で閉じられました',
+      'auth/network-request-failed': '通信できませんでした。インターネット接続を確認してください',
+      'auth/web-storage-unsupported': 'このブラウザの設定(プライベートモードなど)ではログインできません',
+      'auth/invalid-api-key': 'Firebaseの設定値(apiKey)が正しくありません',
+      'permission-denied': 'データベースのルールで拒否されました(Firestoreのルールを手順書のとおりに設定)',
+      'unavailable': '通信できませんでした',
+      'not-found': 'データベース(Firestore)がまだ作られていません',
+      'failed-precondition': 'データベース(Firestore)がまだ作られていません',
+    };
+    const key = code.replace(/^firestore\//, '');
+    return map[key] || map[code] || `うまくいきませんでした${code ? `(${code})` : ''}`;
+  }
+
+  // LINEなどアプリの中のブラウザでは、Googleがログインを受け付けない
+  function inAppBrowser() {
+    const ua = navigator.userAgent || '';
+    if (/ Line\//i.test(ua)) return 'line';
+    if (/FBAN|FBAV|Instagram|MicroMessenger|Twitter/i.test(ua)) return 'other';
+    return '';
+  }
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -34,37 +75,37 @@ const Sync = (() => {
     ]);
   }
 
-  function docRef() {
-    return db.collection('users').doc(user.uid);
-  }
+  const docRef = () => db.collection('users').doc(user.uid);
+  // App は const で定義されているため window.App では参照できない
+  const refresh = () => { if (typeof App !== 'undefined' && App.refresh) App.refresh(); };
 
-  // リモートとローカルをマージして双方に反映する
-  async function pullMergePush(remoteState) {
-    const local = Store.snapshot();
-    const merged = Store.mergeStates(remoteState, local);
-    Store.applyState(merged);
-    await push(true);
-    if (window.App && App.refresh) App.refresh();
-  }
-
+  // クラウドの最新の記録とこの端末の記録をまとめてから書き込む(トランザクション)。
+  // 2台で同時に勉強しても、どちらかの記録が上書きで消えることはない
   async function push(force) {
     if (state !== 'on' || !user) return;
-    const snap = Store.snapshot();
-    const json = JSON.stringify(snap);
-    if (!force && json === lastPushed) return;
-    lastPushed = json;
+    clearTimeout(timer);
+    const json = JSON.stringify(Store.snapshot());
+    if (!force && !dirty && json === lastPushed) return;
+    const before = content(Store.snapshot());
     try {
-      await docRef().set({
-        state: snap,
-        writer: Store.deviceId(),
-        updatedAt: Date.now(),
+      let merged = null;
+      await db.runTransaction(async (tx) => {
+        const doc = await tx.get(docRef());
+        const remote = doc.exists ? (doc.data() || {}).state : null;
+        merged = Store.mergeStates(remote || null, Store.snapshot());
+        merged.deviceId = Store.deviceId();
+        tx.set(docRef(), { state: merged, writer: Store.deviceId(), updatedAt: Date.now() });
       });
-      message = `同期済み ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
-      render();
+      Store.applyState(merged);
+      lastPushed = JSON.stringify(Store.snapshot());
+      dirty = false;
+      message = `同期済み ${now()}`;
+      if (content(Store.snapshot()) !== before) refresh();
     } catch (e) {
-      message = '保存に失敗しました(通信環境をご確認ください)';
-      render();
+      dirty = true;
+      message = `保存できませんでした: ${errText(e)}。通信が戻ると自動でやり直します`;
     }
+    render();
   }
 
   function schedulePush() {
@@ -73,19 +114,23 @@ const Sync = (() => {
     timer = setTimeout(() => push(false), DEBOUNCE);
   }
 
+  // ほかの端末の書き込みを受け取ったら、この端末の記録とまとめる
   function watch() {
     if (unsub) unsub();
     unsub = docRef().onSnapshot((snap) => {
       const d = snap.data();
-      if (!d || !d.state) return;
-      if (d.writer === Store.deviceId()) return; // 自分の書き込みは無視
-      const merged = Store.mergeStates(d.state, Store.snapshot());
-      Store.applyState(merged);
-      message = '他の端末の学習を取り込みました';
-      render();
-      if (window.App && App.refresh) App.refresh();
-    }, () => {
-      message = '同期の監視が中断されました';
+      if (!d || !d.state || d.writer === Store.deviceId()) { if (dirty) schedulePush(); return; }
+      const before = content(Store.snapshot());
+      Store.applyState(Store.mergeStates(d.state, Store.snapshot()));
+      const after = content(Store.snapshot());
+      if (after !== before) {
+        message = `ほかの端末の学習を取り込みました ${now()}`;
+        render();
+        refresh();
+      }
+      if (after !== content(d.state)) schedulePush(); // この端末にしかない記録をクラウドへ
+    }, (e) => {
+      message = `同期の受信が止まりました: ${errText(e)}`;
       render();
     });
   }
@@ -105,46 +150,39 @@ const Sync = (() => {
           state = 'on';
           message = '同期しています…';
           render();
-          try {
-            const snap = await docRef().get();
-            const d = snap.data();
-            await pullMergePush(d && d.state ? d.state : null);
-            watch();
-          } catch (e) {
-            message = '読み込みに失敗しました';
-            render();
-          }
+          await push(true);
+          watch();
         } else {
           state = 'ready';
-          message = '';
           if (unsub) { unsub(); unsub = null; }
           render();
         }
       });
-      // ローカルの変更を検知して自動保存
+      // ローカルの変更を検知して自動保存。通信が戻ったとき・画面に戻ったときは、送れなかった分を送る
       Store.onChange(schedulePush);
-      // リダイレクト方式でのログイン結果を回収
-      auth.getRedirectResult().catch(() => {});
+      window.addEventListener('online', () => { if (dirty) push(true); });
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && dirty) push(true); });
+      // 以前のリダイレクト方式でのログイン結果を回収
+      if (auth.getRedirectResult) auth.getRedirectResult().catch((e) => { message = errText(e); render(); });
     } catch (e) {
       state = 'error';
-      message = '同期の初期化に失敗しました';
+      message = '同期の準備ができませんでした。通信を確認して、ページを再読み込みしてください';
     }
     render();
   }
 
+  // ポップアップでログインする(GitHub Pages ではリダイレクト方式は最近のブラウザで使えないため)
   async function signIn() {
-    if (state === 'off') return;
-    const provider = new firebase.auth.GoogleAuthProvider();
+    if (state !== 'ready' && state !== 'error') return;
+    if (!auth) return;
+    state = 'signing';
+    message = '';
+    render();
     try {
-      state = 'signing'; render();
-      await auth.signInWithPopup(provider);
+      await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
     } catch (e) {
-      // ポップアップが塞がれる環境(スマホのブラウザ等)ではリダイレクトに切り替える
-      if (e && /popup/i.test(e.code || '')) {
-        try { await auth.signInWithRedirect(provider); return; } catch (e2) { /* noop */ }
-      }
       state = 'ready';
-      message = 'ログインできませんでした';
+      message = errText(e);
       render();
     }
   }
@@ -153,6 +191,23 @@ const Sync = (() => {
     if (!auth) return;
     await push(true).catch(() => {});
     await auth.signOut();
+    message = 'ログアウトしました。この端末の記録はそのまま残っています';
+    render();
+  }
+
+  // ---------- 記録をファイルで送る・受け取る(自動同期を設定する前でも使える) ----------
+  async function sendFile() {
+    const r = await Backup.share();
+    fileMsg = r.how === 'shared' ? '送りました。受け取った端末で「受け取った記録を読み込む」を押してください'
+      : r.how === 'cancelled' ? '' : `「${r.name}」を保存しました。もう一方の端末に移して読み込んでください`;
+    render();
+  }
+  function receiveFile(file) {
+    Backup.read(file).then(() => {
+      fileMsg = '読み込みました。2台の記録を1つにまとめています(二重には数えません)';
+      render();
+      refresh();
+    }).catch((e) => { fileMsg = `読み込めませんでした: ${e.message}`; render(); });
   }
 
   // ---------- 画面表示 ----------
@@ -173,19 +228,42 @@ const Sync = (() => {
     if (panel && !panel.hidden) renderPanel(panel);
   }
 
+  const esc = (s) => { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; };
+
+  function fileBlock(lead) {
+    return `
+      <p class="sync-sub">${lead}</p>
+      <div class="sync-actions">
+        <button class="btn-mini" id="sync-send">この端末の記録を送る</button>
+        <button class="btn-mini ghost" id="sync-recv">受け取った記録を読み込む</button>
+        <input type="file" id="sync-file" accept="application/json,.json,text/plain,.txt" hidden>
+      </div>
+      ${fileMsg ? `<p class="sync-note sync-msg" role="status">${esc(fileMsg)}</p>` : ''}`;
+  }
+  function bindFileBlock(panel) {
+    const send = panel.querySelector('#sync-send');
+    if (!send) return;
+    send.addEventListener('click', sendFile);
+    const input = panel.querySelector('#sync-file');
+    panel.querySelector('#sync-recv').addEventListener('click', () => input.click());
+    input.addEventListener('change', () => { if (input.files && input.files[0]) receiveFile(input.files[0]); });
+  }
+
   function renderPanel(panel) {
-    const esc = (s) => { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; };
     if (state === 'off') {
       panel.innerHTML = `
         <p class="sync-title">端末間の同期</p>
-        <p class="sync-note">まだ設定されていません。学習データはこの端末にのみ保存されています。
-          <br>設定すると、PCとスマホで進捗・復習スケジュール・成績を共有できます。</p>`;
+        <p class="sync-note">いまは、この端末の中だけに記録しています。PCとスマホで<b>自動で共有</b>するには、最初に一度だけFirebaseの設定(約10分)が必要です。
+          <a href="${GUIDE}" target="_blank" rel="noopener">設定のしかた</a></p>
+        ${fileBlock('設定する前でも、記録をファイルで送って、もう一方の端末で読み込めば1つにまとまります。')}`;
+      bindFileBlock(panel);
       return;
     }
     if (state === 'on') {
       panel.innerHTML = `
         <p class="sync-title">同期中</p>
         <p class="sync-note">${esc(user ? user.email : '')}<br>${esc(message)}</p>
+        <p class="sync-note">ほかの端末でも同じGoogleアカウントでログインすると、記録が自動で共有されます。</p>
         <div class="sync-actions">
           <button class="btn-mini" id="sync-now">今すぐ同期</button>
           <button class="btn-mini ghost" id="sync-out">ログアウト</button>
@@ -194,10 +272,15 @@ const Sync = (() => {
       panel.querySelector('#sync-out').addEventListener('click', signOut);
       return;
     }
+    const app = inAppBrowser();
+    const external = `${location.origin}${location.pathname}?openExternalBrowser=1`;
     panel.innerHTML = `
       <p class="sync-title">端末間の同期</p>
-      <p class="sync-note">Googleでログインすると、PCとスマホで学習データを共有できます。
-        ${message ? `<br>${esc(message)}` : ''}</p>
+      <p class="sync-note">Googleでログインすると、PCとスマホで進捗・復習の予定・成績を自動で共有できます。どの端末でも同じGoogleアカウントでログインしてください。</p>
+      ${app ? `<p class="sync-note sync-warn">${app === 'line'
+        ? `LINEの中のブラウザではGoogleログインができません。<a href="${external}">Safari・Chromeで開く</a>`
+        : 'アプリの中のブラウザではGoogleログインができません。メニューの「ブラウザで開く」から開き直してください。'}</p>` : ''}
+      ${message ? `<p class="sync-note sync-warn" role="status">${esc(message)}</p>` : ''}
       <div class="sync-actions">
         <button class="btn-mini" id="sync-in" ${state === 'signing' ? 'disabled' : ''}>
           ${state === 'signing' ? 'ログイン中…' : 'Googleでログイン'}</button>
@@ -210,7 +293,7 @@ const Sync = (() => {
     const panel = document.getElementById('sync-panel');
     if (!panel) return;
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) renderPanel(panel);
+    if (!panel.hidden) { fileMsg = ''; renderPanel(panel); }
   }
 
   return { init, togglePanel, signIn, signOut, configured, status: () => state };

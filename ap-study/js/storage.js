@@ -31,7 +31,8 @@ const Store = (() => {
     history: [],    // { kind, label, score, total, pass, at }
     counters: {},   // deviceId -> { answers: {partId:{c,t}}, reasons: {}, days: {'YYYY-MM-DD': n}, acts: {'YYYY-MM-DD|種類': n} }
     prefs: {},      // { recall, goal, examDate, planStart, ... }
-    prefsAt: 0,     // prefs の最終更新時刻(同期時は新しい方を採用)
+    prefsAt: 0,     // prefs のいずれかを最後に変更した時刻
+    prefsTs: {},    // 項目ごとの変更時刻(同期では項目ごとに新しい方を採用)
   });
 
   let cache = null;
@@ -84,6 +85,7 @@ const Store = (() => {
     if (!cache.counters[cache.deviceId].acts) cache.counters[cache.deviceId].acts = {};
     if (!cache.cardSrs) cache.cardSrs = {};
     if (!cache.pastExams) cache.pastExams = {};
+    if (!cache.prefsTs) cache.prefsTs = {};
     return cache;
   }
 
@@ -197,13 +199,44 @@ const Store = (() => {
         seen.add(k);
         return true;
       })
-      .sort((x, y) => (y.at || 0) - (x.at || 0))
+      // 同時刻は内容で並べる(どちらの端末でマージしても同じ並びになるように)
+      .sort((x, y) => ((y.at || 0) - (x.at || 0)) || String(`${x.kind}|${x.label}`).localeCompare(`${y.kind}|${y.label}`))
       .slice(0, 50);
 
-    // 設定: 後から更新された方をまるごと採用
-    const aAt = a.prefsAt || 0, bAt = b.prefsAt || 0;
-    out.prefs = Object.assign({}, bAt >= aAt ? a.prefs : b.prefs, bAt >= aAt ? b.prefs : a.prefs);
-    out.prefsAt = Math.max(aAt, bAt);
+    // 設定: 項目ごとに、あとから変更した方を採用する(項目の時刻がない旧データは prefsAt を使う)。
+    // ただし学習開始日は早い方(新しい端末を開いた日で上書きしない)、
+    // Udemyの視聴チェックはセクションごとに、あとからチェック(または解除)した方を採用する
+    const tsOf = (s, k) => (s.prefsTs || {})[k] || s.prefsAt || 0;
+    const has = (s, k) => Object.prototype.hasOwnProperty.call(s.prefs || {}, k);
+    const pkeys = new Set([...Object.keys(a.prefs || {}), ...Object.keys(b.prefs || {})]);
+    pkeys.forEach((k) => {
+      if (!has(a, k) || !has(b, k)) {
+        const s = has(a, k) ? a : b;
+        out.prefs[k] = s.prefs[k];
+        out.prefsTs[k] = tsOf(s, k);
+        return;
+      }
+      const x = a.prefs[k], y = b.prefs[k], tx = tsOf(a, k), ty = tsOf(b, k);
+      out.prefsTs[k] = Math.max(tx, ty);
+      if (k === 'planStart' && x && y) { out.prefs[k] = x < y ? x : y; return; }
+      if (k === 'udemyWatched') { out.prefs[k] = mergeStamps(x, y); return; }
+      // 同時刻なら値で決める(どちらの端末でマージしても同じ結果になるように)
+      const useY = ty > tx || (ty === tx && JSON.stringify(y) > JSON.stringify(x));
+      out.prefs[k] = useY ? y : x;
+    });
+    out.prefsAt = Math.max(a.prefsAt || 0, b.prefsAt || 0);
+    return out;
+  }
+
+  // { キー: 時刻 } の表を、キーごとに新しい方でまとめる。負の値は「解除した時刻」を表す
+  function mergeStamps(x, y) {
+    const out = {};
+    const ks = new Set([...Object.keys(x || {}), ...Object.keys(y || {})]);
+    ks.forEach((k) => {
+      const p = (x || {})[k], q = (y || {})[k];
+      if (typeof p !== 'number' || typeof q !== 'number') { out[k] = typeof p === 'number' ? p : q; return; }
+      out[k] = (Math.abs(q) > Math.abs(p) || (Math.abs(q) === Math.abs(p) && q > p)) ? q : p;
+    });
     return out;
   }
 
@@ -220,6 +253,7 @@ const Store = (() => {
       if (!cache.counters[own].acts) cache.counters[own].acts = {};
       if (!cache.cardSrs) cache.cardSrs = {};
       if (!cache.pastExams) cache.pastExams = {};
+      if (!cache.prefsTs) cache.prefsTs = {};
       save(true);
     },
     mergeStates,
@@ -462,6 +496,7 @@ const Store = (() => {
       const d = load();
       d.prefs[key] = val;
       d.prefsAt = Date.now();
+      d.prefsTs[key] = d.prefsAt;
       save();
     },
 

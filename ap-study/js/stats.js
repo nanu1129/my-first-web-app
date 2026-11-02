@@ -224,7 +224,7 @@ const Stats = (() => {
         <div class="btn-row">
           <button class="btn btn-ghost" id="backup-export">ファイルに書き出す</button>
           <button class="btn btn-ghost" id="backup-import">ファイルから読み込む</button>
-          <input type="file" id="backup-file" accept="application/json,.json" hidden>
+          <input type="file" id="backup-file" accept="application/json,.json,text/plain,.txt" hidden>
         </div>
         <p class="backup-msg" id="backup-msg" role="status"></p>
       </div>
@@ -318,31 +318,14 @@ const Stats = (() => {
   }
 
   function exportBackup() {
-    const d = new Date();
-    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const blob = new Blob([JSON.stringify(Store.snapshot(), null, 1)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `manabit-backup-${ymd}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    backupMsg(`「${a.download}」を書き出しました。`, true);
+    backupMsg(`「${Backup.download()}」を書き出しました。`, true);
   }
 
   function importBackup(file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        Store.importState(JSON.parse(reader.result));
-        render();
-        backupMsg('読み込みました。今のデータと統合しています。', true);
-      } catch (e) {
-        backupMsg(`読み込めませんでした: ${e.message}`, false);
-      }
-    };
-    reader.readAsText(file);
+    Backup.read(file).then(() => {
+      render();
+      backupMsg('読み込みました。今のデータと統合しています。', true);
+    }).catch((e) => backupMsg(`読み込めませんでした: ${e.message}`, false));
   }
 
   // ---------- 学習カレンダー(直近12週) ----------

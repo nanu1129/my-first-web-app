@@ -31,11 +31,17 @@ const Order = (() => {
     return (AP.udemy && AP.udemy.sections.find((s) => (s.units || []).includes(unitId))) || null;
   }
 
-  // 講座の視聴チェック(セクション番号 → チェックした時刻)。端末間で同期する
-  function watched() { return Store.pref('udemyWatched', {}) || {}; }
+  // 講座の視聴チェック(セクション番号 → チェックした時刻)。端末間で同期する。
+  // チェックを外したときは負の時刻を残し、同期で別の端末の古いチェックが復活しないようにする
+  function watched() {
+    const raw = Store.pref('udemyWatched', {}) || {};
+    const w = {};
+    Object.keys(raw).forEach((k) => { if (raw[k] > 0) w[k] = raw[k]; });
+    return w;
+  }
   function setWatched(no, on) {
-    const w = Object.assign({}, watched());
-    if (on) w[no] = Date.now(); else delete w[no];
+    const w = Object.assign({}, Store.pref('udemyWatched', {}) || {});
+    w[no] = on ? Date.now() : -Date.now();
     Store.setPref('udemyWatched', w);
   }
   const sameDay = (t) => !!t && new Date(t).toDateString() === new Date().toDateString();
