@@ -145,3 +145,45 @@ test('過去問の得点: マージは記録の新しい方を採用し、削除
   Store.applyState(Store.mergeStates(m1, old));
   assert.deepEqual(plain(Store.pastExams()).map((r) => r.id).sort(), ['r06a', 'r07a']);
 });
+
+test('設定のマージ: 項目ごとに新しい方。学習開始日は早い方、Udemyの視聴チェックはセクションごと(解除も伝わる)', () => {
+  const { Store } = freshStore();
+  const now = Date.now();
+  const pc = {
+    prefs: { examDate: '2027-02-06', planStart: '2026-10-01', goal: 20, udemyWatched: { 2: now - 5000, 3: now - 4000 } },
+    prefsAt: now - 4000, prefsTs: { examDate: now - 9000, planStart: now - 90000, goal: now - 9000, udemyWatched: now - 4000 },
+  };
+  // スマホ: 試験日をあとから変更、初めて開いた日が学習開始日、§3のチェックを外して§4をチェック
+  const phone = {
+    prefs: { examDate: '2027-02-13', planStart: '2026-11-02', recall: true, udemyWatched: { 3: -(now - 1000), 4: now - 2000 } },
+    prefsAt: now - 1000, prefsTs: { examDate: now - 8000, planStart: now - 1000, recall: now - 3000, udemyWatched: now - 1000 },
+  };
+  const m = Store.mergeStates(pc, phone);
+  assert.equal(m.prefs.examDate, '2027-02-13');
+  assert.equal(m.prefs.planStart, '2026-10-01');
+  assert.equal(m.prefs.goal, 20);
+  assert.equal(m.prefs.recall, true);
+  assert.deepEqual(plain(m.prefs.udemyWatched), { 2: now - 5000, 3: -(now - 1000), 4: now - 2000 });
+  // 逆向きにマージしても、何度マージしても同じ結果
+  assert.deepEqual(plain(Store.mergeStates(phone, pc).prefs), plain(m.prefs));
+  assert.deepEqual(plain(Store.mergeStates(m, phone).prefs), plain(m.prefs));
+  assert.deepEqual(plain(Store.mergeStates(pc, m).prefs), plain(m.prefs));
+});
+
+test('設定のマージ: 項目の時刻がない旧データは、最終更新時刻(prefsAt)で比べる', () => {
+  const { Store } = freshStore();
+  const old = { prefs: { goal: 30, courseOrder: 'site' }, prefsAt: 1000 };
+  const cur = { prefs: { goal: 20 }, prefsAt: 2000, prefsTs: { goal: 500 } };
+  const m = Store.mergeStates(old, cur);
+  assert.equal(m.prefs.goal, 30); // 旧データの 1000 > 新データの項目時刻 500
+  assert.equal(m.prefs.courseOrder, 'site');
+  assert.equal(m.prefsAt, 2000);
+});
+
+test('setPref は項目ごとの変更時刻を記録する', () => {
+  const { Store } = freshStore();
+  const t0 = Date.now();
+  Store.setPref('goal', 25);
+  const snap = plain(Store.snapshot());
+  assert.ok(snap.prefsTs.goal >= t0 && snap.prefsAt === snap.prefsTs.goal);
+});

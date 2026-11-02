@@ -74,6 +74,96 @@ async function finishQuiz(page, pattern) {
     if (await next.count()) await next.click();
   }
 }
+// ---- 端末間同期のテスト用: gstatic の Firebase SDK を差し替える偽物と、テスト内の「クラウド」 ----
+const FAKE_SDK = `(() => {
+  const listeners = [];
+  let user = null;
+  try { user = JSON.parse(sessionStorage.getItem('__fakeUser') || 'null'); } catch (e) { user = null; }
+  const authObj = {
+    setPersistence: () => Promise.resolve(),
+    onAuthStateChanged(cb) { listeners.push(cb); setTimeout(() => cb(user), 0); return () => {}; },
+    async signInWithPopup() {
+      user = { uid: 'u1', email: 'tester@example.com' };
+      sessionStorage.setItem('__fakeUser', JSON.stringify(user));
+      listeners.forEach((cb) => cb(user));
+      return { user };
+    },
+    async signOut() { user = null; sessionStorage.removeItem('__fakeUser'); listeners.forEach((cb) => cb(null)); },
+    getRedirectResult: () => Promise.resolve(null),
+  };
+  const auth = () => authObj;
+  auth.GoogleAuthProvider = function GoogleAuthProvider() {};
+  auth.Auth = { Persistence: { LOCAL: 'local' } };
+  const subs = {};
+  const snapOf = (d) => ({ exists: !!d, data: () => (d ? JSON.parse(JSON.stringify(d)) : undefined) });
+  window.__fbDeliver = (path, d) => (subs[path] || []).forEach((cb) => cb(snapOf(d)));
+  const ref = (path) => ({
+    _path: path,
+    get: async () => snapOf((await window.__fbRead(path)).data),
+    set: async (d) => { await window.__fbCommit(null, null, [[path, JSON.parse(JSON.stringify(d))]]); },
+    onSnapshot(cb) {
+      (subs[path] = subs[path] || []).push(cb);
+      window.__fbSub(path).then(() => window.__fbRead(path)).then((r) => cb(snapOf(r.data)));
+      return () => { subs[path] = subs[path].filter((x) => x !== cb); };
+    },
+  });
+  const store = {
+    collection: (c) => ({ doc: (id) => ref(c + '/' + id) }),
+    async runTransaction(fn) {
+      for (let i = 0; i < 5; i++) {
+        let readPath = null, readVer = null;
+        const writes = [];
+        const tx = {
+          get: async (r) => { const x = await window.__fbRead(r._path); readPath = r._path; readVer = x.ver; return snapOf(x.data); },
+          set: (r, d) => { writes.push([r._path, JSON.parse(JSON.stringify(d))]); },
+        };
+        const res = await fn(tx);
+        if (await window.__fbCommit(readPath, readVer, writes)) return res;
+      }
+      throw Object.assign(new Error('aborted'), { code: 'aborted' });
+    },
+  };
+  window.firebase = { initializeApp: (c) => ({ c }), auth, firestore: () => store };
+})();`;
+
+// Firestoreの制約(入れ子の配列・undefined・1MB)を確かめながら、文書を保存して購読中の端末へ配る
+function fakeCloud() {
+  const docs = new Map();
+  const subs = new Map();
+  const problems = [];
+  let writes = 0;
+  const check = (v, where) => {
+    if (v === undefined) problems.push(`undefined: ${where}`);
+    else if (Array.isArray(v)) v.forEach((x, i) => { if (Array.isArray(x)) problems.push(`入れ子の配列: ${where}[${i}]`); check(x, `${where}[${i}]`); });
+    else if (v && typeof v === 'object') Object.keys(v).forEach((k) => check(v[k], `${where}.${k}`));
+  };
+  return {
+    problems, docs, writes: () => writes,
+    async attach(ctx) {
+      await ctx.route('https://www.gstatic.com/firebasejs/**', (r) => r.fulfill({ contentType: 'text/javascript',
+        body: r.request().url().endsWith('firebase-app-compat.js') ? FAKE_SDK : '' }));
+      await ctx.route('**/js/firebase-config.js*', (r) => r.fulfill({ contentType: 'text/javascript',
+        body: "window.AP_FIREBASE_CONFIG = { apiKey: 'k', authDomain: 'test.firebaseapp.com', projectId: 'test', appId: 'a' };" }));
+      await ctx.exposeBinding('__fbRead', (src, path) => (docs.get(path) || { data: null, ver: 0 }));
+      await ctx.exposeBinding('__fbSub', (src, path) => { if (!subs.has(path)) subs.set(path, new Set()); subs.get(path).add(src.page); });
+      await ctx.exposeBinding('__fbCommit', (src, readPath, readVer, list) => {
+        if (readPath && (docs.get(readPath) || { ver: 0 }).ver !== readVer) return false; // 読んだあとに別の端末が書いた → やり直し
+        list.forEach(([path, data]) => {
+          check(data, path);
+          if (JSON.stringify(data).length > 1000000) problems.push(`1MB超: ${path}`);
+          const ver = (docs.get(path) || { ver: 0 }).ver + 1;
+          docs.set(path, { data, ver });
+          writes += 1;
+          setTimeout(() => (subs.get(path) || new Set()).forEach((pg) => {
+            pg.evaluate(([p, d]) => window.__fbDeliver && window.__fbDeliver(p, d), [path, data]).catch(() => {});
+          }), 30);
+        });
+        return true;
+      });
+    },
+  };
+}
+
 const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 (async () => {
@@ -394,6 +484,114 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await page.setViewportSize({ width: 390, height: 844 });
     ok(await page.evaluate(() => getComputedStyle(document.querySelector('.case-layout')).display) === 'block', '午後演習(スマホ): 1列で表示');
     await ctx.close();
+  }
+
+  // ---- F. 端末間の同期: 未設定時のファイル移行、PCとスマホの自動同期(偽のFirebase) ----
+  {
+    // 未設定: 雲アイコンのパネルに設定の案内と「記録を送る/読み込む」
+    const a = await newPage(browser, { width: 390, height: 844 }, seeded(Date.now()), errors, 'sync-off');
+    await a.page.goto(BASE);
+    await a.page.waitForSelector('.today-card');
+    await a.page.click('#sync-btn');
+    ok(await a.page.locator('#sync-panel a[href*="SYNC-SETUP"]').count() === 1 && await a.page.locator('#sync-send').count() === 1,
+      '未設定: 設定のしかたと「この端末の記録を送る」を表示');
+    const box = await a.page.locator('#sync-panel').boundingBox();
+    ok(box && box.x >= 0 && box.x + box.width <= 390, 'スマホ: 同期パネルが画面内に収まる', box);
+    const [dl] = await Promise.all([a.page.waitForEvent('download'), a.page.click('#sync-send')]);
+    const file = path.join(OUT, 'sync-transfer.json');
+    await dl.saveAs(file);
+    const sent = JSON.parse(fs.readFileSync(file, 'utf8'));
+    ok(sent.units && sent.units['basics-1'] && sent.units['basics-1'].cleared, '記録を送る: 学習記録のファイルができる(共有できない環境では保存)');
+    const b = await newPage(browser, { width: 1100, height: 900 }, null, errors, 'sync-recv');
+    await b.page.goto(BASE);
+    await b.page.waitForSelector('.today-card');
+    await b.page.click('#sync-btn');
+    await b.page.setInputFiles('#sync-file', file);
+    await b.page.waitForSelector('#sync-panel .sync-msg');
+    ok(await b.page.evaluate(() => Store.isUnitCleared('basics-1')) && (await b.page.locator('#sync-panel .sync-msg').innerText()).includes('まとめ'),
+      '受け取った記録を読み込む: もう一方の端末の記録が統合される');
+    await a.ctx.close();
+    await b.ctx.close();
+  }
+  {
+    const cloud = fakeCloud();
+    const now = Date.now();
+    const device = async (tag, vp, st) => {
+      const ctx = await browser.newContext({ viewport: vp, acceptDownloads: true });
+      await cloud.attach(ctx);
+      const page = await ctx.newPage();
+      page.on('pageerror', (e) => errors.push(`${tag}: ${e}`));
+      await page.addInitScript((x) => { if (!localStorage.getItem('ap-study-v1')) localStorage.setItem('ap-study-v1', JSON.stringify(x)); }, st);
+      await page.goto(BASE);
+      await page.waitForSelector('.today-card');
+      return { ctx, page };
+    };
+    const login = async (page) => {
+      await page.click('#sync-btn');
+      await page.click('#sync-in');
+      await page.waitForSelector('#sync-btn.is-on');
+    };
+    const until = async (page, fn, arg, ms = 8000) => {
+      try { await page.waitForFunction(fn, arg, { timeout: ms }); return true; } catch (e) { return false; }
+    };
+    const total = (page) => page.evaluate(() => {
+      const st = JSON.parse(localStorage.getItem('ap-study-v1'));
+      return Object.values(st.counters).reduce((n, c) => n + Object.values(c.answers || {}).reduce((m, x) => m + x.t, 0), 0);
+    });
+    // PC: 10ユニット・過去問1回・Udemy §2〜3。スマホ: 別に dev-1 と §4、学習開始日は今日(初めて開いた日)
+    const pcState = seeded(now);
+    pcState.pastExams = { r07a: { score: 52, total: 80, at: now - DAY } };
+    pcState.prefs.udemyWatched = { 2: now - 3 * DAY, 3: now - 2 * DAY };
+    pcState.prefs.examDate = '2027-02-06';
+    const phoneState = {
+      v: 2, deviceId: 'dphone', units: { 'dev-1': { cleared: true, best: 6, total: 6, at: now - DAY, clearedAt: now - DAY } },
+      counters: { dphone: { answers: { dev: { c: 8, t: 10 } }, reasons: {}, days: { [ymd(now - DAY)]: 10 }, acts: {} } },
+      prefs: { udemyWatched: { 4: now - DAY } }, prefsAt: now - DAY, prefsTs: { udemyWatched: now - DAY },
+    };
+    const pc = await device('sync-pc', { width: 1100, height: 900 }, pcState);
+    const sp = await device('sync-sp', { width: 390, height: 844 }, phoneState);
+    await login(pc.page);
+    ok(cloud.docs.has('users/u1'), '同期: PCでログインすると、記録がクラウドに保存される');
+    await login(sp.page);
+    const spView = await sp.page.evaluate(() => ({
+      basics: Store.isUnitCleared('basics-1'), dev: Store.isUnitCleared('dev-1'), watched: Object.keys(Order.watched()).sort().join(),
+      past: Store.pastExams().map((r) => r.id).join(), start: Store.pref('planStart'), exam: Store.pref('examDate'),
+    }));
+    ok(spView.basics && spView.dev && spView.watched === '2,3,4' && spView.past === 'r07a' && spView.exam === '2027-02-06',
+      '同期: スマホでログインすると、PCの記録と1つにまとまる', spView);
+    ok(spView.start === pcState.prefs.planStart, '同期: 学習開始日は早い方(PCで始めた日)が残る', spView.start);
+    ok(await until(pc.page, () => Store.isUnitCleared('dev-1') && !!Order.watched()[4]), '同期: スマホの記録がPCにも届く');
+    ok(await total(pc.page) === 100 && await total(sp.page) === 100, '同期: 解答数は2台の合計(二重に数えない)', [await total(pc.page), await total(sp.page)]);
+    // スマホでUdemy §5をチェック → PCに届く。PCで §3 を外す → スマホでも外れて、戻らない
+    await sp.page.click('#sync-btn');
+    await sp.page.evaluate(() => App.goHome());
+    await sp.page.click('#udemy-progress summary');
+    await sp.page.check('#udemy-progress input[data-sec="5"]');
+    ok(await until(pc.page, () => !!Order.watched()[5]), '同期: スマホでのチェックがPCに届く');
+    await pc.page.evaluate(() => Order.setWatched(3, false));
+    ok(await until(sp.page, () => !Order.watched()[3]), '同期: PCでチェックを外すと、スマホでも外れる');
+    ok(await until(sp.page, () => { const cb = document.querySelector('#udemy-progress input[data-sec="3"]'); return cb && !cb.checked; }),
+      '同期: 受け取った変更が、開いている画面にもすぐ反映される');
+    await sp.page.waitForTimeout(2500);
+    ok(await sp.page.evaluate(() => !Order.watched()[3]) && await pc.page.evaluate(() => !Order.watched()[3]), '同期: 外したチェックが同期で復活しない');
+    // 2台で同時に記録しても、どちらも残る(上書きで消えない)
+    await Promise.all([
+      pc.page.evaluate(() => Store.setPastExam('r07s', 50)),
+      sp.page.evaluate(() => Store.setPastExam('r06a', 55)),
+    ]);
+    const both = () => ['r07a', 'r06a', 'r07s'].every((id) => Store.pastExams().some((r) => r.id === id));
+    ok(await until(pc.page, both) && await until(sp.page, both), '同期: 2台で同時に記録しても両方とも残る');
+    const cloudPast = Object.keys(cloud.docs.get('users/u1').data.state.pastExams).sort().join();
+    ok(cloudPast === 'r06a,r07a,r07s', '同期: クラウドの記録にも両方が入っている', cloudPast);
+    ok(cloud.problems.length === 0, '同期: Firestoreに保存できない形(入れ子の配列・undefined・1MB超)がない', cloud.problems.slice(0, 5));
+    const w1 = cloud.writes();
+    await pc.page.waitForTimeout(3000);
+    ok(cloud.writes() === w1 && w1 < 40, '同期: 変更がないときは書き込みが止まる(端末どうしで送り合い続けない)', [w1, cloud.writes()]);
+    await sp.page.click('#sync-btn');
+    ok((await sp.page.locator('#sync-panel').innerText()).includes('tester@example.com'), '同期中はアカウントと状態を表示');
+    await sp.page.screenshot({ path: path.join(OUT, 'sp-sync-on.png') });
+    await pc.ctx.close();
+    await sp.ctx.close();
   }
 
   ok(errors.length === 0, 'ページのエラーなし', errors);
