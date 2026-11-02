@@ -8,6 +8,7 @@ const Cards = (() => {
   let deck = [];
   let flipped = false;
   let doneInSession = 0;
+  let section = 'cards';    // 'cards'(用語カード) | 'formulas'(公式集) | 'points'(要点まとめ)
 
   function esc(s) {
     const div = document.createElement('div');
@@ -51,7 +52,30 @@ const Cards = (() => {
     return { cls: s.box >= 3 ? 'solid' : 'known', label: s.due <= Date.now() ? '復習の時期' : `次回 ${d.getMonth() + 1}/${d.getDate()}` };
   }
 
+  // 暗記タブの切り替え(用語カード / 公式集 / 要点まとめ)
+  function sectionTabs() {
+    const tabs = [['cards', '用語カード'], ['formulas', '公式集'], ['points', '要点まとめ']];
+    return `<div class="memo-tabs" role="tablist">${tabs.map(([k, v]) => `
+      <button class="memo-tab ${section === k ? 'is-active' : ''}" data-section="${k}" role="tab" aria-selected="${section === k}">${v}</button>`).join('')}</div>`;
+  }
+  function bindTabs() {
+    $view().querySelectorAll('[data-section]').forEach((b) => b.addEventListener('click', () => {
+      section = b.dataset.section;
+      paint();
+      window.scrollTo(0, 0);
+    }));
+  }
+  function paintNotes() {
+    $view().innerHTML = `
+      <h2 class="view-title">暗記</h2>
+      ${sectionTabs()}
+      ${section === 'formulas' ? Notes.formulasHtml() : Notes.pointsHtml()}`;
+    bindTabs();
+    Notes.bind($view(), paintNotes);
+  }
+
   function paint() {
+    if (section !== 'cards') { paintNotes(); return; }
     const known = AP.terms.filter((t) => Store.isCardKnown(keyOf(t))).length;
     const solid = AP.terms.filter((t) => { const s = Store.cardState(keyOf(t)); return s && s.box >= 3; }).length;
     const chips = [
@@ -112,7 +136,8 @@ const Cards = (() => {
       </details>`;
 
     $view().innerHTML = `
-      <h2 class="view-title">用語カード</h2>
+      <h2 class="view-title">暗記</h2>
+      ${sectionTabs()}
       <p class="view-lead">用語を見て意味を思い出してから、めくって確認します。「覚えた」カードは忘れかけた頃に、「まだ」のカードはすぐにもう一度出てきます。</p>
       <div class="seg-tabs" role="tablist">
         <button class="seg-tab ${mode === 'today' ? 'is-active' : ''}" data-mode="today" role="tab" aria-selected="${mode === 'today'}">今日のカード(${todayDeck(filter).length}枚)</button>
@@ -122,6 +147,7 @@ const Cards = (() => {
       <div class="flashcard-zone">${cardHtml}</div>
       ${list}`;
 
+    bindTabs();
     $view().querySelectorAll('[data-filter]').forEach((c) => {
       c.addEventListener('click', () => { filter = c.dataset.filter; render(); });
     });

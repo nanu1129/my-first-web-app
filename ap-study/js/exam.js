@@ -14,6 +14,7 @@ const Exam = (() => {
     $view().innerHTML = `
       <h2 class="view-title">模擬試験</h2>
       <p class="view-lead">科目A(旧午前)と同じ80問・150分の形式です。全分野の本番レベル問題から、本試験の分野配分に合わせてランダムに出題します。制限時間つき・採点は最後にまとめて行います(合格ライン60%)。</p>
+      <p class="exam-cbt"><span class="pill pill-accent">本番と同じ操作</span> 前後の問題への移動、「後で見直す」の印、問題一覧、答えの変更ができます。終了後は、1問ごとにかかった時間も分かります。</p>
       <div class="exam-options">
         ${PLANS.map((p, i) => `
           <button class="exam-option" data-plan="${i}">

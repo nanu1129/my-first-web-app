@@ -24,6 +24,7 @@ const Store = (() => {
     cases: {},      // caseId -> { cleared, best(%), at }
     cards: {},      // termKey -> true(覚えた。旧方式。cardSrs が無いカードだけ参照)
     cardSrs: {},    // termKey -> { box(0〜6), due(ms), at(最終回答ms) }
+    pastExams: {},  // 本物の過去問の得点 examId -> { score, total, at }(削除は { deleted: true, at })
     srs: {},        // qid -> { reps, interval(日), due(ms) }
     lastWrong: {},  // qid -> 最後に間違えた時刻(ms)
     lastRight: {},  // qid -> 最後に正解した時刻(ms)
@@ -82,6 +83,7 @@ const Store = (() => {
     if (!cache.counters[cache.deviceId]) cache.counters[cache.deviceId] = { answers: {}, reasons: {}, days: {}, acts: {} };
     if (!cache.counters[cache.deviceId].acts) cache.counters[cache.deviceId].acts = {};
     if (!cache.cardSrs) cache.cardSrs = {};
+    if (!cache.pastExams) cache.pastExams = {};
     return cache;
   }
 
@@ -144,6 +146,13 @@ const Store = (() => {
     ck.forEach((id) => {
       const x = (a.cardSrs || {})[id], y = (b.cardSrs || {})[id];
       out.cardSrs[id] = (!x || (y && (y.at || 0) > (x.at || 0))) ? y : x;
+    });
+
+    // 過去問の得点: 試験ごとに、あとから記録した方(削除も含む)を採用
+    const pk = new Set([...Object.keys(a.pastExams || {}), ...Object.keys(b.pastExams || {})]);
+    pk.forEach((id) => {
+      const x = (a.pastExams || {})[id], y = (b.pastExams || {})[id];
+      out.pastExams[id] = (!x || (y && (y.at || 0) > (x.at || 0))) ? y : x;
     });
 
     // 間隔反復: 学習が進んでいる方(反復回数が多い、同数なら次回が先の方)を採用
@@ -210,6 +219,7 @@ const Store = (() => {
       if (!cache.counters[own]) cache.counters[own] = { answers: {}, reasons: {}, days: {}, acts: {} };
       if (!cache.counters[own].acts) cache.counters[own].acts = {};
       if (!cache.cardSrs) cache.cardSrs = {};
+      if (!cache.pastExams) cache.pastExams = {};
       save(true);
     },
     mergeStates,
@@ -257,6 +267,24 @@ const Store = (() => {
         at: Date.now(),
       };
       save();
+    },
+
+    // --- 本物の過去問(IPA公開)の得点 ---
+    setPastExam(id, score, total) {
+      const d = load();
+      d.pastExams[id] = { score, total: total || 80, at: Date.now() };
+      save();
+    },
+    removePastExam(id) {
+      const d = load();
+      if (d.pastExams[id]) { d.pastExams[id] = { deleted: true, at: Date.now() }; save(); }
+    },
+    // 記録した順(古い → 新しい)。削除したものは含めない
+    pastExams() {
+      return Object.entries(load().pastExams)
+        .filter(([, v]) => v && !v.deleted)
+        .map(([id, v]) => Object.assign({ id }, v))
+        .sort((x, y) => x.at - y.at);
     },
 
     // --- 午後演習 ---

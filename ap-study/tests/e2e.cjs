@@ -294,6 +294,108 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await ctx.close();
   }
 
+  // ---- E. 本番形式の模試(CBT)・本物の過去問の記録・暗記タブ・午後演習の2カラム・追加ユニット ----
+  {
+    const { ctx, page } = await newPage(browser, { width: 390, height: 844 }, seeded(Date.now()), errors, 'cbt');
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    const answered = () => page.evaluate(() => {
+      const st = JSON.parse(localStorage.getItem('ap-study-v1'));
+      return Object.values(st.counters).reduce((n, c) => n + Object.values(c.answers || {}).reduce((m, a) => m + a.t, 0), 0);
+    });
+    const before = await answered();
+    await page.click('#main-nav [data-nav="exam"]');
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    await page.click('#view-quiz .choice[data-i="0"]');
+    await page.click('#view-quiz .choice[data-i="1"]');
+    const picked = await page.locator('#view-quiz .choice.is-picked').evaluateAll((cs) => cs.map((c) => c.dataset.i));
+    ok(picked.join() === '1', '模試: 選び直すと解答が変わる(選択中は1つだけ)', picked);
+    await page.click('#cbt-flag');
+    ok((await page.locator('#cbt-flag').getAttribute('aria-pressed')) === 'true', '模試: 「後で見直す」の印を付けられる');
+    await page.click('#cbt-next');
+    ok((await page.locator('.cbt-no').innerText()).startsWith('問2'), '模試: 次の問題へ進む');
+    await page.click('#view-quiz .choice[data-i="2"]');
+    await page.click('#cbt-list');
+    ok(await page.locator('.cbt-cell[data-go]').count() === 20 && await page.locator('.cbt-grid .cbt-cell.is-flag').count() === 1
+      && await page.locator('.cbt-grid .cbt-cell.is-ans').count() === 2, '模試: 問題一覧に20問・解答済み2・見直し1');
+    await page.click('.cbt-cell[data-go="9"]');
+    ok((await page.locator('.cbt-no').innerText()).startsWith('問10'), '模試: 一覧から問10へ移動');
+    await page.click('#cbt-prev');
+    ok((await page.locator('.cbt-no').innerText()).startsWith('問9'), '模試: 前の問題へ戻る');
+    await page.click('#cbt-end2');
+    ok((await page.locator('.cbt-confirm').innerText()).includes('未解答 18問'), '模試: 終了の前に未解答の数を確認できる');
+    await page.click('#cbt-submit');
+    await page.waitForSelector('#view-quiz .time-analysis');
+    ok(await answered() - before === 2, '模試: 採点では解答した2問だけを記録する', await answered() - before);
+    ok((await page.locator('#view-quiz .rv-meta').allInnerTexts()).some((t) => t.includes('見直しの印あり')), '模試: 結果の見直しに「考えた時間」と印が出る');
+    await page.screenshot({ path: path.join(OUT, 'sp-mock-result.png'), fullPage: true });
+
+    // 本物の過去問の得点(成績の記録欄・Udemyのカード)
+    await page.click('#main-nav [data-nav="stats"]');
+    ok((await page.inputValue('#past-id')) === 'r07a', '過去問: まだ記録のない一番新しい回(令和7年秋)が選ばれている');
+    await page.fill('#past-score', '52');
+    await page.click('#past-form button[type="submit"]');
+    ok(await page.locator('.past-row').count() === 1 && (await page.inputValue('#past-id')) === 'r07s', '過去問: 記録すると一覧に出て、次の回が選ばれる');
+    ok((await page.locator('.forecast-real').innerText()).includes('65点'), '過去問: 合格予測に本物の過去問の結果(52/80問 → 100点満点で65点)が出る');
+    await page.evaluate(() => App.goHome());
+    await page.click('#udemy-progress summary');
+    await page.fill('input[data-past="r07s"]', '46');
+    await page.locator('input[data-past="r07s"]').dispatchEvent('change');
+    ok(await page.evaluate(() => Store.pastExams().map((r) => `${r.id}:${r.score}`).join()) === 'r07a:52,r07s:46', '過去問: Udemyのカードからも得点を記録できる');
+    await page.click('#main-nav [data-nav="stats"]');
+    page.once('dialog', (d) => d.accept());
+    await page.click('.past-del[data-del="r07a"]');
+    ok(await page.locator('.past-row').count() === 1, '過去問: 記録を削除できる');
+
+    // 暗記タブ: 公式集(絞り込み・隠して思い出す・ドリルへ)と要点まとめ
+    await page.click('#main-nav [data-nav="cards"]');
+    await page.click('[data-section="formulas"]');
+    const allF = await page.locator('.formula-card').count();
+    await page.click('[data-fpart="computer"]');
+    const compF = await page.locator('.formula-card').count();
+    ok(allF >= 20 && compF > 0 && compF < allF, '公式集: 分野で絞り込める', [allF, compF]);
+    await page.click('#fc-quiz');
+    ok(!(await page.locator('.fc-formula').first().isVisible()), '公式集: 「隠して思い出す」で公式が隠れる');
+    await page.locator('.fc-reveal').first().click();
+    ok(await page.locator('.fc-formula').first().isVisible() && !(await page.locator('.fc-formula').nth(1).isVisible()), '公式集: タップしたカードだけ公式が見える');
+    await page.click('[data-drill="cache"]');
+    ok((await page.locator('#view-practice .chip.is-active').innerText()).includes('実効アクセス時間'), '公式集: 「ドリルで練習」で同じ公式の計算ドリルが開く');
+    await page.click('#main-nav [data-nav="cards"]');
+    await page.click('[data-section="points"]');
+    const total = parseInt(await page.locator('.pt-count').innerText(), 10);
+    await page.fill('#pt-search', 'RAID');
+    await page.waitForTimeout(400);
+    const hit = parseInt(await page.locator('.pt-count').innerText(), 10);
+    ok(total > 300 && hit > 0 && hit < 10 && await page.locator('#pt-print').count() === 1, '要点まとめ: 全POINTを検索でき、印刷ボタンがある', [total, hit]);
+    ok(await page.evaluate(() => document.activeElement && document.activeElement.id) === 'pt-search', '要点まとめ: 絞り込み中も入力欄から外れない');
+    ok(await overflow(page) <= 0, '暗記タブで横はみ出しなし');
+
+    // 追加ユニット(労働・取引の法律と標準化)は、Udemy順で法務(strategy-3)の次
+    const order = await page.evaluate(() => Order.unitsOfPart('strategy').map((u) => u.id).join());
+    ok(order === 'strategy-1,strategy-2,strategy-3,strategy-6,strategy-4,strategy-5', '追加ユニットは企業会計と法務の次に並ぶ', order);
+    await page.evaluate(() => Course.openLesson('strategy-6'));
+    ok(await page.locator('#view-lesson figure[data-art="work-style"]').count() === 1 && await overflow(page) <= 0, '追加ユニットの教材が図解つきで開き、横はみ出しなし');
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await newPage(browser, { width: 1366, height: 860 }, seeded(Date.now()), errors, 'case');
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    await page.evaluate(() => { App.navigate('practice'); Afternoon.start(AP.cases[0].id); });
+    await page.waitForSelector('.case-layout .case-q');
+    const lay = await page.evaluate(() => {
+      const L = document.querySelector('.case-layout'), P = document.querySelector('.case-paper'), Q = document.querySelector('.case-q');
+      return { cols: getComputedStyle(L).gridTemplateColumns.split(' ').length, sticky: getComputedStyle(P).position,
+        side: Q.getBoundingClientRect().left > P.getBoundingClientRect().right, sw: document.documentElement.scrollWidth - innerWidth };
+    });
+    ok(lay.cols === 2 && lay.sticky === 'sticky' && lay.side && lay.sw <= 0, '午後演習(PC): 本文を左に固定し、設問を右に並べる', lay);
+    await page.screenshot({ path: path.join(OUT, 'pc-case-2col.png') });
+    await page.setViewportSize({ width: 390, height: 844 });
+    ok(await page.evaluate(() => getComputedStyle(document.querySelector('.case-layout')).display) === 'block', '午後演習(スマホ): 1列で表示');
+    await ctx.close();
+  }
+
   ok(errors.length === 0, 'ページのエラーなし', errors);
   await browser.close();
   srv.close();

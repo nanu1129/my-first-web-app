@@ -253,7 +253,8 @@ const Drill = (() => {
     return ri(pool);
   }
 
-  function render() {
+  function render(type) {
+    if (type && GENS.some((g) => g.id === type)) filterId = type; // 公式集などから種類を指定して開く
     session = { asked: 0, correct: 0, streak: 0 };
     next();
   }
