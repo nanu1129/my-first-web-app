@@ -51,8 +51,11 @@ function seeded(now) {
   };
 }
 
+// 通常のテストは本物のFirebaseにつながず、同期を未設定の状態で動かす(同期のテストは fakeCloud を使う)
+const NO_SYNC = 'window.AP_FIREBASE_CONFIG = { apiKey: "", authDomain: "", projectId: "", appId: "" };';
 async function newPage(browser, vp, state, errors, tag) {
   const ctx = await browser.newContext({ viewport: vp });
+  await ctx.route('**/js/firebase-config.js*', (r) => r.fulfill({ contentType: 'text/javascript', body: NO_SYNC }));
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(`${tag}: ${e} @ ${(e.stack || '').split('\n').slice(1, 3).join(' | ')}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.g|ERR_CERT|net::|Failed to load resource/.test(m.text())) errors.push(`${tag}: ${m.text()}`); });
