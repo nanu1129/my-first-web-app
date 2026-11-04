@@ -30,20 +30,34 @@ const Exam = (() => {
     });
   }
 
-  // 配分比(AP.examWeights)に沿って各パートから抽出
+  // 配分比(AP.examWeights)に沿って各パートから抽出する。
+  // 最近解いていない問題から順に選ぶので、何回受けても同じ問題ばかりにならない。
+  // 各パートの3割ほどは、教材の一問一答からも出す(出題の幅を広げる)
+  const CHECK_SHARE = 0.3;
   function pickQuestions(count) {
-    const byPart = {};
+    const fresh = (list) => Quiz.shuffle(list).sort((a, b) => Store.lastSeen(a.qid) - Store.lastSeen(b.qid));
+    const asMock = (q) => Object.assign({}, q, { source: `一問一答「${q.unitTitle}」` });
+    const bank = {}, checks = {};
     AP.parts.forEach((p) => {
-      byPart[p.id] = Quiz.shuffle(AP.questions.filter((q) => q.partId === p.id));
+      bank[p.id] = fresh(AP.questions.filter((q) => q.partId === p.id));
+      checks[p.id] = fresh((AP.allQuestions || []).filter((q) => q.partId === p.id && /^chk-/.test(q.qid))).map(asMock);
     });
+    // パートごとの問題数(最大剰余法で、合計がちょうど count 問になるように配分する)
+    const quota = AP.parts.map((p) => {
+      const x = (AP.examWeights[p.id] || 0) * count;
+      return { id: p.id, x, n: Math.floor(x) };
+    });
+    let left = count - quota.reduce((n, q) => n + q.n, 0);
+    quota.slice().sort((a, b) => (b.x - b.n) - (a.x - a.n)).forEach((q) => { if (left > 0) { q.n += 1; left -= 1; } });
     const picked = [];
-    AP.parts.forEach((p) => {
-      const want = Math.round((AP.examWeights[p.id] || 0) * count);
-      picked.push(...byPart[p.id].splice(0, want));
+    quota.forEach(({ id, n: want }) => {
+      const nCheck = Math.min(checks[id].length, Math.round(want * CHECK_SHARE));
+      const fromBank = bank[id].splice(0, want - nCheck);
+      picked.push(...fromBank, ...checks[id].splice(0, want - fromBank.length));
     });
-    // 端数調整: 不足分は残りからランダムに、超過分は削る
-    const rest = Quiz.shuffle(Object.values(byPart).flat());
-    while (picked.length < count && rest.length) picked.push(rest.pop());
+    // 端数調整: 不足分は残りから(最近解いていない順に)、超過分は削る
+    const rest = fresh(Object.values(bank).flat()).concat(fresh(Object.values(checks).flat()));
+    while (picked.length < count && rest.length) picked.push(rest.shift());
     return Quiz.shuffle(picked.slice(0, count));
   }
 

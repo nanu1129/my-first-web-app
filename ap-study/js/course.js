@@ -385,6 +385,8 @@ const Course = (() => {
     if (act === 'trace') { App.navigate('practice'); return Trace.renderMenu(); }
     if (act === 'mock') return App.navigate('exam');
     if (act === 'case') { App.navigate('practice'); return id ? Afternoon.start(id) : Afternoon.renderMenu(); }
+    if (act === 'pmfields') { App.navigate('practice'); return Afternoon.renderMenu({ focus: 'pm-fields' }); }
+    if (act === 'pmpast') { App.navigate('practice'); return Afternoon.renderMenu({ focus: 'pm-past', key: id }); }
     if (act === 'cards') return App.navigate('cards');
     if (act === 'apply') return window.open(Plan.IPA_URL, '_blank', 'noopener');
     if (act === 'udemy') {

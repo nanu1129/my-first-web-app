@@ -187,3 +187,20 @@ test('setPref は項目ごとの変更時刻を記録する', () => {
   const snap = plain(Store.snapshot());
   assert.ok(snap.prefsTs.goal >= t0 && snap.prefsAt === snap.prefsTs.goal);
 });
+
+test('科目Bの過去問の記録: 端末間では新しい記録(削除を含む)を採用し、午前の記録とは別に数える', () => {
+  const { Store } = freshStore();
+  const now = Date.now();
+  Store.setPmExam('r07a-1', 70);
+  Store.setPastExam('r07a', 52);
+  const phone = plain(Store.snapshot());
+  phone.deviceId = 'phone';
+  phone.pmExams = { 'r07a-1': { score: 80, at: now + 60000 }, 'r07a-6': { score: 55, at: now - 60000 } };
+  Store.applyState(Store.mergeStates(Store.snapshot(), phone));
+  assert.deepEqual(plain(Store.pmExams()).map((r) => `${r.id}:${r.score}`).sort(), ['r07a-1:80', 'r07a-6:55']);
+  assert.deepEqual(plain(Store.pastExams()).map((r) => r.id), ['r07a']);
+  Store.removePmExam('r07a-6');
+  const m = Store.mergeStates(Store.snapshot(), phone);
+  assert.deepEqual(plain(m.pmExams['r07a-6']).deleted, true);
+  assert.equal(Store.lastSeen('nothing'), 0);
+});

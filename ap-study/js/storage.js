@@ -25,6 +25,7 @@ const Store = (() => {
     cards: {},      // termKey -> true(覚えた。旧方式。cardSrs が無いカードだけ参照)
     cardSrs: {},    // termKey -> { box(0〜6), due(ms), at(最終回答ms) }
     pastExams: {},  // 本物の過去問の得点 examId -> { score, total, at }(削除は { deleted: true, at })
+    pmExams: {},    // 科目B(午後)の過去問の自己採点 '試験ID-問番号' -> { score(%), at }(削除は { deleted: true, at })
     srs: {},        // qid -> { reps, interval(日), due(ms) }
     lastWrong: {},  // qid -> 最後に間違えた時刻(ms)
     lastRight: {},  // qid -> 最後に正解した時刻(ms)
@@ -85,6 +86,7 @@ const Store = (() => {
     if (!cache.counters[cache.deviceId].acts) cache.counters[cache.deviceId].acts = {};
     if (!cache.cardSrs) cache.cardSrs = {};
     if (!cache.pastExams) cache.pastExams = {};
+    if (!cache.pmExams) cache.pmExams = {};
     if (!cache.prefsTs) cache.prefsTs = {};
     return cache;
   }
@@ -150,11 +152,13 @@ const Store = (() => {
       out.cardSrs[id] = (!x || (y && (y.at || 0) > (x.at || 0))) ? y : x;
     });
 
-    // 過去問の得点: 試験ごとに、あとから記録した方(削除も含む)を採用
-    const pk = new Set([...Object.keys(a.pastExams || {}), ...Object.keys(b.pastExams || {})]);
-    pk.forEach((id) => {
-      const x = (a.pastExams || {})[id], y = (b.pastExams || {})[id];
-      out.pastExams[id] = (!x || (y && (y.at || 0) > (x.at || 0))) ? y : x;
+    // 過去問の得点(午前・午後): 試験ごとに、あとから記録した方(削除も含む)を採用
+    ['pastExams', 'pmExams'].forEach((f) => {
+      const pk = new Set([...Object.keys(a[f] || {}), ...Object.keys(b[f] || {})]);
+      pk.forEach((id) => {
+        const x = (a[f] || {})[id], y = (b[f] || {})[id];
+        out[f][id] = (!x || (y && (y.at || 0) > (x.at || 0))) ? y : x;
+      });
     });
 
     // 間隔反復: 学習が進んでいる方(反復回数が多い、同数なら次回が先の方)を採用
@@ -253,6 +257,7 @@ const Store = (() => {
       if (!cache.counters[own].acts) cache.counters[own].acts = {};
       if (!cache.cardSrs) cache.cardSrs = {};
       if (!cache.pastExams) cache.pastExams = {};
+      if (!cache.pmExams) cache.pmExams = {};
       if (!cache.prefsTs) cache.prefsTs = {};
       save(true);
     },
@@ -321,6 +326,23 @@ const Store = (() => {
         .sort((x, y) => x.at - y.at);
     },
 
+    // --- 科目B(午後)の過去問(IPA公開)の自己採点(%) ---
+    setPmExam(id, score) {
+      const d = load();
+      d.pmExams[id] = { score, at: Date.now() };
+      save();
+    },
+    removePmExam(id) {
+      const d = load();
+      if (d.pmExams[id]) { d.pmExams[id] = { deleted: true, at: Date.now() }; save(); }
+    },
+    pmExams() {
+      return Object.entries(load().pmExams)
+        .filter(([, v]) => v && !v.deleted)
+        .map(([id, v]) => Object.assign({ id }, v))
+        .sort((x, y) => x.at - y.at);
+    },
+
     // --- 午後演習 ---
     caseState(caseId) { return load().cases[caseId] || null; },
     setCaseResult(caseId, percent, cleared) {
@@ -382,6 +404,11 @@ const Store = (() => {
     wrongIds() {
       const d = load();
       return Object.keys(d.lastWrong).filter((q) => (d.lastWrong[q] || 0) > (d.lastRight[q] || 0));
+    },
+    // 最後に解いた時刻(正解・不正解のどちらか新しい方。未回答は0)
+    lastSeen(qid) {
+      const d = load();
+      return Math.max(d.lastWrong[qid] || 0, d.lastRight[qid] || 0);
     },
     markWrong(qid, wrong) {
       const d = load();

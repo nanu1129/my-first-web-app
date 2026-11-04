@@ -3,6 +3,7 @@
 AP.cases = [
   {
     id: 'case-sec',
+    fieldId: 'sec',
     title: '標的型攻撃への対応',
     field: 'セキュリティ(午後の必須分野)',
     partId: 'security',
@@ -57,6 +58,7 @@ AP.cases = [
   },
   {
     id: 'case-db',
+    fieldId: 'db',
     title: 'ECサイトの注文データベース設計',
     field: 'データベース',
     partId: 'database',
@@ -106,6 +108,7 @@ AP.cases = [
   },
   {
     id: 'case-nw',
+    fieldId: 'nw',
     title: '本社ネットワークの更改',
     field: 'ネットワーク',
     partId: 'network',

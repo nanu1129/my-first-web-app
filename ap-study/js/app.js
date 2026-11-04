@@ -60,6 +60,7 @@ const App = (() => {
         u.checks.forEach((c, i) => {
           c.qid = `chk-${u.id}-${i}`;
           c.partId = l.partId;
+          c.unitTitle = u.title;
         });
       });
     });

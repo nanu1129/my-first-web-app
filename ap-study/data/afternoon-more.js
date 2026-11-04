@@ -43,6 +43,7 @@
   AP.cases.push(
     {
       id: 'case-pm',
+      fieldId: 'pm',
       title: '販売管理システム刷新のスケジュール管理',
       field: 'プロジェクトマネジメント',
       partId: 'management',
@@ -99,6 +100,7 @@
     },
     {
       id: 'case-st',
+      fieldId: 'st',
       title: '地域ベーカリーの経営戦略',
       field: '経営戦略',
       partId: 'strategy',
@@ -153,6 +155,7 @@
     },
     {
       id: 'case-algo',
+      fieldId: 'algo',
       title: '挿入ソートのプログラム',
       field: 'プログラミング(アルゴリズム)',
       partId: 'basics',

@@ -54,7 +54,7 @@ function seeded(now) {
 // 通常のテストは本物のFirebaseにつながず、同期を未設定の状態で動かす(同期のテストは fakeCloud を使う)
 const NO_SYNC = 'window.AP_FIREBASE_CONFIG = { apiKey: "", authDomain: "", projectId: "", appId: "" };';
 async function newPage(browser, vp, state, errors, tag) {
-  const ctx = await browser.newContext({ viewport: vp });
+  const ctx = await browser.newContext({ viewport: vp, serviceWorkers: 'block' });
   await ctx.route('**/js/firebase-config.js*', (r) => r.fulfill({ contentType: 'text/javascript', body: NO_SYNC }));
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(`${tag}: ${e} @ ${(e.stack || '').split('\n').slice(1, 3).join(' | ')}`));
@@ -329,6 +329,56 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await ctx.close();
   }
   {
+    // 演習期: 科目Bの分野を決める → 週1回の午後の過去問 → 記録すると完了
+    const { ctx, page } = await at('2027-01-05T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-06' });
+    const acts0 = await page.locator('.task-row').evaluateAll((r) => r.map((x) => x.dataset.act));
+    ok(acts0.includes('pmfields') && !acts0.includes('pmpast'), '演習期: 「科目Bで解く分野を決める」がメニューに出る', acts0);
+    await page.click('.task-row[data-act="pmfields"]');
+    await page.waitForSelector('#pm-fields');
+    for (const f of ['db', 'nw', 'pm', 'sm', 'audit']) await page.click(`[data-field="${f}"]`);
+    await page.click('[data-field="st"]');
+    ok((await page.locator('#pm-fields .pm-msg').innerText()).includes('5分野') && await page.locator('.pf-chip.is-on').count() === 5,
+      '科目B: 選べるのは5分野(4分野 + 予備)まで');
+    await page.click('[data-field="audit"]');
+    ok((await page.locator('.pm-count').innerText()).startsWith('4/4'), '科目B: 選んだ分野を外せる');
+    await page.evaluate(() => App.goHome());
+    const pmLabel = await page.locator('.task-row[data-act="pmpast"] .tr-label').innerText();
+    ok(pmLabel.includes('令和7年度 秋期 問1(情報セキュリティ)'), '演習期: 午後の過去問は新しい回の問1から', pmLabel);
+    await page.click('.task-row[data-act="pmpast"]');
+    await page.waitForSelector('#pm-form');
+    ok(await page.inputValue('#pm-exam') === 'r07a' && await page.inputValue('#pm-field') === 'sec', '科目B: メニューから開くと、その1問が記録欄で選ばれている');
+    await page.fill('#pm-score', '70');
+    await page.click('#pm-form button[type="submit"]');
+    ok(await page.inputValue('#pm-field') === 'nw' && (await page.locator('.pm-next').innerText()).includes('問5(ネットワーク)'),
+      '科目B: 記録すると、同じ回の次の分野(問5)へ進む');
+    await page.click('[data-pm="r06a|db"]');
+    ok(await page.inputValue('#pm-exam') === 'r06a' && await page.inputValue('#pm-field') === 'db', '科目B: 表のマスを押すと、その回・その問題を選べる');
+    await page.fill('#pm-score', '40');
+    await page.click('#pm-form button[type="submit"]');
+    ok(await page.locator('.pp-cell.ng[data-pm="r06a|db"]').count() === 1 && await page.locator('.pp-cell.ok[data-pm="r07a|sec"]').count() === 1,
+      '科目B: 60%以上と未満で色分けして表示');
+    ok(await overflow(page) <= 0, '科目B: 午後演習の画面で横はみ出しなし');
+    await page.evaluate(() => App.goHome());
+    ok(await page.locator('.task-row[data-act="pmpast"].is-done').count() === 1, '演習期: 今日記録したら午後の過去問は完了');
+    await page.clock.setFixedTime(new Date('2027-01-08T09:00:00'));
+    await page.evaluate(() => App.goHome());
+    ok(await page.locator('.task-row[data-act="pmpast"]').count() === 0, '演習期: 午後の過去問は週に1回(3日後は出ない)');
+    await page.clock.setFixedTime(new Date('2027-01-12T09:00:00'));
+    await page.evaluate(() => App.goHome());
+    ok(await page.locator('.task-row[data-act="pmpast"]').count() === 1, '演習期: 1週間たつと次の午後の過去問');
+    await ctx.close();
+  }
+  {
+    // 科目B期: 毎日の午後の過去問と、選んだ分野(+必須のセキュリティ)の午後演習
+    const { ctx, page } = await at('2027-02-20T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-06', pmFields: ['db', 'nw', 'pm', 'sm'] });
+    const rows = await page.locator('.task-row').evaluateAll((r) => r.map((x) => `${x.dataset.act}:${x.dataset.id || ''}`));
+    ok(rows.some((r) => r.startsWith('pmpast:r07a-1')) && rows.includes('case:case-sec'), '科目B期: 午後の過去問と、セキュリティの午後演習が毎日のメニューに', rows);
+    await page.evaluate(() => { ['case-sec', 'case-sec2'].forEach((id) => Store.setCaseResult(id, 80, true)); App.goHome(); });
+    const next = await page.locator('.task-row[data-act="case"]').getAttribute('data-id');
+    ok(next === 'case-nw', '科目B期: 次の午後演習は、選んだ分野の問題番号の順(ネットワーク)', next);
+    await ctx.close();
+  }
+  {
     const { ctx, page } = await at('2027-03-16T09:00:00');
     ok((await page.locator('.today-card').innerText()).includes('試験日を過ぎました'), '科目Bの日を過ぎたら終了の案内');
     await ctx.close();
@@ -400,10 +450,15 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await page.click('#main-nav [data-nav="exam"]');
     await page.click('.exam-option[data-plan="0"]');
     await page.waitForSelector('#view-quiz .cbt-no');
-    await page.click('#view-quiz .choice[data-i="0"]');
-    await page.click('#view-quiz .choice[data-i="1"]');
+    // 問1は、いったん選んでから「不正解の選択肢」に選び直す(結果の見直しに必ず出るように)
+    const ans1 = await page.evaluate(() => Quiz.current().answer);
+    const first = ans1 === 0 ? 1 : 0;
+    let wrong1 = (ans1 + 1) % 4;
+    if (wrong1 === first) wrong1 = (ans1 + 2) % 4;
+    await page.click(`#view-quiz .choice[data-i="${first}"]`);
+    await page.click(`#view-quiz .choice[data-i="${wrong1}"]`);
     const picked = await page.locator('#view-quiz .choice.is-picked').evaluateAll((cs) => cs.map((c) => c.dataset.i));
-    ok(picked.join() === '1', '模試: 選び直すと解答が変わる(選択中は1つだけ)', picked);
+    ok(picked.join() === String(wrong1), '模試: 選び直すと解答が変わる(選択中は1つだけ)', picked);
     await page.click('#cbt-flag');
     ok((await page.locator('#cbt-flag').getAttribute('aria-pressed')) === 'true', '模試: 「後で見直す」の印を付けられる');
     await page.click('#cbt-next');
@@ -423,6 +478,38 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok(await answered() - before === 2, '模試: 採点では解答した2問だけを記録する', await answered() - before);
     ok((await page.locator('#view-quiz .rv-meta').allInnerTexts()).some((t) => t.includes('見直しの印あり')), '模試: 結果の見直しに「考えた時間」と印が出る');
     await page.screenshot({ path: path.join(OUT, 'sp-mock-result.png'), fullPage: true });
+    // 20問の模試を2回: 1回目は全問解答 → 2回目は1回目と重ならない
+    const takeMock = async (answerAll) => {
+      await page.click('#main-nav [data-nav="exam"]');
+      await page.click('.exam-option[data-plan="0"]');
+      await page.waitForSelector('#view-quiz .cbt-no');
+      const ids = [], srcs = [];
+      for (let i = 0; i < 20; i++) {
+        const q = await page.evaluate(() => { const c = Quiz.current(); return { qid: c.qid, src: c.source || '' }; });
+        ids.push(q.qid);
+        srcs.push(q.src);
+        if (answerAll) await page.click('#view-quiz .choice[data-i="0"]');
+        if (i < 19) await page.click('#cbt-next');
+      }
+      await page.click('#cbt-end');
+      await page.click('#cbt-submit');
+      await page.waitForSelector('#view-quiz .time-analysis');
+      return { ids, srcs };
+    };
+    const m1 = await takeMock(true);
+    const m2 = await takeMock(false);
+    const dup = m2.ids.filter((id) => m1.ids.includes(id));
+    ok(new Set(m1.ids).size === 20 && dup.length === 0, '模試: 2回目は、1回目に解いた問題と重ならない(最近解いていない問題から)', dup);
+    ok(m1.srcs.some((t) => t.startsWith('一問一答')) && m1.srcs.some((t) => t.startsWith('科目A')), '模試: 本番レベルの問題に、教材の一問一答も混ざる', m1.srcs.slice(0, 6));
+    // 成績: 間違えたままの問題が多いユニット → そのユニットだけ解き直す
+    await page.click('#main-nav [data-nav="stats"]');
+    const wu = await page.locator('.wu-row').count();
+    ok(wu > 0, '成績: 間違えたままの問題が多いユニットを表示', wu);
+    if (wu) {
+      await page.locator('[data-wu-retry]').first().click();
+      await page.waitForSelector('#view-quiz .choice');
+      ok((await page.locator('#view-quiz').innerText()).includes('解き直し'), '成績: ユニットごとに、間違えた問題だけを解き直せる');
+    }
 
     // 本物の過去問の得点(成績の記録欄・Udemyのカード)
     await page.click('#main-nav [data-nav="stats"]');
@@ -520,7 +607,7 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     const cloud = fakeCloud();
     const now = Date.now();
     const device = async (tag, vp, st) => {
-      const ctx = await browser.newContext({ viewport: vp, acceptDownloads: true });
+      const ctx = await browser.newContext({ viewport: vp, acceptDownloads: true, serviceWorkers: 'block' });
       await cloud.attach(ctx);
       const page = await ctx.newPage();
       page.on('pageerror', (e) => errors.push(`${tag}: ${e}`));
@@ -597,9 +684,32 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await sp.ctx.close();
   }
 
+  // ---- G. Service Worker: 2回目からはバージョン付きのファイルをキャッシュから読み、オフラインでも開ける ----
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await ctx.route('**/js/firebase-config.js*', (r) => r.fulfill({ contentType: 'text/javascript', body: NO_SYNC }));
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => errors.push(`sw: ${e}`));
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller, null, { timeout: 15000 }).catch(() => {});
+    await page.reload();
+    await page.waitForSelector('.today-card');
+    const fromSw = [];
+    page.on('response', (r) => { if (/\/js\/app\.js\?v=/.test(r.url())) fromSw.push(r.fromServiceWorker()); });
+    await page.reload();
+    await page.waitForSelector('.today-card');
+    ok(fromSw.length > 0 && fromSw.every(Boolean), '2回目からは、バージョン付きのファイルをService Workerのキャッシュから読む', fromSw);
+    srv.close();
+    if (srv.closeAllConnections) srv.closeAllConnections();
+    await page.reload().catch(() => {});
+    ok(await page.waitForSelector('.today-card', { timeout: 10000 }).then(() => true).catch(() => false), 'サーバに接続できなくても(オフライン)、前回の内容で開ける');
+    await ctx.close();
+  }
+
   ok(errors.length === 0, 'ページのエラーなし', errors);
   await browser.close();
-  srv.close();
+  srv.close(); // 念のため(G でも止めている)
   console.log(`\n${failures ? `✗ ${failures}件の失敗` : '✓ すべて合格'}(スクリーンショット: ${OUT})`);
   process.exitCode = failures ? 1 : 0;
 })();
