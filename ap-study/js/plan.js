@@ -266,5 +266,5 @@ const Plan = (() => {
   }
 
   return { compute, examDate, examBDate, setExamDate, setExamBDate, markApplied, DEFAULT_A, REVIEW_LIMIT, IPA_URL, PAST_URL, SCHEDULES,
-    PM_MAX, pmChosen, setPmChosen, pmTargets, pmNext, pmKey };
+    PM_MAX, pmChosen, setPmChosen, pmTargets, pmNext, pmKey, scheduleOf };
 })();

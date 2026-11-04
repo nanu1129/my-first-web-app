@@ -379,6 +379,28 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await ctx.close();
   }
   {
+    // カレンダーに登録: 申込期間・科目A/B・毎日の学習(.ics と Googleカレンダーのリンク)
+    const { ctx, page } = await at('2026-11-04T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-08' });
+    await page.click('.plan-detail summary');
+    await page.fill('#study-time', '21:30');
+    await page.locator('#study-time').dispatchEvent('change');
+    if (!(await page.locator('.plan-detail[open]').count())) await page.click('.plan-detail summary');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#cal-ics')]);
+    const icsText = fs.readFileSync(await dl.path(), 'utf8');
+    const lines = icsText.split('\r\n');
+    const tooLong = lines.filter((l) => Buffer.byteLength(l, 'utf8') > 75);
+    const unfolded = icsText.replace(/\r\n /g, '');
+    ok(icsText.startsWith('BEGIN:VCALENDAR\r\n') && (icsText.match(/BEGIN:VEVENT/g) || []).length === 5 && tooLong.length === 0,
+      'カレンダー: .ics に申込開始・締切・科目A・科目B・毎日の学習の5件(1行75バイト以内)', { n: (icsText.match(/BEGIN:VEVENT/g) || []).length, tooLong });
+    ok(unfolded.includes('DTSTART;VALUE=DATE:20270208') && unfolded.includes('DTSTART;VALUE=DATE:20270216')
+      && /DTSTART;TZID=Asia\/Tokyo:20261104T213000/.test(unfolded) && /RRULE:FREQ=DAILY;UNTIL=20270303T\d{6}Z/.test(unfolded),
+      'カレンダー: 受験日・申込締切・毎日21:30(科目Bの日まで)が入る');
+    const gl = await page.locator('.pcal-links a').evaluateAll((as) => as.map((a) => a.href));
+    ok(gl.length === 5 && gl.some((h) => h.includes('recur=RRULE')) && gl.every((h) => h.startsWith('https://calendar.google.com/')),
+      'カレンダー: Googleカレンダーに追加するリンク(5件)', gl.length);
+    await ctx.close();
+  }
+  {
     const { ctx, page } = await at('2027-03-16T09:00:00');
     ok((await page.locator('.today-card').innerText()).includes('試験日を過ぎました'), '科目Bの日を過ぎたら終了の案内');
     await ctx.close();
@@ -510,6 +532,22 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
       await page.waitForSelector('#view-quiz .choice');
       ok((await page.locator('#view-quiz').innerText()).includes('解き直し'), '成績: ユニットごとに、間違えた問題だけを解き直せる');
     }
+
+    // スマホ: タブは画面の下に固定(フッタまで隠れずに読める)
+    await page.evaluate(() => App.goHome());
+    const navPos = await page.evaluate(() => {
+      const n = document.getElementById('main-nav'), r = n.getBoundingClientRect();
+      return { pos: getComputedStyle(n).position, bottom: Math.round(r.bottom), vh: innerHeight };
+    });
+    ok(navPos.pos === 'fixed' && navPos.bottom === navPos.vh, 'スマホ: タブは画面の下に固定', navPos);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    const footGap = await page.evaluate(() => document.getElementById('main-nav').getBoundingClientRect().top - document.querySelector('.site-footer').getBoundingClientRect().bottom);
+    ok(footGap >= 0, 'スマホ: いちばん下までスクロールすると、フッタがタブに隠れない', footGap);
+    // 本番レベル演習は、最近解いていない問題から最大20問(基礎理論は22問ある)
+    await page.evaluate(() => { document.getElementById('part-basics').open = true; });
+    await page.locator('.part-exam-row[data-part="basics"]').click();
+    await page.waitForSelector('#view-quiz .quiz-count');
+    ok((await page.locator('#view-quiz .quiz-count').innerText()).includes('/ 20'), '本番レベル演習: 1回は最大20問', await page.locator('#view-quiz .quiz-count').innerText());
 
     // 本物の過去問の得点(成績の記録欄・Udemyのカード)
     await page.click('#main-nav [data-nav="stats"]');

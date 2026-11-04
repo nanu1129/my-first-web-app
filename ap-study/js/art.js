@@ -82,6 +82,8 @@ const ArtPlayer = (() => {
       function draw() {
         const f = art.frames[i];
         stage.innerHTML = f.svg;
+        const svgEl = stage.querySelector('svg');
+        if (svgEl && f.cap) svgEl.setAttribute('aria-label', f.cap); // 読み上げでは説明文を図の名前にする
         cap.textContent = f.cap || '';
         if (dots) {
           dots.innerHTML = art.frames.map((_, k) =>

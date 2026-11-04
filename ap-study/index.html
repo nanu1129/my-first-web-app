@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>マナビット | 応用情報技術者試験の学習サイト</title>
   <meta name="description" content="応用情報技術者試験の学習サイト「マナビット」。教材で学び、一問一答で確認し、本番レベル演習で仕上げる段階式カリキュラム。模擬試験・午後演習・暗記カード・間隔反復・学習計画つき。">
   <meta name="theme-color" content="#FAF9F6">
@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=M+PLUS+1+Code:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
   <header class="site-header">
@@ -30,11 +30,11 @@
         <button class="theme-btn" id="theme-toggle" aria-label="ライト/ダークテーマの切替え" title="テーマ切替え"></button>
       </div>
       <nav class="tabs" id="main-nav">
-        <button class="tab is-active" data-nav="home">学習</button>
-        <button class="tab" data-nav="practice">実践</button>
-        <button class="tab" data-nav="exam">模試</button>
-        <button class="tab" data-nav="cards">暗記</button>
-        <button class="tab" data-nav="stats">成績</button>
+        <button class="tab is-active" data-nav="home"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5.5C5.5 4 8.5 4 12 6c3.5-2 6.5-2 9-.5V19c-2.5-1.5-5.5-1.5-9 .5-3.5-2-6.5-2-9-.5z"/><path d="M12 6v13.5"/></svg><span>学習</span></button>
+        <button class="tab" data-nav="practice"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10z"/><path d="M14 7l3 3"/></svg><span>実践</span></button>
+        <button class="tab" data-nav="exam"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13.5" r="7"/><path d="M12 10v3.5l2.5 2"/><path d="M9.5 3.5h5"/></svg><span>模試</span></button>
+        <button class="tab" data-nav="cards"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="7.5" width="12.5" height="12.5" rx="2"/><path d="M8 4h10.5a2 2 0 0 1 2 2v10.5"/></svg><span>暗記</span></button>
+        <button class="tab" data-nav="stats"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 19v-7M11.5 19V5M17.5 19v-5M3.5 19.5h17"/></svg><span>成績</span></button>
       </nav>
     </div>
   </header>
@@ -87,6 +87,7 @@
   <script src="data/questions-tech.js?v=2"></script>
   <script src="data/questions-other.js?v=2"></script>
   <script src="data/questions-more.js?v=1"></script>
+  <script src="data/questions-more2.js?v=1"></script>
   <script src="data/terms.js?v=1"></script>
   <script src="data/terms-more.js?v=2"></script>
   <script src="data/afternoon.js?v=3"></script>
@@ -101,14 +102,15 @@
   <script src="js/sync.js?v=2"></script>
   <script src="js/quiz.js?v=7"></script>
   <script src="js/coach.js?v=1"></script>
-  <script src="js/art.js?v=2"></script>
+  <script src="js/art.js?v=3"></script>
   <script src="js/art2.js?v=3"></script>
   <script src="js/art3.js?v=1"></script>
   <script src="js/art4.js?v=2"></script>
   <script src="js/art5.js?v=5"></script>
-  <script src="js/widgets.js?v=7"></script>
-  <script src="js/plan.js?v=7"></script>
-  <script src="js/course.js?v=15"></script>
+  <script src="js/widgets.js?v=8"></script>
+  <script src="js/plan.js?v=8"></script>
+  <script src="js/calendar.js?v=1"></script>
+  <script src="js/course.js?v=17"></script>
   <script src="js/exam.js?v=5"></script>
   <script src="js/cards.js?v=4"></script>
   <script src="js/notes.js?v=1"></script>

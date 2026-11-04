@@ -8,21 +8,21 @@
   --surface: #FFFFFF;       /* surface-card */
   --surface-2: #F4F2ED;     /* surface-subtle */
   --ink: #33313B;           /* text-body */
-  --ink-2: #6E6B78;         /* text-secondary */
-  --ink-3: #9B98A2;         /* text-muted */
+  --ink-2: #5C5966;         /* text-secondary */
+  --ink-3: #6F6C77;         /* text-muted(背景とのコントラスト 4.5:1 前後) */
   --line: #E3E0D8;          /* border-default */
-  --accent: #467CA8;
-  --accent-strong: #3A6A93;
+  --accent: #3D6F98;
+  --accent-strong: #33608A;
   --accent-ink: #FFFFFF;
   --accent-soft: #E9F1F7;
-  --ok: #3A9068;
+  --ok: #307857;
   --ok-soft: #E7F4EC;
-  --ng: #C25E5E;
+  --ng: #B54545;
   --ng-soft: #F9EAEA;
-  --gold: #B98A3E;          /* caution */
+  --gold: #89662E;          /* caution */
   --gold-soft: #F7F0DF;
-  --hover-tint: rgba(70, 124, 168, 0.07);
-  --focus-ring: 0 0 0 3px rgba(70, 124, 168, 0.28);
+  --hover-tint: rgba(61, 111, 152, 0.07);
+  --focus-ring: 0 0 0 3px rgba(61, 111, 152, 0.30);
   --shadow: 0 1px 3px rgba(51, 49, 59, 0.06);
   --shadow-raised: 0 4px 14px rgba(51, 49, 59, 0.10);
   --radius: 14px;           /* カード */
@@ -38,11 +38,11 @@
   --surface: #2B2A33;
   --surface-2: #34333D;
   --ink: #ECEAF0;
-  --ink-2: #ABA8B5;
-  --ink-3: #8B8894;
+  --ink-2: #B5B2BF;
+  --ink-3: #9F9CA6;
   --line: #45444F;
-  --accent: #7FA9D4;
-  --accent-strong: #93B9DC;
+  --accent: #8AB1D8;
+  --accent-strong: #A2C3E3;
   --accent-ink: #17242F;
   --accent-soft: #33414F;
   --ok: #6FBE94;
@@ -62,11 +62,11 @@
     --surface: #2B2A33;
     --surface-2: #34333D;
     --ink: #ECEAF0;
-    --ink-2: #ABA8B5;
-    --ink-3: #8B8894;
+    --ink-2: #B5B2BF;
+    --ink-3: #9F9CA6;
     --line: #45444F;
-    --accent: #7FA9D4;
-    --accent-strong: #93B9DC;
+    --accent: #8AB1D8;
+    --accent-strong: #A2C3E3;
     --accent-ink: #17242F;
     --accent-soft: #33414F;
     --ok: #6FBE94;
@@ -84,6 +84,7 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
+a { color: var(--accent); text-underline-offset: 3px; }
 body {
   font-family: var(--font-body);
   background: var(--bg);
@@ -750,10 +751,10 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
   display: inline-block; padding: 2px 10px; border-radius: 999px;
   font-size: 11px; font-weight: 700; letter-spacing: .04em; vertical-align: 1px;
 }
-.pill-ng { background: var(--ng); color: #fff; }
+/* 文字色は背景色に合わせる(ダークでは明るい背景に暗い文字) */
+.pill-ng { background: var(--ng); color: var(--surface); }
 .pill-accent { background: var(--accent); color: var(--accent-ink); }
-
-.pill-ok { background: var(--ok); color: #fff; }
+.pill-ok { background: var(--ok); color: var(--surface); }
 
 /* 午後演習: 記述式 */
 .case-code {
@@ -1109,6 +1110,7 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .task-row.is-done .tr-check { background: var(--ok); border-color: var(--ok); opacity: 1; display: grid; place-items: center; }
 .task-row.is-done .tr-check .ic { width: 12px; height: 12px; stroke: #fff; stroke-width: 3; }
 .task-row.is-next .tr-check { border-color: var(--accent); opacity: 1; }
+.task-row.is-next .tr-sub, .task-row.is-next .tr-mins { color: var(--ink-2); }
 .tr-mins { flex: none; font-size: 11.5px; color: var(--ink-3); font-weight: 700; }
 .task-row.is-done .tr-mins { color: var(--ok); }
 
@@ -1172,7 +1174,7 @@ details.part-card[open] .part-chevron { transform: rotate(-135deg); margin-top: 
 .seg-tab { padding: 7px 14px; border-radius: 9px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
 .seg-tab.is-active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
 .card-controls .btn { min-width: 140px; flex-direction: column; gap: 0; line-height: 1.3; padding-top: 9px; padding-bottom: 9px; }
-.card-controls .btn small { display: block; font-size: 10.5px; font-weight: 700; opacity: .75; }
+.card-controls .btn small { display: block; font-size: 11px; font-weight: 700; }
 .card-keys { text-align: center; font-size: 11px; color: var(--ink-3); margin-top: 4px; }
 @media (hover: none) { .card-keys { display: none; } }
 .cards-empty .ce-title { font-size: 18px; font-weight: 700; font-family: var(--font-display); color: var(--ok); margin-bottom: 6px; }
@@ -1526,3 +1528,36 @@ button.pf-chip:hover { border-color: var(--accent); }
 .wu-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; line-height: 1.5; }
 .wu-name small { display: block; font-size: 11px; font-weight: 500; color: var(--ink-3); }
 .wu-row .btn-mini { margin-left: 0; flex: none; }
+
+/* ===== スマホ: タブを画面の下に固定(親指で届く位置に) ===== */
+.tab-ic { display: none; }
+@media (max-width: 560px) {
+  /* ぼかし(backdrop-filter)は固定配置の基準を変えてしまうため、スマホでは使わない */
+  .site-header { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--bg); }
+  .header-inner { justify-content: space-between; padding: 8px 16px; }
+  #main-nav.tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; width: auto;
+    display: flex; justify-content: space-around; gap: 2px; border-radius: 0;
+    padding: 5px 8px calc(5px + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -2px 12px rgba(0, 0, 0, .06);
+  }
+  #main-nav .tab {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 5px 2px 4px; border-radius: 10px; font-size: 10.5px; line-height: 1.2;
+  }
+  #main-nav .tab-ic { display: block; width: 22px; height: 22px; }
+  #main-nav .tab.is-active { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
+  body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
+}
+
+/* 学習計画: カレンダーに登録 */
+.plan-cal { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.pcal-title { font-size: 13.5px; font-weight: 900; margin-bottom: 4px; }
+.pcal-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.pcal-time { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.pcal-time input {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--radius-input); padding: 7px 10px;
+}
+.pcal-links { font-size: 12.5px; color: var(--ink-2); line-height: 1.9; }
+.pcal-links a { font-weight: 700; }

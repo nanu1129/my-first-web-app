@@ -34,6 +34,7 @@ const Course = (() => {
   // ---------- ホーム: 今日のメニュー → 学習マップ ----------
   const openParts = new Set(); // 利用者が開いたパート(画面を作り直しても開いたままにする)
   let udemyOpen = false;       // Udemy講座の進み具合を開いているか
+  let planOpen = false;        // 学習計画と試験日の設定を開いているか(描き直しても開いたままにする)
 
   function renderHome() {
     const p = Plan.compute();
@@ -123,6 +124,12 @@ const Course = (() => {
       Store.setGoal(Number(applyPace.dataset.n));
       renderHome();
     });
+    const planDetail = document.querySelector('.plan-detail');
+    if (planDetail) planDetail.addEventListener('toggle', () => { planOpen = planDetail.open; });
+    const calBtn = document.getElementById('cal-ics');
+    if (calBtn) calBtn.addEventListener('click', () => Cal.download());
+    const studyTime = document.getElementById('study-time');
+    if (studyTime) studyTime.addEventListener('change', () => { Cal.setStudyTime(studyTime.value); renderHome(); });
     const startBtn = document.getElementById('today-start');
     if (startBtn) startBtn.addEventListener('click', () => runTask(startBtn.dataset.act, startBtn.dataset.id));
     const search = document.getElementById('home-search');
@@ -284,7 +291,7 @@ const Course = (() => {
         <span class="ps-date">〜${p.jp(ph.end)}</span>
       </div>`).join('');
     return `
-      <details class="plan-detail" ${open ? 'open' : ''}>
+      <details class="plan-detail" ${open || planOpen ? 'open' : ''}>
         <summary>学習計画と試験日の設定</summary>
         <div class="plan-dates">
           <label class="plan-date"><span>科目A(旧午前)の受験日</span><input type="date" id="exam-date" value="${p.examStr}"></label>
@@ -298,6 +305,15 @@ const Course = (() => {
         <div class="plan-pace">
           <span class="pill">目標ペース</span> ${esc(p.paceLabel)} ・ 1日 約${p.recommended}問
           <button class="btn-mini" id="apply-pace" data-n="${nearestGoal(p.recommended)}">1日の目標に設定</button>
+        </div>
+        <div class="plan-cal">
+          <p class="pcal-title">カレンダーに登録</p>
+          <p class="plan-note">受験日・申込期間と、毎日の学習の時刻(通知つき)をスマホやPCのカレンダーに入れておくと、申込みの締切や毎日の学習を忘れません。受験日を予約したら、日付を設定してから登録してください。</p>
+          <div class="pcal-row">
+            <label class="pcal-time">毎日の学習 <input type="time" id="study-time" value="${esc(Cal.studyTime())}"></label>
+            <button class="btn btn-ghost" id="cal-ics">カレンダーに追加(.ics)</button>
+          </div>
+          <p class="pcal-links">Googleカレンダーに追加: ${Cal.googleLinks().map((l) => `<a href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join(' ・ ')}</p>
         </div>
       </details>`;
   }
@@ -633,9 +649,12 @@ const Course = (() => {
   }
 
   // ---------- パート別 本番レベル演習 ----------
+  // 本番レベル演習: 最近解いていない問題から最大20問(何度挑戦しても、同じ問題ばかりにならない)
+  const PART_EXAM_MAX = 20;
   function startPartExam(partId) {
     const part = partOf(partId);
-    const qs = Quiz.shuffle(questionsOf(partId));
+    const pool = Quiz.shuffle(questionsOf(partId)).sort((a, b) => Store.lastSeen(a.qid) - Store.lastSeen(b.qid));
+    const qs = Quiz.shuffle(pool.slice(0, PART_EXAM_MAX));
     Quiz.start({
       title: `本番レベル演習: ${part.name}`,
       questions: qs,
