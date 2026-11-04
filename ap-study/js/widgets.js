@@ -75,7 +75,7 @@ const Widgets = (() => {
             <p class="widget-title">サブネット・スライダー: /(プレフィックス長)を動かしてみよう</p>
             <div class="w-slider-row">
               <span class="w-slider-val">/${n}</span>
-              <input type="range" min="20" max="30" value="${n}" id="w-subnet-range">
+              <input type="range" min="20" max="30" value="${n}" id="w-subnet-range" aria-label="プレフィックス長">
               <span style="font-size:12.5px;color:var(--ink-2);font-weight:700">ホスト数 <b style="color:var(--accent);font-size:16px">${hosts.toLocaleString()}</b> 台</span>
             </div>
             <div class="w-bitbar">
