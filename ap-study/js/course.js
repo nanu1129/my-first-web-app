@@ -260,9 +260,93 @@ const Course = (() => {
             : `<p class="tm-done">${tasks.length ? '今日のメニューはすべて完了!この積み重ねが合格につながります。' : '今日やることはありません。'}</p>`}
           <div class="task-list">${rows}</div>
         </div>
+        ${renderPace(p)}
         ${renderApply(p)}
         ${renderPlanDetail(p, false)}
       </section>`;
+  }
+
+  // ---------- ペースの目安: 今日までにどこまで進んでいるべきか、これからのペース ----------
+  function renderPace(p) {
+    const k = p.pace;
+    if (!k) return '';
+    const md = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+    const sec = (x) => (x ? `Udemy §${x.no}「${esc(x.title)}」` : '');
+    const round1 = (n) => Math.round(n * 10) / 10;
+    // これからのペースは「週あたり」で示す(1日あたりは小数になりやすいため)
+    const perWeek = Math.ceil(k.perDay * 7);
+    const pct = (a, b) => (b ? Math.min(100, Math.round((a / b) * 100)) : 0);
+    let status, bar, items, notes;
+    if (p.stage === 'A' && p.phaseIdx === 0) {
+      // 基礎固め: 教材(ユニット)の進み具合
+      const diff = p.unitsDone - k.expUnits;
+      status = diff > 0 ? ['ahead', `予定より ${diff}ユニット 先行`] : (diff >= -2 ? ['ontrack', '計画どおり'] : ['behind', `予定より ${-diff}ユニット 遅れ`]);
+      bar = { done: pct(p.unitsDone, p.unitsTotal), mark: pct(k.expUnits, p.unitsTotal), label: `教材 ${p.unitsDone}/${p.unitsTotal}ユニット(今日の目安 ${k.expUnits})` };
+      items = [
+        ['今日までの目安', `${k.expUnits}<small> / ${p.unitsTotal}ユニット</small>`, k.expSec ? `${sec(k.expSec)}まで` : 'これから始める時期'],
+        ['いまの進み具合', `${p.unitsDone}<small> / ${p.unitsTotal}ユニット</small>`, k.nowSec ? `次は ${sec(k.nowSec)}` : ''],
+        ['これからのペース', p.unitsRemaining ? `週 ${perWeek}<small> ユニット</small>` : '一周完了',
+          p.unitsRemaining ? `1日あたり 約${round1(k.perDay)}ユニット ・ 約${k.dailyMins}分(復習・カードを含む)` : ''],
+      ];
+      notes = [
+        p.unitsRemaining ? `教材は <b>${md(k.aEnd)}</b> までに一周するのが目標です(あと${p.unitsRemaining}ユニット)。` : '',
+        k.weekNeed > 0 ? `今週(${md(k.sunday)} 日曜まで)の目標: <b>あと ${k.weekNeed}ユニット</b>。` : '',
+        k.finish ? `最近2週間のペース(${k.recent}ユニット)のままなら、一周は ${md(k.finish)}ごろ。${k.finish <= k.aEnd ? '予定に間に合います。' : '予定より遅れるので、1日の量を少し増やしましょう。'}`
+          : (p.unitsRemaining && p.elapsed >= 7 ? '最近2週間はユニットが進んでいません。まずは1日1ユニットから再開しましょう。' : ''),
+      ];
+    } else if (p.stage === 'A') {
+      // 演習期・仕上げ: 教材の残りと、過去問の回数
+      const pastBehind = k.pastExp - k.pastDone;
+      status = p.unitsRemaining ? ['behind', `教材が残り ${p.unitsRemaining}ユニット`]
+        : (k.pastTotal && pastBehind > 1 ? ['behind', `過去問が ${pastBehind}回 遅れ`] : ['ontrack', '計画どおり']);
+      bar = k.pastTotal
+        ? { done: pct(k.pastDone, k.pastTotal), mark: pct(k.pastExp, k.pastTotal), label: `過去問 ${k.pastDone}/${k.pastTotal}回(今日の目安 ${k.pastExp})` }
+        : { done: pct(p.partsDone, AP.parts.length), mark: 100, label: `本番レベル演習 ${p.partsDone}/${AP.parts.length}パート` };
+      items = [
+        ['教材(ユニット)', `${p.unitsDone}<small> / ${p.unitsTotal}</small>`, p.unitsRemaining ? `残り${p.unitsRemaining}ユニットは1週間で終えよう` : '一周完了'],
+        k.pastTotal ? ['過去問(Udemyの解説つき)', `${k.pastDone}<small> / ${k.pastTotal}回</small>`, `今日までの目安 ${k.pastExp}回`] : ['本番レベル演習', `${p.partsDone}<small> / ${AP.parts.length}パート</small>`, '60%以上でクリア'],
+        ['これからのペース', k.pastEvery ? `${k.pastEvery}日に 1回` : '仕上げ', k.pastEvery ? `残り${k.pastLeft}回を試験の3日前までに ・ 1日 約${k.dailyMins}分` : `1日 約${k.dailyMins}分`],
+      ];
+      notes = [
+        k.pastTotal ? `過去問は1回80問を本番と同じ150分で解き、得点を記録してから解説を見ます。${k.pastLeft ? `<b>${md(p.exam)}</b> の科目Aまで あと${k.daysToExam}日。` : 'すべて解き終えたら、模試と復習で仕上げましょう。'}` : '',
+        p.phaseIdx === 2 ? '仕上げの時期です。新しいことより、間違えた問題の復習と時間配分の練習を優先しましょう。' : '',
+      ];
+    } else {
+      // 科目B対策
+      status = ['ontrack', '科目B 対策'];
+      bar = null;
+      items = [
+        ['科目Bまで', `${p.daysLeft}<small> 日</small>`, md(p.examB)],
+        ['午後の過去問', '毎日 1問', '選んだ分野を、新しい回から'],
+        ['1日の目安', `約${k.dailyMins}<small> 分</small>`, '過去問1問(30分)+ 見直し・午後演習'],
+      ];
+      notes = ['問1(情報セキュリティ)と選んだ4分野を、1問30分で解く練習を続けましょう。'];
+    }
+    const steps = p.phases.map((ph, i) => {
+      const from = i === 0 ? null : p.phases[i - 1].end;
+      const what = ['教材を一周(Udemyの講義 + 一問一答)', '過去問を3日に1回 + 解説、弱点・計算ドリル、科目Bの分野を決める', '残りの過去問・模試で時間配分、復習をゼロに', '選んだ分野の午後の過去問を毎日1問'][i];
+      return `<li class="${i < p.phaseIdx ? 'is-done' : (i === p.phaseIdx ? 'is-now' : '')}">
+          <b>${from ? `${md(new Date(from.getTime() + 86400000))}〜` : '〜'}${md(ph.end)} ${esc(ph.name)}</b><span>${what}</span></li>`;
+    }).join('');
+    return `
+      <div class="pace-box" id="pace-box">
+        <div class="pace-head">
+          <h3 class="pace-title">ペースの目安</h3>
+          <span class="pace-status ${status[0]}">${esc(status[1])}</span>
+        </div>
+        ${bar ? `<div class="pace-bar" role="img" aria-label="${esc(bar.label)}">
+          <span class="pace-fill" style="width:${bar.done}%"></span>
+          <span class="pace-mark ${bar.mark > 85 ? 'at-end' : (bar.mark < 15 ? 'at-start' : '')}" style="left:${bar.mark}%"><i>今日の目安</i></span>
+        </div>` : ''}
+        <div class="pace-grid">${items.map(([label, val, sub]) => `
+          <div class="pace-item"><p class="pi-label">${label}</p><p class="pi-val">${val}</p><p class="pi-sub">${sub}</p></div>`).join('')}
+        </div>
+        ${notes.filter(Boolean).length ? `<p class="pace-note">${notes.filter(Boolean).join(' ')}</p>` : ''}
+        <details class="pace-plan">
+          <summary>試験日までの道のり</summary>
+          <ol class="pace-steps">${steps}</ol>
+        </details>
+      </div>`;
   }
 
   // 申込みの案内(申込開始の3週間前から締切まで)

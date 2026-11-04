@@ -379,6 +379,39 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await ctx.close();
   }
   {
+    // ペースの目安: 10/1に始めて 2/6 に科目A。11/4 時点で8ユニット(Udemyの順で最初の8つ)を終えた人
+    const { ctx, page } = await at('2026-11-04T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-06' });
+    // (at() は読み込みのたびに記録を初期化するので、再読み込みせずに記録を差し替えて描き直す)
+    await page.evaluate(() => {
+      const now = Date.now();
+      const st = Store.snapshot();
+      st.units = {};
+      Order.units().slice(0, 8).forEach((u, i) => { st.units[u.id] = { cleared: true, best: 5, total: 6, at: now - (8 - i) * 86400000, clearedAt: now - (8 - i) * 86400000 }; });
+      Store.applyState(st);
+      App.goHome();
+    });
+    await page.waitForSelector('#pace-box');
+    const paceText = (await page.locator('#pace-box').innerText()).replace(/\s+/g, ' ');
+    ok(paceText.includes('予定より 11ユニット 遅れ') && paceText.includes('19 / 35ユニット') && paceText.includes('§9「データベース」まで'),
+      'ペースの目安: 今日までの目安(19ユニット・Udemy §9まで)と遅れを表示', paceText.slice(0, 160));
+    ok(paceText.includes('週 7 ユニット') && paceText.includes('12/4 までに一周') && paceText.includes('今週(11/8 日曜まで)の目標: あと 5ユニット'),
+      'ペースの目安: これからのペース(週7ユニット)と今週の目標', paceText.slice(160, 360));
+    ok(paceText.includes('一周は 12/22ごろ') && paceText.includes('1日の量を少し増やしましょう'), 'ペースの目安: 最近のペースのままだと間に合わないことを知らせる');
+    await page.clock.setFixedTime(new Date('2027-01-05T09:00:00'));
+    await page.evaluate(() => {
+      const st = Store.snapshot();
+      Order.units().forEach((u) => { st.units[u.id] = { cleared: true, best: 5, total: 6, at: 1, clearedAt: 1 }; });
+      st.prefs.udemyWatched = { 14: Date.now() - 6 * 86400000, 15: Date.now() - 3 * 86400000 };
+      Store.applyState(st);
+      App.goHome();
+    });
+    await page.waitForSelector('#pace-box');
+    const drillText = (await page.locator('#pace-box').innerText()).replace(/\s+/g, ' ');
+    ok(drillText.includes('過去問が 8回 遅れ') && drillText.includes('2 / 10回') && drillText.includes('3日に 1回'),
+      'ペースの目安(演習期): 過去問の目安の回数と、残りを解く間隔', drillText.slice(0, 200));
+    await ctx.close();
+  }
+  {
     // カレンダーに登録: 申込期間・科目A/B・毎日の学習(.ics と Googleカレンダーのリンク)
     const { ctx, page } = await at('2026-11-04T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-08' });
     await page.click('.plan-detail summary');

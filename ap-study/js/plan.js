@@ -114,11 +114,12 @@ const Plan = (() => {
     const unitsRemaining = unitsTotal - unitsDone;
     const inputDaysLeft = Math.max(1, Math.round((aEnd - today) / DAY));
     const unitsPerDay = unitsRemaining / inputDaysLeft;
+    // 必要なペースを下回らない表し方にする(0.9/日 を「2日に1」と言わない)
     const paceLabel = unitsRemaining === 0
       ? '教材は一周完了'
-      : (unitsPerDay >= 1
+      : (unitsPerDay > 0.5
         ? `1日 ${Math.ceil(unitsPerDay)} ユニット`
-        : `${Math.ceil(1 / unitsPerDay)}日に 1 ユニット`);
+        : `${Math.floor(1 / unitsPerDay)}日に 1 ユニット`);
     const recommended = Math.max(10, Math.round(Math.max(unitsPerDay, 0) * 6) + Math.min(dueCount, REVIEW_LIMIT));
 
     // 予定どおりか(インプット期の進み具合を基準に判定)
@@ -227,6 +228,49 @@ const Plan = (() => {
     }
     const nextTask = tasks.find((t) => !t.done) || null;
 
+    // ---- 進み具合の目安: 今日までにどこまで進んでいるべきか、これからどのペースで進めるか ----
+    const pace = (() => {
+      if (stage === 'done') return null;
+      const inputTotal = Math.max(1, Math.round((aEnd - start) / DAY));
+      // その日までに終えているべきユニット数(基礎固めの期間で均等に一周する計画)
+      const unitsBy = (d) => Math.min(unitsTotal, Math.round(unitsTotal * Math.min(1, Math.max(0, (d - start) / DAY / inputTotal))));
+      const expUnits = stage === 'A' ? unitsBy(today) : unitsTotal;
+      const secOf = (u) => (udemy && u ? Order.sectionOf(u.id) : null);
+      const expSec = expUnits > 0 ? secOf(units[expUnits - 1]) : null;
+      const nowSec = secOf(nextUnit);
+      // 基礎固めの終わりまでに教材を一周するためのペース(過ぎていたら、1週間で)
+      const daysToInputEnd = Math.max(1, Math.round((aEnd - today) / DAY));
+      const perDay = unitsRemaining / (phaseIdx === 0 ? daysToInputEnd : 7);
+      // 今週(日曜まで)の目標: これからのペースで、今日を含めて日曜までに進める数
+      const sunday = new Date(today.getTime() + ((7 - today.getDay()) % 7) * DAY);
+      const daysInWeek = Math.round((sunday - today) / DAY) + 1;
+      const weekNeed = stage === 'A' && phaseIdx === 0 ? Math.min(unitsRemaining, Math.ceil(perDay * Math.min(daysInWeek, daysToInputEnd))) : 0;
+      const minsPerUnit = udemy ? AP.udemy.minsPerUnit : 25;
+      // 最近2週間のペースのまま進めたときに、教材が一周する日
+      const since = today.getTime() - 14 * DAY;
+      const recent = units.filter((u) => {
+        const st = Store.unitState(u.id);
+        return st && st.cleared && (st.clearedAt || st.at || 0) >= since;
+      }).length;
+      const finish = unitsRemaining && recent ? new Date(today.getTime() + Math.ceil(unitsRemaining / (recent / 14)) * DAY) : null;
+      // 演習期からの過去問(Udemy §14〜23 の解説とセット。3日に1回)
+      const pastTotal = past ? past.total : 0;
+      const pastDone = past ? past.done : 0;
+      const pastExp = past && stage === 'A' && today >= aEnd ? Math.min(pastTotal, Math.floor((today - aEnd) / DAY / 3) + 1) : 0;
+      const pastLeft = pastTotal - pastDone;
+      const daysToExam = Math.max(1, Math.round((exam - today) / DAY));
+      // 残りの過去問を、試験の3日前までに終えるための間隔(日)
+      const pastEvery = pastLeft > 0 && stage === 'A' ? Math.max(1, Math.floor(Math.max(1, daysToExam - 3) / pastLeft)) : null;
+      // 1日の学習時間の目安(分): 教材 + 過去問(解く150分 + 見直し60分)+ 復習・用語カード
+      const inputMins = Math.round(perDay * minsPerUnit);
+      const pastMins = phaseIdx >= 1 && pastLeft ? Math.round((pastLeft * 210) / daysToExam) : 0;
+      const dailyMins = stage === 'B' ? 90 : inputMins + pastMins + (phaseIdx === 0 ? 20 : 30);
+      return {
+        expUnits, expSec, nowSec, weekNeed, sunday, perDay, minsPerUnit, recent, finish,
+        pastTotal, pastDone, pastExp, pastLeft, pastEvery, daysToExam, dailyMins, aEnd, bEnd,
+      };
+    })();
+
     return {
       exam, examB, examStr: fmt(exam), examBStr: fmt(examB), stage, target, daysLeft, totalDays, elapsed,
       passed: stage === 'done',
@@ -234,7 +278,7 @@ const Plan = (() => {
       unitsTotal, unitsDone, unitsRemaining, nextUnit,
       partsDone, casesDone, dueCount,
       paceLabel, recommended, onTrack, diff, expectedUnits,
-      tasks, nextTask, apply, jp, udemy,
+      tasks, nextTask, apply, jp, udemy, pace,
     };
   }
 
