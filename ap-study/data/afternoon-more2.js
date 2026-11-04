@@ -3,6 +3,7 @@
 AP.cases.push(
   {
     id: 'case-sec2',
+    fieldId: 'sec',
     title: 'オンライン予約サイトの脆弱性対策',
     field: 'セキュリティ(午後の必須分野)',
     partId: 'security',
@@ -64,6 +65,7 @@ AP.cases.push(
   },
   {
     id: 'case-sm',
+    fieldId: 'sm',
     title: '経費精算システムのサービスレベル管理',
     field: 'サービスマネジメント',
     partId: 'management',
@@ -116,6 +118,7 @@ AP.cases.push(
   },
   {
     id: 'case-audit',
+    fieldId: 'audit',
     title: 'プログラム変更管理のシステム監査',
     field: 'システム監査',
     partId: 'management',

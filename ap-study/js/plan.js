@@ -77,8 +77,19 @@ const Plan = (() => {
     const nextPart = AP.parts.find((p) => partUnlocked(p) && !cleared(Store.partExamState(p.id))) || null;
     const cases = AP.cases || [];
     const casesDone = cases.filter((c) => cleared(Store.caseState(c.id))).length;
-    const nextCase = cases.find((c) => !cleared(Store.caseState(c.id)))
+    const pmFieldIds = pmChosen().length ? pmTargets().map((f) => f.id) : null;
+    const inMyFields = (c) => !pmFieldIds || pmFieldIds.includes(c.fieldId);
+    // 問題番号の順(問1 セキュリティ → 問2 …)に並べてから選ぶ
+    const fieldNo = (c) => ((AP.pmFields || []).find((f) => f.id === c.fieldId) || { no: 99 }).no;
+    const byNo = cases.slice().sort((x, y) => fieldNo(x) - fieldNo(y));
+    const nextCase = byNo.find((c) => inMyFields(c) && !cleared(Store.caseState(c.id)))
+      || byNo.find((c) => !cleared(Store.caseState(c.id)))
       || cases.slice().sort((x, y) => ((Store.caseState(x.id) || {}).best || 0) - ((Store.caseState(y.id) || {}).best || 0))[0] || null;
+    // 午後の過去問: 最後に記録した日
+    const pmRecs = Store.pmExams();
+    const pmLast = pmRecs.length ? Math.max(...pmRecs.map((r) => r.at)) : 0;
+    const pmToday = pmRecs.filter((r) => fmt(new Date(r.at)) === todayStr).length;
+    const pmNextQ = pmNext();
     const qids = (AP.allQuestions || []).map((q) => q.qid);
     const dueCount = Store.srsDue(qids).length;
     const acts = Store.actsToday();
@@ -94,7 +105,7 @@ const Plan = (() => {
       { key: 'input', name: '基礎固め', desc: udemy ? 'Udemyの講義(§2〜13)と一問一答で全範囲を一周し、復習で定着させる' : '教材と一問一答で全ユニットを一周し、復習で定着させる', end: aEnd },
       { key: 'drill', name: '演習期', desc: udemy ? '過去問とUdemyの解説・弱点ドリル・計算ドリルで解く力をつける' : '本番レベル演習・弱点ドリル・計算ドリルで解く力をつける', end: bEnd },
       { key: 'final', name: '科目A 仕上げ', desc: udemy ? '残りの過去問で時間配分を固め、弱点と復習をゼロに近づける' : '模試で時間配分を固め、弱点と復習をゼロに近づける', end: exam },
-      { key: 'b', name: '科目B 対策', desc: '午後演習(長文・記述)とトレースに集中する', end: examB },
+      { key: 'b', name: '科目B 対策', desc: '選んだ分野の午後の過去問と午後演習(長文・記述)に集中する', end: examB },
     ];
     const phaseIdx = stage !== 'A' ? 3 : (today >= bEnd ? 2 : (today >= aEnd ? 1 : 0));
     const phase = phases[phaseIdx];
@@ -181,6 +192,21 @@ const Plan = (() => {
     if (stage === 'A' && phaseIdx === 2 && (!mockRecent || acts.mock) && (!past || !past.next)) {
       add({ act: 'mock', label: '模擬試験(科目A形式・80問)', sub: '3日に1回。本番と同じ150分で時間配分を練習', done: !!acts.mock, mins: 150 });
     }
+    // 科目B: 演習期に入ったら解く分野を決め、週に1問は午後の過去問で記述に慣れておく。科目B期は毎日
+    if (stage === 'B' || (stage === 'A' && phaseIdx >= 1)) {
+      if (!pmChosen().length) {
+        add({ act: 'pmfields', label: '科目Bで解く分野を決める', sub: '問1(情報セキュリティ)は必須。残り10分野から得意な4分野を選ぶ', mins: 5 });
+      } else if (pmToday || (pmNextQ && (stage === 'B' || Date.now() - pmLast >= 7 * DAY))) {
+        add(pmToday
+          ? { act: 'pmpast', label: '午後の過去問', sub: `今日 ${pmToday}問 解きました`, done: true }
+          : {
+            act: 'pmpast', id: pmNextQ.key,
+            label: `午後の過去問: ${pmNextQ.exam.name} 問${pmNextQ.field.no}(${pmNextQ.field.name})`,
+            sub: stage === 'B' ? '30分で解き、IPAの解答例で自己採点して記録する' : '週に1問。30分で解き、IPAの解答例で自己採点して記録する',
+            mins: 40,
+          });
+      }
+    }
     if (stage === 'B' || (stage === 'A' && phaseIdx === 2)) {
       if (nextCase) add({ act: 'case', id: nextCase.id, label: `午後演習: ${nextCase.title}`, sub: '長文から根拠を拾い、記述は字数内でまとめる', done: !!acts.case, mins: 30 });
     }
@@ -214,5 +240,31 @@ const Plan = (() => {
 
   function markApplied(key, v) { Store.setPref(key, v); }
 
-  return { compute, examDate, examBDate, setExamDate, setExamBDate, markApplied, DEFAULT_A, REVIEW_LIMIT, IPA_URL, PAST_URL, SCHEDULES };
+  // ---- 科目B(午後)の過去問: 選んだ分野と、次に解く1問 ----
+  const PM_MAX = 5; // 本番で解く4分野 + 予備1分野
+  function pmChosen() {
+    const ids = Store.pref('pmFields', []) || [];
+    return (AP.pmFields || []).filter((f) => !f.required && ids.includes(f.id)).map((f) => f.id);
+  }
+  function setPmChosen(ids) { Store.setPref('pmFields', ids.slice(0, PM_MAX)); }
+  // 練習する分野(問1 情報セキュリティ + 選んだ分野)を問題番号の順に
+  function pmTargets() {
+    const chosen = pmChosen();
+    return (AP.pmFields || []).filter((f) => f.required || chosen.includes(f.id));
+  }
+  const pmKey = (examId, fieldNo) => `${examId}-${fieldNo}`;
+  // 新しい試験から順に、1回分(問1 + 選んだ分野)を通して解いていく
+  function pmNext() {
+    if (!pmChosen().length) return null;
+    const done = new Set(Store.pmExams().map((r) => r.id));
+    for (const e of AP.pastExamList || []) {
+      for (const f of pmTargets()) {
+        if (!done.has(pmKey(e.id, f.no))) return { exam: e, field: f, key: pmKey(e.id, f.no) };
+      }
+    }
+    return null;
+  }
+
+  return { compute, examDate, examBDate, setExamDate, setExamBDate, markApplied, DEFAULT_A, REVIEW_LIMIT, IPA_URL, PAST_URL, SCHEDULES,
+    PM_MAX, pmChosen, setPmChosen, pmTargets, pmNext, pmKey };
 })();

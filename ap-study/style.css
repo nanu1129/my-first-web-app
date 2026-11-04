@@ -1454,3 +1454,75 @@ details.part-card[open] .part-chevron { transform: rotate(-135deg); margin-top: 
     transition-duration: .01ms !important; scroll-behavior: auto !important;
   }
 }
+
+/* ===== 科目B: 解く分野と、IPAの午後過去問の記録 ===== */
+.pm-panel {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 18px clamp(14px, 3vw, 22px); margin: 16px 0;
+}
+.pm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.pm-head h3 { font-size: 16px; font-weight: 900; }
+.pm-count { font-size: 12.5px; font-weight: 700; color: var(--ink-3); }
+.pm-count.ok { color: var(--ok); }
+.pm-note { font-size: 12.5px; color: var(--ink-2); line-height: 1.75; margin-bottom: 12px; }
+.pm-link { font-size: 12.5px; font-weight: 700; color: var(--accent); }
+.pm-msg { font-size: 12.5px; color: var(--ok); font-weight: 700; margin: -2px 0 12px; }
+#pm-fields .pm-msg { color: var(--gold); margin: 10px 0 0; }
+.pf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 8px; }
+.pf-chip {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface-2); color: var(--ink); min-height: 78px;
+}
+button.pf-chip:hover { border-color: var(--accent); }
+.pf-chip.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.pf-chip.is-required { border-style: dashed; background: var(--surface); }
+.pf-no { font-size: 11px; font-weight: 900; color: var(--ink-3); }
+.pf-top { display: flex; justify-content: space-between; align-items: center; align-self: stretch; min-height: 18px; }
+.pf-name { font-size: 13.5px; font-weight: 900; line-height: 1.35; }
+.pf-hint { font-size: 11px; color: var(--ink-3); line-height: 1.5; }
+.pf-acc { font-size: 11px; font-weight: 700; color: var(--ink-2); margin-top: 2px; }
+.pf-acc.ok { color: var(--ok); }
+.pf-acc.ng { color: var(--ng); }
+.pf-tag { font-size: 10.5px; font-weight: 900; color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 1px 8px; }
+.pf-chip.is-required .pf-tag { background: var(--ink-2); color: var(--surface); }
+.pm-next { font-size: 13px; background: var(--accent-soft); border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; line-height: 1.7; }
+.pm-form { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin-bottom: 14px; }
+.pm-form select, .pm-score input {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--radius-input); padding: 8px 10px;
+}
+.pm-score { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); font-weight: 700; }
+.pm-score input { width: 5.5em; }
+.pm-form .btn { padding: 9px 18px; }
+.pp-list { display: grid; gap: 14px; }
+.pp-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; margin-bottom: 6px; }
+.pp-name { font-weight: 900; }
+.pp-avg { color: var(--ink-3); white-space: nowrap; }
+.pp-avg b.ok { color: var(--ok); }
+.pp-avg b.ng { color: var(--ng); }
+.pp-cells { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; }
+.pp-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 6px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); font-size: 10px; color: var(--ink-3); line-height: 1.3;
+}
+.pp-cell b { font-size: 13px; color: var(--ink-2); }
+.pp-cell.ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.pp-cell.ok b { color: var(--ok); }
+.pp-cell.ng { background: var(--ng-soft); border-color: color-mix(in srgb, var(--ng) 40%, transparent); }
+.pp-cell.ng b { color: var(--ng); }
+.pp-cell.is-cur { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pm-foot { font-size: 11.5px; color: var(--ink-3); margin-top: 12px; }
+.pm-section { font-size: 16px; font-weight: 900; margin: 24px 2px 12px; }
+@media (max-width: 560px) {
+  .pf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pp-cells { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .pm-form select { flex: 1 1 100%; }
+}
+
+/* 成績: 間違えたままの問題が多いユニット */
+.weak-units { margin-top: 14px; }
+.wu-title { font-size: 12.5px; font-weight: 900; color: var(--ink-2); margin-bottom: 6px; }
+.wu-row { display: flex; align-items: center; gap: 8px; padding: 8px 2px; border-top: 1px solid var(--line); }
+.wu-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; line-height: 1.5; }
+.wu-name small { display: block; font-size: 11px; font-weight: 500; color: var(--ink-3); }
+.wu-row .btn-mini { margin-left: 0; flex: none; }

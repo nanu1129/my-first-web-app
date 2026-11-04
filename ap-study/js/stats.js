@@ -108,6 +108,12 @@ const Stats = (() => {
     const wrongIds = Store.wrongIds();
     const wrongSet = new Set(wrongIds);
     const wrongQs = (AP.allQuestions || AP.questions).filter((q) => wrongSet.has(q.qid));
+    // 間違えたままの一問一答が多いユニット(教材に戻って見直す目安)
+    const weakUnits = AP.lessons.flatMap((l) => l.units)
+      .map((u) => ({ u, w: u.checks.filter((c) => wrongSet.has(c.qid)) }))
+      .filter((x) => x.w.length)
+      .sort((a, b) => b.w.length - a.w.length || b.w.length / b.u.checks.length - a.w.length / a.u.checks.length)
+      .slice(0, 5);
     const fc = forecast(answers);
 
     $view().innerHTML = `
@@ -170,7 +176,17 @@ const Stats = (() => {
           <div class="weak-callout" style="background:var(--accent-soft)">
             <span><span class="pill pill-accent">復習</span> 復習待ちの問題が <b style="color:var(--accent)">${wrongQs.length}問</b> あります。</span>
             <button class="btn btn-primary" id="review-start">復習を始める</button>
-          </div>` : '<p class="chart-empty">復習待ちの問題はありません。間違えた問題があるとここに表示されます。</p>'}
+          </div>
+          ${weakUnits.length ? `
+          <div class="weak-units">
+            <p class="wu-title">間違えたままの問題が多いユニット</p>
+            ${weakUnits.map(({ u, w }) => `
+              <div class="wu-row">
+                <span class="wu-name">${esc(u.title)}<small>一問一答 ${w.length} / ${u.checks.length}問</small></span>
+                <button class="btn-mini ghost" data-wu-lesson="${u.id}">教材</button>
+                <button class="btn-mini" data-wu-retry="${u.id}">解き直す</button>
+              </div>`).join('')}
+          </div>` : ''}` : '<p class="chart-empty">復習待ちの問題はありません。間違えた問題があるとここに表示されます。</p>'}
       </div>
 
       ${(() => {
@@ -264,6 +280,22 @@ const Stats = (() => {
         });
       });
     }
+    // ユニットごとの見直し: 教材へ / そのユニットの間違えた問題だけを解き直す
+    $view().querySelectorAll('[data-wu-lesson]').forEach((b) => b.addEventListener('click', () => Course.openLesson(b.dataset.wuLesson)));
+    $view().querySelectorAll('[data-wu-retry]').forEach((b) => b.addEventListener('click', () => {
+      const x = weakUnits.find((v) => v.u.id === b.dataset.wuRetry);
+      if (!x) return;
+      Quiz.start({
+        title: `解き直し: ${x.u.title}`,
+        questions: Quiz.shuffle(x.w),
+        mode: 'practice',
+        passRate: 0.6,
+        backLabel: '成績へ戻る',
+        onBack: () => App.navigate('stats'),
+        resultNote: (r) => (r.pass ? '正解できた問題は復習リストから消えました。' : '教材の該当する節を読み直してから、もう一度解いてみましょう。'),
+        onFinish: (r) => Store.addHistory({ kind: '復習', label: `${x.u.title} ${r.total}問`, score: r.score, total: r.total, pass: r.pass }),
+      });
+    }));
     const pastForm = document.getElementById('past-form');
     if (pastForm) pastForm.addEventListener('submit', (e) => {
       e.preventDefault();
