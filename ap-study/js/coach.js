@@ -73,7 +73,7 @@ const Coach = (() => {
 
   // 今日の復習: 忘れかけている順に最大 Plan.REVIEW_LIMIT 問を選び、分野を混ぜて出題する
   function startReview(onBack) {
-    const ids = new Set(Store.reviewQueue((AP.allQuestions || []).map((q) => q.qid), Plan.REVIEW_LIMIT));
+    const ids = new Set(Store.reviewQueue((AP.allQuestions || []).map((q) => q.qid), Plan.reviewLimit()));
     const qs = Quiz.shuffle(AP.allQuestions.filter((q) => ids.has(q.qid)));
     if (!qs.length) return false;
     Quiz.start({

@@ -42,6 +42,30 @@ const Plan = (() => {
 
   const cleared = (st) => !!(st && st.cleared);
 
+  // ---- 1日に使える時間(分)。平日と土日で別に設定できる(未設定は null = 制限なし) ----
+  const LONG = 120; // 過去問・模試のような長い課題に取り組める日の目安(分)
+  function budgets() {
+    const n = (k) => { const v = Number(Store.pref(k, 0)); return v > 0 ? v : null; };
+    return { weekday: n('minsWeekday'), holiday: n('minsHoliday') };
+  }
+  function setBudget(kind, mins) { Store.setPref(kind === 'holiday' ? 'minsHoliday' : 'minsWeekday', Number(mins) || 0); }
+  const isWeekend = (d) => d.getDay() === 0 || d.getDay() === 6;
+  const OVERHEAD = 20; // 復習と用語カードにかかる時間の目安(分)
+  // 1回の復習で出す問題数。使える時間が短い日は、復習だけで終わらないように減らす(忘れかけている順に出る)
+  function reviewLimit() {
+    const bud = budgets();
+    const b = isWeekend(new Date()) ? bud.holiday : bud.weekday;
+    // 使える時間の2割ほどを復習に(1問 約0.7分)。少なくとも10問、多くても REVIEW_LIMIT 問
+    return b == null ? REVIEW_LIMIT : Math.min(REVIEW_LIMIT, Math.max(10, Math.floor((b * 0.2) / 0.7)));
+  }
+  // その種類の日(平日/土日)に長い課題を入れてよいか。時間が足りない種類の日は避け、取れる日に回す。
+  // どちらの日も足りない設定なら、長く取れる方の日に入れる
+  function longOk(bud, holiday) {
+    const mine = holiday ? bud.holiday : bud.weekday;
+    const other = holiday ? bud.weekday : bud.holiday;
+    return mine == null || mine >= LONG || (other != null && other < LONG && mine >= other);
+  }
+
   function compute() {
     const today = midnight(new Date());
     const todayStr = fmt(today);
@@ -141,18 +165,37 @@ const Plan = (() => {
       }
     }
 
+    // 今日使える時間と、長い課題(過去問・模試)に取り組める日かどうか
+    const bud = budgets();
+    const holiday = isWeekend(today);
+    const budget = holiday ? bud.holiday : bud.weekday;
+    const longDay = longOk(bud, holiday);
+    const longLimited = !(longOk(bud, false) && longOk(bud, true)); // 長い課題を入れられる日が限られている
+
     // ---- 今日のメニュー(上から順に取り組む) ----
     const tasks = [];
     const add = (t) => tasks.push(Object.assign({ done: false }, t));
     if (dueCount > 0 || acts.review) {
-      const n = Math.min(dueCount, REVIEW_LIMIT);
+      const limit = reviewLimit();
+      const n = Math.min(dueCount, limit);
       add(dueCount > 0
-        ? { act: 'review', label: `今日の復習 ${n}問`, sub: dueCount > REVIEW_LIMIT ? `期限が来た${dueCount}問のうち、忘れかけている順に${n}問` : '忘れかけた問題を思い出して定着させる', mins: Math.ceil(n * 0.7) }
+        ? { act: 'review', label: `今日の復習 ${n}問`, sub: dueCount > limit ? `期限が来た${dueCount}問のうち、忘れかけている順に${n}問` : '忘れかけた問題を思い出して定着させる', mins: Math.ceil(n * 0.7) }
         : { act: 'review', label: '今日の復習', sub: `${acts.review}問 復習しました`, done: true });
     }
     if (stage === 'A' && unitsRemaining > 0) {
-      const n = Math.max(1, Math.ceil(unitsPerDay));
+      const needPerDay = phaseIdx === 0 ? unitsPerDay : unitsRemaining / 7; // 基礎固めを過ぎていたら、1週間で終える
+      const unitMins = udemy ? AP.udemy.minsPerUnit : nextUnit.minutes + 5;
+      let n = Math.max(1, Math.ceil(needPerDay));
+      if (budget != null) {
+        // 使える時間を設定しているとき: 1週間に必要な数を、平日と土日の時間の比で割りふる(その日に収まる数まで)
+        const wB = Math.max(0, (bud.weekday || bud.holiday) - OVERHEAD), hB = Math.max(0, (bud.holiday || bud.weekday) - OVERHEAD);
+        const weekB = 5 * wB + 2 * hB, dayB = Math.max(0, budget - OVERHEAD);
+        const share = weekB > 0 ? Math.ceil((needPerDay * 7 * dayB) / weekB) : 1;
+        n = Math.max(1, Math.min(share, Math.max(1, Math.floor(dayB / unitMins))));
+      }
+      n = Math.min(n, unitsRemaining + unitsClearedToday);
       const done = unitsClearedToday >= n;
+      const leftMins = unitMins * Math.max(1, n - unitsClearedToday);
       const sec = udemy ? Order.sectionOf(nextUnit.id) : null;
       const progress = unitsClearedToday ? `(今日 ${unitsClearedToday}/${n})` : '';
       add(sec
@@ -160,13 +203,13 @@ const Plan = (() => {
           act: 'unit', id: nextUnit.id, done,
           label: `Udemy §${sec.no}「${sec.title}」→ 一問一答 ${n}ユニット`,
           sub: done ? `今日 ${unitsClearedToday}ユニット 完了` : `次: ${nextUnit.title}${progress}。動画を見てから要点まとめと一問一答へ`,
-          mins: AP.udemy.minsPerUnit,
+          mins: leftMins,
         }
         : {
           act: 'unit', id: nextUnit.id, done,
           label: phaseIdx === 0 ? `教材を ${n}ユニット 進める` : '残りの教材を進める',
           sub: done ? `今日 ${unitsClearedToday}ユニット 完了` : `次: ${nextUnit.title}${progress}`,
-          mins: nextUnit.minutes + 5,
+          mins: leftMins,
         });
     }
     // パートを終えたら、基礎固めの時期でも一度は本番レベル演習に挑戦する(覚えた直後に本番形式で確かめる)
@@ -181,7 +224,8 @@ const Plan = (() => {
     }
     // Udemy講座の過去問解説(§14〜23): 演習期からは、本物の過去問を解いてから解説動画で見直す(3日に1回)
     const past = udemy ? Order.pastStatus() : null;
-    if (past && stage === 'A' && phaseIdx >= 1 && (past.today || (past.next && !past.recent))) {
+    // 時間の取れる日が限られている設定(平日は短い、など)では、3日おきではなく、取れる日ごとに1回
+    if (past && stage === 'A' && phaseIdx >= 1 && (past.today || (past.next && longDay && (longLimited || !past.recent)))) {
       add(past.today
         ? { act: 'udemy', label: '過去問1回分 + Udemyの解説', sub: `今日1回分を終えました(${past.done}/${past.total}回)`, done: true }
         : {
@@ -190,7 +234,7 @@ const Plan = (() => {
         });
     }
     // 模試: Udemy講座を使う場合は、過去問をすべて終えてから(本物の過去問を優先する)
-    if (stage === 'A' && phaseIdx === 2 && (!mockRecent || acts.mock) && (!past || !past.next)) {
+    if (stage === 'A' && phaseIdx === 2 && (acts.mock || (longDay && (longLimited || !mockRecent))) && (!past || !past.next)) {
       add({ act: 'mock', label: '模擬試験(科目A形式・80問)', sub: '3日に1回。本番と同じ150分で時間配分を練習', done: !!acts.mock, mins: 150 });
     }
     // 科目B: 演習期に入ったら解く分野を決め、週に1問は午後の過去問で記述に慣れておく。科目B期は毎日
@@ -226,7 +270,23 @@ const Plan = (() => {
     if (apply && apply.open && !apply.done) {
       tasks.unshift({ act: 'apply', label: '受験の申込み(CBTの会場と日時を予約)', sub: `申込受付は${jp(apply.to)}まで`, done: false, mins: 15 });
     }
-    const nextTask = tasks.find((t) => !t.done) || null;
+    // ---- 使える時間が設定されていれば、その時間に収まる分を「今日やること」、残りを「時間があれば」に分ける ----
+    // 復習・用語カード(忘れる前に見直すもの)と、その時期の中心になる課題1つは、必ず「今日やること」に入れる
+    if (budget != null) {
+      const always = new Set(['apply', 'review', 'cards', 'pmfields']);
+      // 中心になる課題: 教材 → 過去問・模試 → 週1回の午後の過去問 → 演習・ドリル の順で、今日あるものを1つ
+      const mainOrder = stage === 'B'
+        ? ['pmpast', 'case', 'udemy', 'trace']
+        : ['unit', 'udemy', 'mock', 'pmpast', 'part', 'weak', 'drill', 'case'];
+      const main = mainOrder.map((a) => tasks.find((t) => t.act === a)).find(Boolean) || null;
+      let used = 0;
+      tasks.forEach((t) => { if (always.has(t.act) || t === main) { t.core = true; used += t.mins || 0; } });
+      tasks.forEach((t) => {
+        if (t.core) return;
+        if (used + (t.mins || 0) <= budget) { t.core = true; used += t.mins || 0; } else t.optional = true;
+      });
+    }
+    const nextTask = tasks.find((t) => !t.done && !t.optional) || null;
 
     // ---- 進み具合の目安: 今日までにどこまで進んでいるべきか、これからどのペースで進めるか ----
     const pace = (() => {
@@ -265,7 +325,23 @@ const Plan = (() => {
       const inputMins = Math.round(perDay * minsPerUnit);
       const pastMins = phaseIdx >= 1 && pastLeft ? Math.round((pastLeft * 210) / daysToExam) : 0;
       const dailyMins = stage === 'B' ? 90 : inputMins + pastMins + (phaseIdx === 0 ? 20 : 30);
+      // 設定した時間(平日・土日)で進めた場合の見通し。片方だけ設定されていれば、もう片方も同じとみなす
+      const w = bud.weekday || bud.holiday, h = bud.holiday || bud.weekday;
+      let budgetPlan = null;
+      if (w && stage === 'A' && phaseIdx === 0 && unitsRemaining > 0) {
+        const weekUnits = (5 * Math.max(0, w - OVERHEAD) + 2 * Math.max(0, h - OVERHEAD)) / minsPerUnit;
+        const needWeekMins = Math.ceil(perDay * 7 * minsPerUnit) + 7 * OVERHEAD;
+        const haveWeekMins = 5 * w + 2 * h;
+        const finishBy = weekUnits > 0 ? new Date(today.getTime() + Math.ceil(unitsRemaining / (weekUnits / 7)) * DAY) : null;
+        budgetPlan = { weekUnits, needWeekMins, haveWeekMins, finishBy, enough: !!finishBy && finishBy <= aEnd };
+      }
+      // 過去問に取り組める日(時間の取れる日)が、試験の前日までに何日あるか
+      let longDays = 0;
+      if (stage === 'A') {
+        for (let d = new Date(today); d < exam; d = new Date(d.getTime() + DAY)) if (longOk(bud, isWeekend(d))) longDays += 1;
+      }
       return {
+        w, h, budgetPlan, longDays, longLimited,
         expUnits, expSec, nowSec, weekNeed, sunday, perDay, minsPerUnit, recent, finish,
         pastTotal, pastDone, pastExp, pastLeft, pastEvery, daysToExam, dailyMins, aEnd, bEnd,
       };
@@ -278,7 +354,7 @@ const Plan = (() => {
       unitsTotal, unitsDone, unitsRemaining, nextUnit,
       partsDone, casesDone, dueCount,
       paceLabel, recommended, onTrack, diff, expectedUnits,
-      tasks, nextTask, apply, jp, udemy, pace,
+      tasks, nextTask, apply, jp, udemy, pace, budget, holiday,
     };
   }
 
@@ -310,5 +386,5 @@ const Plan = (() => {
   }
 
   return { compute, examDate, examBDate, setExamDate, setExamBDate, markApplied, DEFAULT_A, REVIEW_LIMIT, IPA_URL, PAST_URL, SCHEDULES,
-    PM_MAX, pmChosen, setPmChosen, pmTargets, pmNext, pmKey, scheduleOf };
+    PM_MAX, pmChosen, setPmChosen, pmTargets, pmNext, pmKey, scheduleOf, budgets, setBudget, reviewLimit };
 })();
