@@ -1600,3 +1600,48 @@ button.pf-chip:hover { border-color: var(--accent); }
   .pace-item { display: grid; grid-template-columns: 7.5em 1fr; align-items: baseline; column-gap: 10px; }
   .pace-item .pi-sub { grid-column: 2; margin-top: 0; }
 }
+
+/* 今日のメニュー: 使える時間に収まらなかった課題(時間があれば) */
+.tm-extra-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; font-weight: 900; color: var(--ink-2); margin: 16px 2px 8px; }
+.tm-extra-head span { font-weight: 700; color: var(--ink-3); }
+.task-row.is-extra { background: transparent; border: 1px dashed var(--line); }
+.task-row.is-extra .tr-label { color: var(--ink-2); }
+.tm-budget { font-size: 12px; color: var(--ink-2); line-height: 1.8; margin-top: 12px; }
+.tm-budget b { color: var(--ink); }
+.pace-budget { background: var(--surface-2); border-radius: 10px; padding: 9px 12px; }
+.pcal-time select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--radius-input); padding: 7px 10px;
+}
+#plan-budget { border-top: 1px dashed var(--line); }
+
+/* 間違えた問題に関係する教材の要点(その場で開いて確認) */
+.rel-box { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.rel-box summary { cursor: pointer; padding: 9px 12px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 12.5px; }
+.rel-box summary::-webkit-details-marker { display: none; }
+.rel-box summary::before { content: '▸'; color: var(--accent); font-weight: 900; }
+.rel-box[open] summary::before { content: '▾'; }
+.rel-label { font-weight: 900; color: var(--accent); }
+.rel-where { color: var(--ink-2); }
+.rel-box ul { list-style: none; margin: 0; padding: 2px 12px 10px; }
+.rel-box li { font-size: 13px; line-height: 1.7; padding-left: 18px; position: relative; color: var(--ink); }
+.rel-box li::before { content: '✓'; position: absolute; left: 1px; color: var(--accent); font-weight: 900; }
+.rel-box p { font-size: 13px; line-height: 1.8; padding: 2px 12px 10px; color: var(--ink); }
+.review-item .rv-lesson { white-space: normal; text-align: left; line-height: 1.5; }
+
+/* 用語カード: 出題の向き(用語 → 意味 / 意味 → 用語) */
+.dir-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.dir-label { font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.dir-row .chip { padding: 5px 12px; font-size: 12.5px; }
+.card-face .cf-quiz { font-size: 15px; color: var(--ink); font-weight: 500; }
+
+/* 成績: 科目Bの分野別の平均(分野名が長いので、名前を上の行に置く) */
+.pm-bars .acc-row { grid-template-columns: 1fr 6em; row-gap: 3px; }
+.pm-bars .acc-name { grid-column: 1 / -1; }
+.pm-bars .acc-val { text-align: right; }
+
+/* 淡い青の背景の上では、補足の文字を1段濃くする(読みやすさ) */
+.phase-seg.is-now .ps-date,
+.pf-chip.is-on .pf-no, .pf-chip.is-on .pf-hint { color: var(--ink-2); }
+.pp-cell.ok span, .pp-cell.ng span { color: var(--ink-2); }
+.rel-box .rel-snip { margin: 0 12px 8px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; }

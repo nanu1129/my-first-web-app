@@ -101,3 +101,26 @@ test('Udemy講座の対応表: 全ユニットがちょうど1回ずつ、セク
   assert.equal(missing.length, 0, `対応表にないユニット: ${missing}`);
   assert.equal(AP.udemy.sections.map((s) => s.no).join(','), Array.from({ length: 24 }, (_, i) => i + 1).join(','));
 });
+
+test('問題と教材の対応づけ(Relate): 一問一答は必ず自分のユニットの節に、本番レベルの問題は9割以上が関係する節に対応する', () => {
+  vm.runInContext(`${fs.readFileSync(path.join(ROOT, 'js', 'relate.js'), 'utf8')}\nthis.Relate = Relate;`, ctx, { filename: 'js/relate.js' });
+  const { Relate } = ctx;
+  // アプリの初期化(app.js)と同じように、問題に識別番号とユニットを付ける
+  AP.questions.forEach((q, i) => { q.qid = `${q.partId}-${i}`; });
+  AP.lessons.forEach((l) => l.units.forEach((u) => u.checks.forEach((c, i) => { c.qid = `chk-${u.id}-${i}`; c.partId = l.partId; c.unitId = u.id; })));
+  AP.lessons.forEach((l) => l.units.forEach((u) => u.checks.forEach((c) => {
+    const r = Relate.find(c);
+    assert.ok(r && r.unit.id === u.id, `${c.qid}: 自分のユニットに対応していない`);
+  })));
+  const found = AP.questions.map((q) => Relate.find(q));
+  const none = found.filter((r) => !r).length;
+  assert.ok(none <= AP.questions.length * 0.1, `対応する節がない問題が多すぎる: ${none}問`);
+  // 代表的な問題が、期待する節に対応していること(分野をまたぐものを含む)
+  const secOf = (text) => { const r = Relate.find(AP.questions.find((q) => q.q.includes(text))); return r && r.sec ? `${r.unit.id}/${r.sec.h}` : null; };
+  assert.equal(secOf('ハッシュ表探索で衝突'), 'basics-3/探索アルゴリズムと計算量');
+  assert.equal(secOf('TCO(Total Cost of Ownership)'), 'strategy-2/IT投資の評価(回収期間・現在価値・TCO)');
+  assert.equal(secOf('無線LANのセキュリティ対策'), 'network-3/無線LAN');
+  assert.equal(secOf('チェックポイント以降にコミットした'), 'database-3/障害回復');
+  // 教材にない論点は、無理に対応させない
+  assert.equal(secOf('リバースエンジニアリングの説明'), null);
+});

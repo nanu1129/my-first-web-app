@@ -126,6 +126,18 @@ const Course = (() => {
     });
     const planDetail = document.querySelector('.plan-detail');
     if (planDetail) planDetail.addEventListener('toggle', () => { planOpen = planDetail.open; });
+    $home().querySelectorAll('[data-budget]').forEach((sel) => sel.addEventListener('change', () => {
+      Plan.setBudget(sel.dataset.budget, Number(sel.value));
+      planOpen = true;
+      renderHome();
+    }));
+    // 「時間を設定する」: 設定欄を開いて、その場所まで移動する
+    $home().querySelectorAll('[data-open-plan]').forEach((b) => b.addEventListener('click', () => {
+      planOpen = true;
+      renderHome();
+      const el = document.getElementById('plan-budget');
+      if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 90);
+    }));
     const calBtn = document.getElementById('cal-ics');
     if (calBtn) calBtn.addEventListener('click', () => Cal.download());
     const studyTime = document.getElementById('study-time');
@@ -226,17 +238,29 @@ const Course = (() => {
     }[p.onTrack];
     const examDay = p.daysLeft === 0;
     const targetName = p.stage === 'B' ? '科目B' : '科目A';
-    const tasks = p.tasks;
+    // 使える時間を設定している日は、その時間に収まる分だけを「今日やること」として数える
+    const tasks = p.tasks.filter((t) => !t.optional);
+    const extras = p.tasks.filter((t) => t.optional);
     const doneN = tasks.filter((t) => t.done).length;
     const mins = tasks.filter((t) => !t.done).reduce((n, t) => n + (t.mins || 0), 0);
+    const extraMins = extras.filter((t) => !t.done).reduce((n, t) => n + (t.mins || 0), 0);
     const nt = p.nextTask;
-    const rows = tasks.map((t) => `
-      <button class="task-row ${t.done ? 'is-done' : ''} ${t === nt ? 'is-next' : ''}" data-act="${t.act}" ${t.id ? `data-id="${t.id}"` : ''}>
+    const row = (t) => `
+      <button class="task-row ${t.done ? 'is-done' : ''} ${t === nt ? 'is-next' : ''} ${t.optional ? 'is-extra' : ''}" data-act="${t.act}" ${t.id ? `data-id="${t.id}"` : ''}>
         <span class="tr-check">${t.done ? IC.check : ''}</span>
         <span class="tr-main"><span class="tr-label">${esc(t.label)}</span><br>
           <span class="tr-sub">${esc(t.sub)}</span></span>
         <span class="tr-mins">${t.done ? '完了' : `約${t.mins}分`}</span>
-      </button>`).join('');
+      </button>`;
+    const rows = tasks.map(row).join('');
+    const extraRows = extras.length ? `
+          <p class="tm-extra-head">時間があれば<span>${extraMins ? `約${extraMins}分` : ''}</span></p>
+          <div class="task-list">${extras.map(row).join('')}</div>` : '';
+    const over = p.budget != null && mins > p.budget + 10;
+    const budgetNote = p.budget != null
+      ? `<p class="tm-budget">${p.holiday ? '土日' : '平日'}は <b>${p.budget >= 120 ? `${p.budget / 60}時間` : `${p.budget}分`}</b> の設定です。${over
+        ? '今日やることがこの時間を超えています。復習を先に済ませ、残りは明日に回しても大丈夫です。'
+        : 'この時間に収まる分を「今日やること」にしています。'}<button class="btn-text" data-open-plan>変更</button></p>` : '';
     return `
       <section class="today-card">
         <div class="today-head">
@@ -257,8 +281,10 @@ const Course = (() => {
           </div>
           ${nt ? `<button class="btn btn-primary tm-start" id="today-start" data-act="${nt.act}" ${nt.id ? `data-id="${nt.id}"` : ''}>
                     ${doneN ? '続きから' : 'はじめる'}: ${esc(nt.label)} →</button>`
-            : `<p class="tm-done">${tasks.length ? '今日のメニューはすべて完了!この積み重ねが合格につながります。' : '今日やることはありません。'}</p>`}
+            : `<p class="tm-done">${tasks.length ? `今日のメニューはすべて完了!この積み重ねが合格につながります。${extras.some((t) => !t.done) ? '余裕があれば、下の「時間があれば」もどうぞ。' : ''}` : '今日やることはありません。'}</p>`}
           <div class="task-list">${rows}</div>
+          ${extraRows}
+          ${budgetNote}
         </div>
         ${renderPace(p)}
         ${renderApply(p)}
@@ -322,6 +348,25 @@ const Course = (() => {
       ];
       notes = ['問1(情報セキュリティ)と選んだ4分野を、1問30分で解く練習を続けましょう。'];
     }
+    // 1日に使える時間を設定しているとき: その時間で間に合うか。未設定なら、設定を案内する
+    const bp = k.budgetPlan;
+    const wh = k.w ? `平日${k.w}分・土日${k.h}分` : '';
+    let budgetLine = '';
+    if (p.stage === 'A' && p.phaseIdx === 0 && p.unitsRemaining) {
+      if (bp && bp.finishBy) {
+        const short = bp.needWeekMins - bp.haveWeekMins;
+        budgetLine = `設定した時間(${wh})で進めると、教材の一周は <b>${md(bp.finishBy)}ごろ</b>。${bp.enough ? '目標に間に合います。'
+          : (short > 0 ? `目標(${md(k.aEnd)})に間に合わせるには、<b>週にあと約${Math.ceil(short / 10) * 10}分</b> 必要です。` : 'ほぼ目標どおりのペースです。')}`;
+      } else if (bp) {
+        budgetLine = `設定した時間(${wh})では、復習と用語カードで時間がいっぱいです。教材を進める時間を足しましょう。`;
+      } else {
+        budgetLine = '1日に使える時間を設定すると、今日のメニューをその時間に合わせ、間に合うかどうかも分かります。';
+      }
+    } else if (p.stage === 'A' && k.pastLeft && k.w && k.longLimited) {
+      budgetLine = `過去問(1回 約150分)は、時間の取れる日に入れています。試験の前日までにあと <b>${k.longDays}日</b>(残り${k.pastLeft}回)。${k.longDays < k.pastLeft ? '日数が足りないので、前半40問・後半40問のように2日に分けて進めましょう。' : ''}`;
+    }
+    const budgetHtml = budgetLine
+      ? `<p class="pace-note pace-budget">${budgetLine} <button class="btn-text" data-open-plan>${k.w ? '時間を変更' : '時間を設定する'}</button></p>` : '';
     const steps = p.phases.map((ph, i) => {
       const from = i === 0 ? null : p.phases[i - 1].end;
       const what = ['教材を一周(Udemyの講義 + 一問一答)', '過去問を3日に1回 + 解説、弱点・計算ドリル、科目Bの分野を決める', '残りの過去問・模試で時間配分、復習をゼロに', '選んだ分野の午後の過去問を毎日1問'][i];
@@ -342,6 +387,7 @@ const Course = (() => {
           <div class="pace-item"><p class="pi-label">${label}</p><p class="pi-val">${val}</p><p class="pi-sub">${sub}</p></div>`).join('')}
         </div>
         ${notes.filter(Boolean).length ? `<p class="pace-note">${notes.filter(Boolean).join(' ')}</p>` : ''}
+        ${budgetHtml}
         <details class="pace-plan">
           <summary>試験日までの道のり</summary>
           <ol class="pace-steps">${steps}</ol>
@@ -389,6 +435,20 @@ const Course = (() => {
         <div class="plan-pace">
           <span class="pill">目標ペース</span> ${esc(p.paceLabel)} ・ 1日 約${p.recommended}問
           <button class="btn-mini" id="apply-pace" data-n="${nearestGoal(p.recommended)}">1日の目標に設定</button>
+        </div>
+        <div class="plan-cal" id="plan-budget">
+          <p class="pcal-title">1日に使える時間</p>
+          <p class="plan-note">設定すると、今日のメニューをその時間に収まる量にします(復習と用語カードは必ず入ります)。過去問や模試のような長い課題は、120分以上取れる日に回します。</p>
+          <div class="pcal-row">
+            ${[['weekday', '平日', [30, 45, 60, 90, 120, 180]], ['holiday', '土日', [60, 90, 120, 180, 240, 300]]].map(([kind, label, opts]) => {
+              const cur = Plan.budgets()[kind];
+              return `<label class="pcal-time">${label}
+                <select data-budget="${kind}" aria-label="${label}に使える時間">
+                  <option value="0" ${cur ? '' : 'selected'}>指定なし</option>
+                  ${opts.map((m) => `<option value="${m}" ${cur === m ? 'selected' : ''}>${m >= 120 ? `${m / 60}時間` : `${m}分`}</option>`).join('')}
+                </select></label>`;
+            }).join('')}
+          </div>
         </div>
         <div class="plan-cal">
           <p class="pcal-title">カレンダーに登録</p>
@@ -458,15 +518,7 @@ const Course = (() => {
     box.querySelectorAll('[data-hit]').forEach((b) => {
       b.addEventListener('click', () => {
         const h = lessonHits[Number(b.dataset.hit)];
-        openLesson(h.u.id);
-        // 該当する節までスクロールし、少しの間ハイライトする
-        const target = [...document.querySelectorAll('#view-lesson .lesson-section h3')].find((el) => el.textContent === h.sec.h);
-        if (target) {
-          const sec = target.parentElement;
-          sec.classList.add('is-found');
-          setTimeout(() => { window.scrollTo(0, sec.getBoundingClientRect().top + window.scrollY - 80); }, 0);
-          setTimeout(() => sec.classList.remove('is-found'), 2400);
-        }
+        openLesson(h.u.id, h.u.sections.indexOf(h.sec));
       });
     });
   }
@@ -610,9 +662,19 @@ const Course = (() => {
     return null;
   }
 
-  function openLesson(unitId) {
+  // secIdx を渡すと、その節まで移動して少しの間ハイライトする(検索結果や「教材で確認」から開いたとき)
+  function openLesson(unitId, secIdx) {
     const found = findUnit(unitId);
     if (!found) return;
+    if (Number.isInteger(secIdx)) {
+      setTimeout(() => {
+        const sec = document.querySelector(`#view-lesson #sec-${secIdx}`);
+        if (!sec) return;
+        sec.classList.add('is-found');
+        window.scrollTo(0, sec.getBoundingClientRect().top + window.scrollY - 80);
+        setTimeout(() => sec.classList.remove('is-found'), 2400);
+      }, 0);
+    }
     const { unit, part } = found;
     const cleared = Store.isUnitCleared(unit.id);
 

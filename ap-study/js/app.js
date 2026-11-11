@@ -61,6 +61,7 @@ const App = (() => {
           c.qid = `chk-${u.id}-${i}`;
           c.partId = l.partId;
           c.unitTitle = u.title;
+          c.unitId = u.id;
         });
       });
     });
@@ -91,7 +92,7 @@ const App = (() => {
         const wrap = document.querySelector('.sync-wrap');
         const path = e.composedPath ? e.composedPath() : [];
         if (path.includes(wrap) || wrap.contains(e.target)) return;
-        panel.hidden = true;
+        Sync.closePanel();
       });
     }
     Sync.init();

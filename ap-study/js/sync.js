@@ -13,6 +13,7 @@ const Sync = (() => {
   let lastPushed = '';
   let dirty = false;   // 送れなかった変更がある
   let message = '';
+  let notice = '';     // 利用者に必ず伝えたいこと(ほかの端末でのリセットなど)。パネルを閉じるまで表示する
   let fileMsg = '';
 
   const cfg = () => window.AP_FIREBASE_CONFIG || {};
@@ -75,37 +76,86 @@ const Sync = (() => {
     ]);
   }
 
+  // この端末だけに置くメモ: 同期したアカウント(uid)、反映済みのリセット時刻(resetSeen)、
+  // この端末で行ってまだクラウドに送れていないリセット(pendingReset)
+  const META_KEY = 'ap-sync-meta';
+  function loadMeta() {
+    try { return JSON.parse(localStorage.getItem(META_KEY) || '{}') || {}; } catch (e) { return {}; }
+  }
+  function saveMeta(m) {
+    try {
+      if (m) localStorage.setItem(META_KEY, JSON.stringify(m)); else localStorage.removeItem(META_KEY);
+    } catch (e) { /* 保存できない環境では、毎回「初めての端末」として扱われる(記録はまとめるだけで消えない) */ }
+  }
+
   const docRef = () => db.collection('users').doc(user.uid);
   // App は const で定義されているため window.App では参照できない
   const refresh = () => { if (typeof App !== 'undefined' && App.refresh) App.refresh(); };
 
   // クラウドの最新の記録とこの端末の記録をまとめてから書き込む(トランザクション)。
-  // 2台で同時に勉強しても、どちらかの記録が上書きで消えることはない
+  // 2台で同時に勉強しても、どちらかの記録が上書きで消えることはない。
+  // 「すべてリセット」だけは別扱い: リセットした端末はクラウドを置き換え、同期していたほかの端末は記録を消して合わせる
+  // (まとめてしまうと、消したはずの記録がほかの端末から戻ってきてしまうため)
   async function push(force) {
     if (state !== 'on' || !user) return;
     clearTimeout(timer);
     const json = JSON.stringify(Store.snapshot());
-    if (!force && !dirty && json === lastPushed) return;
+    const meta = loadMeta();
+    const mine = meta.uid === user.uid; // この端末は、このアカウントと同期したことがある
+    if (!force && !dirty && !meta.pendingReset && json === lastPushed) return;
     const before = content(Store.snapshot());
     try {
-      let merged = null;
+      let next = null, wiped = false, newMeta = null;
       await db.runTransaction(async (tx) => {
         const doc = await tx.get(docRef());
-        const remote = doc.exists ? (doc.data() || {}).state : null;
-        merged = Store.mergeStates(remote || null, Store.snapshot());
-        merged.deviceId = Store.deviceId();
-        tx.set(docRef(), { state: merged, writer: Store.deviceId(), updatedAt: Date.now() });
+        const d = doc.exists ? (doc.data() || {}) : {};
+        const remoteReset = d.resetAt || 0;
+        wiped = false;
+        if (mine && meta.pendingReset && meta.pendingReset > remoteReset) {
+          // この端末でリセットした: クラウドをこの端末の(空になった)記録で置き換える
+          next = Store.snapshot();
+          tx.set(docRef(), { state: next, writer: Store.deviceId(), updatedAt: Date.now(), resetAt: meta.pendingReset });
+          newMeta = { uid: user.uid, resetSeen: meta.pendingReset };
+        } else if (mine && d.state && remoteReset > (meta.resetSeen || 0)) {
+          // ほかの端末でリセットされた: この端末の記録は送らず、クラウドの記録に合わせる
+          next = d.state;
+          wiped = true;
+          newMeta = { uid: user.uid, resetSeen: remoteReset };
+        } else {
+          next = Store.mergeStates(d.state || null, Store.snapshot());
+          next.deviceId = Store.deviceId();
+          tx.set(docRef(), { state: next, writer: Store.deviceId(), updatedAt: Date.now(), resetAt: remoteReset });
+          newMeta = { uid: user.uid, resetSeen: remoteReset };
+        }
       });
-      Store.applyState(merged);
+      Store.applyState(next);
+      saveMeta(newMeta);
       lastPushed = JSON.stringify(Store.snapshot());
       dirty = false;
       message = `同期済み ${now()}`;
+      if (wiped) announceReset();
       if (content(Store.snapshot()) !== before) refresh();
     } catch (e) {
       dirty = true;
       message = `保存できませんでした: ${errText(e)}。通信が戻ると自動でやり直します`;
     }
     render();
+  }
+
+  // ほかの端末でのリセットを反映したことを知らせる(急に記録が消えたように見えるので、パネルを開いて理由を示す)
+  function announceReset() {
+    notice = `ほかの端末で「すべてリセット」が行われたため、この端末の記録も消しました(${now()})`;
+    const panel = document.getElementById('sync-panel');
+    if (panel) panel.hidden = false;
+  }
+
+  // すべてリセット(同期中): この端末を空にして、クラウドとほかの端末にも伝える
+  function resetEverywhere() {
+    if (state !== 'on' || !user) { Store.resetAll(); return Promise.resolve(); }
+    const meta = loadMeta();
+    saveMeta({ uid: user.uid, resetSeen: meta.uid === user.uid ? (meta.resetSeen || 0) : 0, pendingReset: Date.now() });
+    Store.resetAll();
+    return push(true);
   }
 
   function schedulePush() {
@@ -120,6 +170,20 @@ const Sync = (() => {
     unsub = docRef().onSnapshot((snap) => {
       const d = snap.data();
       if (!d || !d.state || d.writer === Store.deviceId()) { if (dirty) schedulePush(); return; }
+      const meta = loadMeta();
+      const remoteReset = d.resetAt || 0;
+      if (meta.uid === user.uid && remoteReset > (meta.resetSeen || 0) && !(meta.pendingReset > remoteReset)) {
+        Store.applyState(d.state);
+        saveMeta({ uid: user.uid, resetSeen: remoteReset });
+        lastPushed = JSON.stringify(Store.snapshot());
+        dirty = false;
+        clearTimeout(timer);
+        message = `同期済み ${now()}`;
+        announceReset();
+        render();
+        refresh();
+        return;
+      }
       const before = content(Store.snapshot());
       Store.applyState(Store.mergeStates(d.state, Store.snapshot()));
       const after = content(Store.snapshot());
@@ -191,6 +255,7 @@ const Sync = (() => {
     if (!auth) return;
     await push(true).catch(() => {});
     await auth.signOut();
+    saveMeta(null);
     message = 'ログアウトしました。この端末の記録はそのまま残っています';
     render();
   }
@@ -263,6 +328,7 @@ const Sync = (() => {
       panel.innerHTML = `
         <p class="sync-title">同期中</p>
         <p class="sync-note">${esc(user ? user.email : '')}<br>${esc(message)}</p>
+        ${notice ? `<p class="sync-note sync-warn" role="status">${esc(notice)}</p>` : ''}
         <p class="sync-note">ほかの端末でも同じGoogleアカウントでログインすると、記録が自動で共有されます。</p>
         <div class="sync-actions">
           <button class="btn-mini" id="sync-now">今すぐ同期</button>
@@ -293,8 +359,14 @@ const Sync = (() => {
     const panel = document.getElementById('sync-panel');
     if (!panel) return;
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) { fileMsg = ''; renderPanel(panel); }
+    if (!panel.hidden) { fileMsg = ''; renderPanel(panel); } else notice = '';
   }
 
-  return { init, togglePanel, signIn, signOut, configured, status: () => state };
+  function closePanel() {
+    const panel = document.getElementById('sync-panel');
+    if (panel) panel.hidden = true;
+    notice = '';
+  }
+
+  return { init, togglePanel, closePanel, signIn, signOut, configured, resetEverywhere, status: () => state };
 })();

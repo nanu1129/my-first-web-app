@@ -150,6 +150,21 @@ const Quiz = (() => {
     document.getElementById('quiz-quit').addEventListener('click', quit);
   }
 
+  // 間違えた問題に関係する教材の節。その場で要点だけ開いて確認できる(教材そのものは、結果の見直しから開ける)
+  function relatedBox(q) {
+    const rel = typeof Relate !== 'undefined' ? Relate.find(q) : null;
+    if (!rel || !rel.sec) return '';
+    const pts = rel.sec.points && rel.sec.points.length
+      ? `<ul>${rel.sec.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>`
+      : `<p>${esc(rel.sec.body.split('\n')[0].slice(0, 180))}…</p>`;
+    return `
+      <details class="rel-box">
+        <summary><span class="rel-label">教材の要点を見る</span><span class="rel-where">${esc(rel.unit.title)} › ${esc(rel.sec.h)}</span></summary>
+        ${rel.snippet ? `<p class="rel-snip">${esc(rel.snippet)}</p>` : ''}
+        ${pts}
+      </details>`;
+  }
+
   function pick(i) {
     if (!state || state.answers.length > state.idx) return; // 二重回答ガード
     const { cfg, idx } = state;
@@ -191,6 +206,7 @@ const Quiz = (() => {
       <div class="feedback ${correct ? 'ok' : 'ng'}">
         <p class="feedback-head">${correct ? '正解!この調子!' : `残念、不正解… 正解は「${KEYS[q.answer]}」。解説を読んで整理しよう`}</p>
         <p class="feedback-exp">${esc(q.exp || '')}</p>
+        ${correct ? '' : relatedBox(q)}
         ${reasons}${unsure}
       </div>`;
     const unsureBtn = document.getElementById('unsure-btn');
@@ -271,7 +287,11 @@ const Quiz = (() => {
     const wrong = cfg.questions
       .map((q, i) => ({ q, a: state.answers[i], i }))
       .filter((x) => !x.a || !x.a.correct);
-    const unitOf = (qid) => (qid && qid.startsWith('chk-') ? qid.slice(4, qid.lastIndexOf('-')) : null);
+    const lessonBtn = (q) => {
+      const rel = typeof Relate !== 'undefined' ? Relate.find(q) : null;
+      if (!rel) return '';
+      return `<button class="btn-mini rv-lesson" data-unit="${rel.unit.id}" ${rel.sec ? `data-sec="${rel.idx}"` : ''}>教材で確認: ${esc(rel.sec ? rel.sec.h : rel.unit.title)} →</button>`;
+    };
     const review = wrong.length
       ? `<div class="review-list">
            <h3 style="font-size:14px;font-weight:900;margin-bottom:10px">見直し(${wrong.length}問)</h3>
@@ -282,7 +302,7 @@ const Quiz = (() => {
                <p><span class="rv-a">正解: ${KEYS[q.answer]} ${esc(q.choices[q.answer])}</span>
                ${a ? ` / <span class="rv-your">自分の解答: ${KEYS[a.picked]} ${esc(q.choices[a.picked])}</span>` : ' / <span class="rv-your">未回答</span>'}</p>
                <p class="rv-exp">${esc(q.exp || '')}</p>
-               ${unitOf(q.qid) ? `<button class="btn-mini rv-lesson" data-unit="${unitOf(q.qid)}">教材で確認 →</button>` : ''}
+               ${lessonBtn(q)}
              </div>`).join('')}
          </div>`
       : '';
@@ -313,7 +333,7 @@ const Quiz = (() => {
       b.addEventListener('click', () => { const fn = actions[Number(b.dataset.action)].fn; state = null; fn(); });
     });
     $view().querySelectorAll('.rv-lesson').forEach((b) => {
-      b.addEventListener('click', () => { state = null; Course.openLesson(b.dataset.unit); });
+      b.addEventListener('click', () => { state = null; Course.openLesson(b.dataset.unit, b.dataset.sec === undefined ? undefined : Number(b.dataset.sec)); });
     });
     const retryWrong = document.getElementById('result-retry-wrong');
     if (retryWrong) retryWrong.addEventListener('click', () => {

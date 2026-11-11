@@ -16,6 +16,13 @@ const Cards = (() => {
     return div.innerHTML;
   }
   const keyOf = (t) => `${t.partId}:${t.term}`;
+  // 出題の向き: 'term'(用語を見て意味を思い出す) | 'def'(意味を見て用語を思い出す。本番の「〜はどれか」に近い)
+  const dir = () => (Store.pref('cardDir', 'term') === 'def' ? 'def' : 'term');
+  // 「意味 → 用語」では、説明文の中に出てくる用語そのものを伏せる(答えが見えてしまわないように)
+  function maskDef(t) {
+    const words = t.term.split(/\s*\/\s*|[()()]/).map((x) => x.trim()).filter((x) => x.length >= 2).sort((a, b) => b.length - a.length);
+    return words.reduce((def, w) => def.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '〇〇'), t.def);
+  }
   const DAY = 86400000;
 
   // 今日のカード: 期限が来た復習カード(古い順) + 新しいカード(1日の上限まで)
@@ -84,6 +91,7 @@ const Cards = (() => {
     ].join('');
 
     const t = deck[0];
+    const reverse = dir() === 'def';
     const partName = t ? (AP.parts.find((p) => p.id === t.partId) || {}).name : '';
     const st = t ? Store.cardState(keyOf(t)) : null;
     const nextDays = Store.CARD_STEPS[Math.min((st ? st.box : 0) + 1, Store.CARD_STEPS.length) - 1];
@@ -93,13 +101,15 @@ const Cards = (() => {
         <span class="flashcard-inner">
           <span class="card-face front">
             <span class="cf-label">${st ? (st.box === 0 ? '学習中' : '復習') : '新しい用語'}</span>
-            <span class="cf-term">${esc(t.term)}</span>
+            ${reverse
+              ? `<span class="cf-def cf-quiz">${esc(maskDef(t))}</span>`
+              : `<span class="cf-term">${esc(t.term)}</span>`}
             <span class="cf-part">${esc(partName)}</span>
-            <span class="cf-hint">意味を思い出してから、タップしてめくろう</span>
+            <span class="cf-hint">${reverse ? '当てはまる用語を思い出してから、タップしてめくろう' : '意味を思い出してから、タップしてめくろう'}</span>
           </span>
           <span class="card-face back">
-            <span class="cf-label">意味</span>
-            <span class="cf-term" style="font-size:18px">${esc(t.term)}</span>
+            <span class="cf-label">${reverse ? '用語' : '意味'}</span>
+            <span class="cf-term" style="font-size:${reverse ? 22 : 18}px">${esc(t.term)}</span>
             <span class="cf-def">${esc(t.def)}</span>
           </span>
         </span>
@@ -138,10 +148,17 @@ const Cards = (() => {
     $view().innerHTML = `
       <h2 class="view-title">暗記</h2>
       ${sectionTabs()}
-      <p class="view-lead">用語を見て意味を思い出してから、めくって確認します。「覚えた」カードは忘れかけた頃に、「まだ」のカードはすぐにもう一度出てきます。</p>
+      <p class="view-lead">${reverse
+        ? '意味(説明)を見て、当てはまる用語を思い出してから、めくって確認します。本番の「〜はどれか」という問われ方に近い練習です。'
+        : '用語を見て意味を思い出してから、めくって確認します。'}「覚えた」カードは忘れかけた頃に、「まだ」のカードはすぐにもう一度出てきます。</p>
       <div class="seg-tabs" role="tablist">
         <button class="seg-tab ${mode === 'today' ? 'is-active' : ''}" data-mode="today" role="tab" aria-selected="${mode === 'today'}">今日のカード(${todayDeck(filter).length}枚)</button>
         <button class="seg-tab ${mode === 'all' ? 'is-active' : ''}" data-mode="all" role="tab" aria-selected="${mode === 'all'}">すべてを順に見る</button>
+      </div>
+      <div class="dir-row" role="group" aria-label="出題の向き">
+        <span class="dir-label">出題の向き</span>
+        <button class="chip ${reverse ? '' : 'is-active'}" data-dir="term" aria-pressed="${!reverse}">用語 → 意味</button>
+        <button class="chip ${reverse ? 'is-active' : ''}" data-dir="def" aria-pressed="${reverse}">意味 → 用語</button>
       </div>
       <div class="chip-row">${chips}</div>
       <div class="flashcard-zone">${cardHtml}</div>
@@ -150,6 +167,9 @@ const Cards = (() => {
     bindTabs();
     $view().querySelectorAll('[data-filter]').forEach((c) => {
       c.addEventListener('click', () => { filter = c.dataset.filter; render(); });
+    });
+    $view().querySelectorAll('[data-dir]').forEach((c) => {
+      c.addEventListener('click', () => { Store.setPref('cardDir', c.dataset.dir); flipped = false; paint(); });
     });
     $view().querySelectorAll('[data-mode]').forEach((c) => {
       c.addEventListener('click', () => { mode = c.dataset.mode; render(); });
@@ -195,5 +215,5 @@ const Cards = (() => {
     if (e.key === ' ') { e.preventDefault(); flip(); } else if (e.key === 'ArrowLeft') mark(false); else if (e.key === 'ArrowRight') mark(true);
   });
 
-  return { render, todayCount };
+  return { render, todayCount, maskDef };
 })();

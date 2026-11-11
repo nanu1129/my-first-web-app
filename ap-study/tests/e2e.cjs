@@ -176,7 +176,21 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
   const errors = [];
   const VPS = [['pc', { width: 1100, height: 900 }], ['sp', { width: 390, height: 844 }]];
 
+  // 環境変数 E2E_ONLY=A,C のように指定すると、その区分だけを実行する(開発中の確認用)
+  const only = (process.env.E2E_ONLY || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const section = async (key, fn) => { if (!only.length || only.includes(key)) await fn(); };
+  // 日時を固定して開く(試験日程・計画のテスト用)
+  const at = async (iso, prefs) => {
+    const { ctx, page } = await newPage(browser, { width: 1000, height: 900 }, null, errors, iso);
+    await page.clock.setFixedTime(new Date(iso));
+    if (prefs) await page.addInitScript((p) => { localStorage.setItem('ap-study-v1', JSON.stringify({ v: 2, deviceId: 'dc', counters: {}, prefs: p, prefsAt: 1 })); }, prefs);
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    return { ctx, page };
+  };
+
   // ---- A. はじめての利用者: 使い方 → 今日のメニュー → 教材 → 一問一答 → 次のユニットへ ----
+  await section('A', async () => {
   for (const [tag, vp] of VPS) {
     const { ctx, page } = await newPage(browser, vp, null, errors, tag);
     await page.goto(BASE);
@@ -193,7 +207,8 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     const secN = await page.locator('#view-lesson .lesson-section').count();
     ok(tocN === secN && tocN > 0, `${tag}: 教材の目次が全${secN}節を指している`);
     await page.locator('.lesson-toc [data-sec]').last().click();
-    await page.waitForTimeout(600);
+    // なめらかなスクロールが終わるまで待つ(かかる時間はブラウザの版や距離で変わる)
+    await page.waitForFunction(() => document.querySelector('#view-lesson .lesson-section:last-of-type').getBoundingClientRect().top < 300, null, { timeout: 4000 }).catch(() => {});
     const lastTop = await page.evaluate(() => document.querySelector('#view-lesson .lesson-section:last-of-type').getBoundingClientRect().top);
     ok(lastTop < 300, `${tag}: 目次を押すとその節へ移動する`, lastTop);
     ok(await page.locator('.lesson-summary').count() === 1 && !(await page.locator('.lesson-summary').getAttribute('open')), `${tag}: 要点まとめは閉じた状態で置かれている`);
@@ -211,8 +226,10 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok(await page.locator('.intro-card').count() === 0, `${tag}: 学習を始めたら使い方は表示しない`);
     await ctx.close();
   }
+  });
 
   // ---- B. 学習途中の利用者: 復習(自信なし・解き直し)→ 弱点ドリル → 用語カード → 成績 ----
+  await section('B', async () => {
   for (const [tag, vp] of VPS) {
     const { ctx, page } = await newPage(browser, vp, seeded(Date.now()), errors, tag);
     await page.goto(BASE);
@@ -286,16 +303,10 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     if (tag === 'sp') await page.screenshot({ path: path.join(OUT, `${tag}-home-done.png`) });
     await ctx.close();
   }
+  });
 
   // ---- C. 試験日程(CBT): 申込み案内 → 科目A当日 → 科目B期 → 終了 ----
-  const at = async (iso, prefs) => {
-    const { ctx, page } = await newPage(browser, { width: 1000, height: 900 }, null, errors, iso);
-    await page.clock.setFixedTime(new Date(iso));
-    if (prefs) await page.addInitScript((p) => { localStorage.setItem('ap-study-v1', JSON.stringify({ v: 2, deviceId: 'dc', counters: {}, prefs: p, prefsAt: 1 })); }, prefs);
-    await page.goto(BASE);
-    await page.waitForSelector('.today-card');
-    return { ctx, page };
-  };
+  await section('C', async () => {
   {
     const { ctx, page } = await at('2026-10-07T09:00:00', { examDate: '2027-02-21' });
     const label = await page.locator('.countdown').innerText();
@@ -412,6 +423,58 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await ctx.close();
   }
   {
+    // 1日に使える時間: 設定すると、その時間に収まる分が「今日やること」、残りは「時間があれば」になる
+    const { ctx, page } = await at('2026-11-11T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-06' });
+    await page.evaluate(() => {
+      const st = Store.snapshot();
+      Order.units().slice(0, 8).forEach((u, i) => { st.units[u.id] = { cleared: true, best: 5, total: 6, at: Date.now() - (9 - i) * 86400000, clearedAt: Date.now() - (9 - i) * 86400000 }; });
+      Store.applyState(st);
+      App.goHome();
+    });
+    const acts = () => page.evaluate(() => ({
+      core: [...document.querySelectorAll('.task-row:not(.is-extra)')].map((r) => r.dataset.act).join(),
+      extra: [...document.querySelectorAll('.task-row.is-extra')].map((r) => r.dataset.act).join(),
+      count: document.querySelector('.tm-count').textContent,
+    }));
+    const a0 = await acts();
+    ok(a0.core === 'unit,part,weak,cards' && a0.extra === '' && (await page.locator('.pace-budget').innerText()).includes('1日に使える時間を設定すると'),
+      '使える時間が未設定: これまでどおり全部が今日のメニュー。設定の案内を表示', a0);
+    await page.click('.pace-budget [data-open-plan]');
+    ok(await page.locator('.plan-detail[open] #plan-budget').count() === 1, '「時間を設定する」で、設定欄が開く');
+    await page.selectOption('[data-budget="weekday"]', '60');
+    const a1 = await acts();
+    ok(a1.core === 'unit,cards' && a1.extra === 'part,weak' && a1.count.startsWith('0/2 完了'), '平日60分: 教材と用語カードが今日やること、演習とドリルは「時間があれば」', a1);
+    ok((await page.locator('.tm-budget').innerText()).includes('平日は 60分'), '今日の設定(平日60分)をメニューの下に表示');
+    await page.selectOption('[data-budget="holiday"]', '180');
+    const bl = (await page.locator('.pace-budget').innerText()).replace(/\s+/g, ' ');
+    ok(bl.includes('平日60分・土日180分') && /教材の一周は \d+\/\d+ごろ/.test(bl), 'ペースの目安: 設定した時間で一周がいつになるかを表示', bl);
+    await page.selectOption('[data-budget="weekday"]', '90');
+    const a2 = await acts();
+    ok(a2.core === 'unit,part,weak,cards' && a2.extra === '', '平日90分にすると、演習とドリルも今日やることに入る', a2);
+    // 土日(3時間): 1週間に必要な数を時間の比で割りふるので、教材は複数ユニット
+    await page.selectOption('[data-budget="weekday"]', '60');
+    await page.clock.setFixedTime(new Date('2026-11-14T09:00:00'));
+    await page.evaluate(() => App.goHome());
+    const satUnit = await page.locator('.task-row[data-act="unit"] .tr-label').innerText();
+    ok(/一問一答 [23]ユニット/.test(satUnit) && (await page.locator('.tm-budget').innerText()).includes('土日は 3時間'), '土日(3時間): 教材は平日より多く進める', satUnit);
+    // 演習期: 過去問(約150分)は、平日60分の日には出さず、時間の取れる土日に出す
+    await page.clock.setFixedTime(new Date('2027-01-06T09:00:00'));
+    await page.evaluate(() => {
+      const st = Store.snapshot();
+      Order.units().forEach((u) => { st.units[u.id] = { cleared: true, best: 5, total: 6, at: 1, clearedAt: 1 }; });
+      Store.applyState(st);
+      App.goHome();
+    });
+    const wed = await acts();
+    ok(!(`${wed.core},${wed.extra}`).split(',').includes('udemy'), '演習期の平日(60分): 過去問は出さない', wed);
+    ok((await page.locator('.pace-budget').innerText()).includes('時間の取れる日'), '演習期: 過去問を時間の取れる日に入れていることを表示');
+    await page.clock.setFixedTime(new Date('2027-01-09T09:00:00'));
+    await page.evaluate(() => App.goHome());
+    const sat = await acts();
+    ok(sat.core.split(',').includes('udemy'), '演習期の土日(3時間): 過去問が今日やることに入る', sat);
+    await ctx.close();
+  }
+  {
     // カレンダーに登録: 申込期間・科目A/B・毎日の学習(.ics と Googleカレンダーのリンク)
     const { ctx, page } = await at('2026-11-04T09:00:00', { planStart: '2026-10-01', examDate: '2027-02-08' });
     await page.click('.plan-detail summary');
@@ -438,8 +501,10 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok((await page.locator('.today-card').innerText()).includes('試験日を過ぎました'), '科目Bの日を過ぎたら終了の案内');
     await ctx.close();
   }
+  });
 
   // ---- D. Udemy講座の順序: 並び順の切替・対応表・過去問解説のタスク ----
+  await section('D', async () => {
   {
     const { ctx, page } = await newPage(browser, { width: 390, height: 844 }, null, errors, 'udemy');
     await page.goto(BASE);
@@ -491,8 +556,10 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok((await page.locator('.task-row[data-act="udemy"] .tr-label').innerText()).includes('§24'), '科目B期: Udemy §24(午後問題対策用 小問題)');
     await ctx.close();
   }
+  });
 
   // ---- E. 本番形式の模試(CBT)・本物の過去問の記録・暗記タブ・午後演習の2カラム・追加ユニット ----
+  await section('E', async () => {
   {
     const { ctx, page } = await newPage(browser, { width: 390, height: 844 }, seeded(Date.now()), errors, 'cbt');
     await page.goto(BASE);
@@ -581,10 +648,30 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await page.locator('.part-exam-row[data-part="basics"]').click();
     await page.waitForSelector('#view-quiz .quiz-count');
     ok((await page.locator('#view-quiz .quiz-count').innerText()).includes('/ 20'), '本番レベル演習: 1回は最大20問', await page.locator('#view-quiz .quiz-count').innerText());
+    // 間違えると、関係する教材の要点をその場で開ける。結果の見直しからは、その節へ移動できる
+    const rel = await page.evaluate(() => { const r = Relate.find(Quiz.current()); return r && r.sec ? { unit: r.unit.title, sec: r.sec.h, n: (r.sec.points || []).length } : null; });
+    const wrongIdx = (await page.evaluate(() => Quiz.current().answer) + 1) % 4;
+    await page.click(`#view-quiz .choice[data-i="${wrongIdx}"]`);
+    if (rel) {
+      await page.click('.rel-box summary');
+      ok((await page.locator('.rel-where').innerText()).includes(rel.sec) && await page.locator('.rel-box li').count() === rel.n,
+        '不正解のとき: 関係する教材の要点をその場で開ける', rel);
+    } else ok(await page.locator('.rel-box').count() === 0, '不正解のとき: 対応する教材がない問題には何も出さない');
+    await page.click('#quiz-next-btn');
+    await finishQuiz(page, () => true);
+    const rv = page.locator('.rv-lesson').first();
+    if (rel) {
+      ok((await rv.innerText()).includes(rel.sec), '結果の見直し: 関係する節の名前つきで「教材で確認」', await rv.innerText());
+      await rv.click();
+      await page.waitForSelector('#view-lesson .lesson-section.is-found');
+      const jump = await page.evaluate(() => { const s = document.querySelector('#view-lesson .lesson-section.is-found'); return { h: s.querySelector('h3').textContent, top: Math.round(s.getBoundingClientRect().top) }; });
+      ok(jump.h === rel.sec && jump.top >= 0 && jump.top < 200, '「教材で確認」: その節まで移動する', jump);
+    }
 
     // 本物の過去問の得点(成績の記録欄・Udemyのカード)
     await page.click('#main-nav [data-nav="stats"]');
     ok((await page.inputValue('#past-id')) === 'r07a', '過去問: まだ記録のない一番新しい回(令和7年秋)が選ばれている');
+    ok(await page.locator('#pm-panel').count() === 0, '成績: 科目Bの欄は、分野を決めるか記録するまで出さない');
     await page.fill('#past-score', '52');
     await page.click('#past-form button[type="submit"]');
     ok(await page.locator('.past-row').count() === 1 && (await page.inputValue('#past-id')) === 'r07s', '過去問: 記録すると一覧に出て、次の回が選ばれる');
@@ -621,6 +708,27 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok(total > 300 && hit > 0 && hit < 10 && await page.locator('#pt-print').count() === 1, '要点まとめ: 全POINTを検索でき、印刷ボタンがある', [total, hit]);
     ok(await page.evaluate(() => document.activeElement && document.activeElement.id) === 'pt-search', '要点まとめ: 絞り込み中も入力欄から外れない');
     ok(await overflow(page) <= 0, '暗記タブで横はみ出しなし');
+    // 用語カードの向き: 意味 → 用語(説明の中に出てくる用語そのものは伏せる)
+    await page.click('[data-section="cards"]');
+    await page.click('[data-dir="def"]');
+    const face = await page.evaluate(() => ({
+      quiz: !!document.querySelector('.card-face.front .cf-quiz'), term: !!document.querySelector('.card-face.front .cf-term'),
+      back: document.querySelector('.card-face.back .cf-term').textContent, pref: Store.pref('cardDir'),
+      mask: Cards.maskDef({ term: 'RTO / RPO', def: 'RTOは復旧までの目標時間、RPOはどの時点のデータまで戻すかの目標。' }),
+    }));
+    ok(face.quiz && !face.term && face.back.length > 0 && face.pref === 'def', '用語カード(意味 → 用語): 表に説明、裏に用語。向きは設定として残る', face);
+    ok(face.mask === '〇〇は復旧までの目標時間、〇〇はどの時点のデータまで戻すかの目標。', '用語カード(意味 → 用語): 説明の中の用語は伏せる', face.mask);
+    await page.click('[data-dir="term"]');
+    ok(await page.locator('.card-face.front .cf-term').count() === 1, '用語カード: 向きを「用語 → 意味」に戻せる');
+    // 成績: 科目B(午後)の過去問の分野別の平均
+    await page.evaluate(() => { Plan.setPmChosen(['db', 'nw', 'pm', 'sm']); Store.setPmExam('r07a-1', 70); Store.setPmExam('r07a-5', 40); });
+    await page.click('#main-nav [data-nav="stats"]');
+    const pmText = (await page.locator('#pm-panel').innerText()).replace(/\s+/g, ' ');
+    ok(pmText.includes('問1 情報セキュリティ') && pmText.includes('70%') && pmText.includes('全体の平均 55%') && pmText.includes('問10 サービスマネジメント'),
+      '成績: 科目Bの過去問の分野別の平均を表示', pmText.slice(0, 200));
+    ok(await overflow(page) <= 0, '成績(科目Bの欄あり)で横はみ出しなし');
+    await page.click('#pm-open');
+    ok(await page.locator('#pm-past #pm-form').count() === 1, '成績の科目Bの欄から、午後の過去問の記録へ移動できる');
 
     // 追加ユニット(労働・取引の法律と標準化)は、Udemy順で法務(strategy-3)の次
     const order = await page.evaluate(() => Order.unitsOfPart('strategy').map((u) => u.id).join());
@@ -646,8 +754,10 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok(await page.evaluate(() => getComputedStyle(document.querySelector('.case-layout')).display) === 'block', '午後演習(スマホ): 1列で表示');
     await ctx.close();
   }
+  });
 
   // ---- F. 端末間の同期: 未設定時のファイル移行、PCとスマホの自動同期(偽のFirebase) ----
+  await section('F', async () => {
   {
     // 未設定: 雲アイコンのパネルに設定の案内と「記録を送る/読み込む」
     const a = await newPage(browser, { width: 390, height: 844 }, seeded(Date.now()), errors, 'sync-off');
@@ -751,11 +861,40 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await sp.page.click('#sync-btn');
     ok((await sp.page.locator('#sync-panel').innerText()).includes('tester@example.com'), '同期中はアカウントと状態を表示');
     await sp.page.screenshot({ path: path.join(OUT, 'sp-sync-on.png') });
+    await sp.page.click('#sync-btn');
+
+    // すべてリセット(同期中): PCで消すと、クラウドとスマホの記録も消え、同期で復活しない
+    await pc.page.click('#main-nav [data-nav="stats"]');
+    let asked = '';
+    pc.page.once('dialog', (d) => { asked = d.message(); d.accept(); });
+    await pc.page.click('#reset-all');
+    ok(asked.includes('ほかの端末の記録も消えます'), 'リセット(同期中): ほかの端末の記録も消えることを確認してから実行する', asked);
+    const emptyNow = () => Object.keys(Store.snapshot().units).length === 0 && Store.pastExams().length === 0;
+    ok(await until(pc.page, emptyNow) && await until(sp.page, emptyNow), 'リセット(同期中): PCで消すと、スマホの記録も消える');
+    await pc.page.waitForTimeout(3000);
+    const cloudState = cloud.docs.get('users/u1').data.state;
+    ok(Object.keys(cloudState.units || {}).length === 0 && await pc.page.evaluate(emptyNow) && await sp.page.evaluate(emptyNow),
+      'リセット(同期中): しばらくたっても、同期で記録が復活しない', Object.keys(cloudState.units || {}));
+    ok(await sp.page.locator('#sync-panel').isVisible() && (await sp.page.locator('#sync-panel').innerText()).includes('ほかの端末で「すべてリセット」が行われた'),
+      'リセット(同期中): 消えた側の端末では、パネルが開いて理由を表示');
+    // リセットのあとに学習した記録は、これまでどおり同期される
+    await sp.page.evaluate(() => Store.setPastExam('r05a', 44));
+    ok(await until(pc.page, () => Store.pastExams().some((r) => r.id === 'r05a')), 'リセット後: 新しい記録はこれまでどおり同期される');
+    // 初めてログインする端末の記録は、リセット済みのアカウントでも消えずにまとまる
+    const tabState = Object.assign({}, phoneState, { deviceId: 'dtab', counters: { dtab: phoneState.counters.dphone } });
+    const tab = await device('sync-tab', { width: 820, height: 1000 }, tabState);
+    await login(tab.page);
+    const tabView = await tab.page.evaluate(() => ({ dev: Store.isUnitCleared('dev-1'), past: Store.pastExams().map((r) => r.id).join() }));
+    ok(tabView.dev && tabView.past === 'r05a', '初めてログインする端末: 手元の記録は消えず、クラウドの記録とまとまる', tabView);
+    ok(await until(pc.page, () => Store.isUnitCleared('dev-1')), '初めてログインした端末の記録が、ほかの端末にも届く');
+    await tab.ctx.close();
     await pc.ctx.close();
     await sp.ctx.close();
   }
+  });
 
   // ---- G. Service Worker: 2回目からはバージョン付きのファイルをキャッシュから読み、オフラインでも開ける ----
+  await section('G', async () => {
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     await ctx.route('**/js/firebase-config.js*', (r) => r.fulfill({ contentType: 'text/javascript', body: NO_SYNC }));
@@ -777,6 +916,8 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok(await page.waitForSelector('.today-card', { timeout: 10000 }).then(() => true).catch(() => false), 'サーバに接続できなくても(オフライン)、前回の内容で開ける');
     await ctx.close();
   }
+
+  });
 
   ok(errors.length === 0, 'ページのエラーなし', errors);
   await browser.close();

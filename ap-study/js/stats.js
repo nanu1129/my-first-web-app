@@ -80,6 +80,40 @@ const Stats = (() => {
       </div>`;
   }
 
+  // 科目B(午後)の過去問: 分野別の平均。記録は「実践 › 午後演習」で付ける。
+  // 解く分野を決めるか、1問でも記録すると表示する(基礎固めの時期に、まだ使わない欄を増やさない)
+  function pmPanel() {
+    const recs = Store.pmExams();
+    const chosen = Plan.pmChosen();
+    if (!recs.length && !chosen.length) return '';
+    const ofField = (f) => recs.filter((r) => r.id.endsWith(`-${f.no}`));
+    const fields = (AP.pmFields || []).filter((f) => f.required || chosen.includes(f.id) || ofField(f).length);
+    const avgOf = (list) => Math.round(list.reduce((n, r) => n + r.score, 0) / list.length);
+    const rows = fields.map((f) => {
+      const mine = ofField(f);
+      const avg = mine.length ? avgOf(mine) : null;
+      return `
+        <div class="acc-row">
+          <span class="acc-name">問${f.no} ${esc(f.name)}</span>
+          <span class="acc-bar"><span class="acc-fill ${avg === null ? '' : (avg >= 60 ? 'is-good' : 'is-weak')}" style="width:${avg || 0}%"></span><span class="acc-pass" title="目安60%"></span></span>
+          <span class="acc-val">${avg === null ? '<span class="acc-none">未記録</span>' : `<b>${avg}%</b> <small>${mine.length}問</small>`}</span>
+        </div>`;
+    }).join('');
+    const all = recs.length ? avgOf(recs) : null;
+    const weakest = fields.map((f) => ({ f, m: ofField(f) })).filter((x) => x.m.length).map((x) => ({ f: x.f, avg: avgOf(x.m) })).sort((a, b) => a.avg - b.avg)[0];
+    const verdict = all === null ? '演習期に入ったら、週に1問ずつ解いて記録していきましょう。'
+      : all >= 60 ? `自己採点の平均は目安の60%を超えています。${weakest && weakest.avg < 60 ? `「${weakest.f.name}」が弱めなので、重点的に。` : 'この調子で、記述の書き方を固めていきましょう。'}`
+        : `目安の60%まであと${60 - all}ポイント。${weakest ? `まずは「${weakest.f.name}」から、解答例の書き方をまねて書き直してみましょう。` : ''}`;
+    return `
+      <div class="panel" id="pm-panel">
+        <h3>科目B(午後)の過去問</h3>
+        <p class="panel-note">IPAの午後の過去問を解いて自己採点した結果の、分野別の平均です(問1と、選んだ分野)。${chosen.length ? '' : '解く分野がまだ決まっていません。'}</p>
+        <div class="acc-bars pm-bars">${rows}</div>
+        <p class="past-summary">${all === null ? '' : `全体の平均 <b class="${all >= 60 ? 'ok' : 'ng'}">${all}%</b>(${recs.length}問)<br>`}<span>${verdict}</span></p>
+        <div class="btn-row"><button class="btn btn-ghost" id="pm-open">${chosen.length ? '午後の過去問を記録する' : '解く分野を決める'} →</button></div>
+      </div>`;
+  }
+
   function esc(s) {
     const div = document.createElement('div');
     div.textContent = s;
@@ -155,6 +189,7 @@ const Stats = (() => {
       </div>
 
       ${pastPanel()}
+      ${pmPanel()}
 
       ${calendarPanel()}
 
@@ -296,6 +331,11 @@ const Stats = (() => {
         onFinish: (r) => Store.addHistory({ kind: '復習', label: `${x.u.title} ${r.total}問`, score: r.score, total: r.total, pass: r.pass }),
       });
     }));
+    const pmOpen = document.getElementById('pm-open');
+    if (pmOpen) pmOpen.addEventListener('click', () => {
+      App.navigate('practice');
+      Afternoon.renderMenu({ focus: Plan.pmChosen().length ? 'pm-past' : 'pm-fields' });
+    });
     const pastForm = document.getElementById('past-form');
     if (pastForm) pastForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -317,10 +357,14 @@ const Stats = (() => {
       if (f) importBackup(f);
     });
     document.getElementById('reset-all').addEventListener('click', () => {
-      if (confirm('学習の進捗・成績・カードの記録をすべて削除します。よろしいですか?')) {
-        Store.resetAll();
-        render();
-      }
+      const synced = typeof Sync !== 'undefined' && Sync.status() === 'on';
+      const msg = synced
+        ? '学習の進捗・成績・カードの記録をすべて削除します。\n同期中なので、クラウドと、同期しているほかの端末の記録も消えます。元に戻せません。よろしいですか?'
+        : '学習の進捗・成績・カードの記録をすべて削除します。元に戻せません。よろしいですか?';
+      if (!confirm(msg)) return;
+      if (synced) Sync.resetEverywhere().then(() => { if (!$view().hidden) render(); });
+      else Store.resetAll();
+      render();
     });
   }
 
