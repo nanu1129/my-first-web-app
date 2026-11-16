@@ -1550,6 +1550,10 @@ button.pf-chip:hover { border-color: var(--accent); }
   #main-nav .tab-ic { display: block; width: 22px; height: 22px; }
   #main-nav .tab.is-active { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
   body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
+  /* 模試の解答中は下のタブを隠す(「次へ」のすぐ下にあり、押し間違えると画面が切り替わってしまうため)。
+     やめるときは、画面内の「中断する」か、左上のロゴから */
+  body.is-mock #main-nav.tabs { display: none; }
+  body.is-mock { padding-bottom: env(safe-area-inset-bottom); }
 }
 
 /* 学習計画: カレンダーに登録 */
@@ -1744,3 +1748,16 @@ button.pf-chip:hover { border-color: var(--accent); }
   .pn-cell { height: 40px; }
   .pn-areas .acc-row { grid-template-columns: 7.6em 1fr 5.6em; }
 }
+
+/* ===== 模試の中断と再開 ===== */
+.exam-resume {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap;
+  background: var(--gold-soft); border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius: var(--radius); padding: 14px 18px; margin-bottom: 18px;
+}
+.er-main { display: grid; gap: 3px; flex: 1; min-width: 220px; font-size: 12.5px; color: var(--ink-2); line-height: 1.7; }
+.er-main > b { font-size: 14.5px; color: var(--ink); }
+.exam-resume .btn-row { gap: 14px; }
+.exam-resume .btn { padding: 10px 18px; font-size: 13.5px; }
+.exam-stale { font-size: 12.5px; color: var(--ink-2); background: var(--surface-2); border-radius: 10px; padding: 10px 14px; margin-bottom: 18px; }
+.cbt-discard { margin-top: 14px; }

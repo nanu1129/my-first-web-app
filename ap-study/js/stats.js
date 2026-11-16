@@ -391,6 +391,7 @@ const Stats = (() => {
         ? '学習の進捗・成績・カードの記録をすべて削除します。\n同期中なので、クラウドと、同期しているほかの端末の記録も消えます。元に戻せません。よろしいですか?'
         : '学習の進捗・成績・カードの記録をすべて削除します。元に戻せません。よろしいですか?';
       if (!confirm(msg)) return;
+      Quiz.discardMock(); // 中断した模試(この端末だけに保存)も消す
       if (synced) Sync.resetEverywhere().then(() => { if (!$view().hidden) render(); });
       else Store.resetAll();
       render();

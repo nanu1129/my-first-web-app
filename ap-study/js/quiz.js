@@ -32,12 +32,15 @@ const Quiz = (() => {
     return Object.assign({}, q, {
       choices: order.map((i) => q.choices[i]),
       answer: order.indexOf(q.answer),
+      // データ上の並びから見た選択肢の順番。模試を中断したとき、同じ並びで再開するために使う
+      _order: order.map((i) => (q._order ? q._order[i] : i)),
     });
   }
 
   // config: { title, questions, mode: 'check'|'practice'|'mock',
   //           passRate, timeLimitSec, backLabel, onBack, onFinish }
-  function start(config) {
+  // restore: 中断した模試を再開するときの進み具合(loadMock の結果)
+  function start(config, restore) {
     stopTimer();
     config = Object.assign({}, config, { questions: config.questions.map(withShuffledChoices) });
     state = {
@@ -53,6 +56,9 @@ const Quiz = (() => {
       // 本番のCBTと同じく、答えはいつでも変えられ、前後の問題へ自由に移動できる
       const n = config.questions.length;
       Object.assign(state, { picks: Array(n).fill(null), flags: new Set(), times: Array(n).fill(0), enteredAt: Date.now(), panel: null, done: false });
+      if (restore) {
+        Object.assign(state, { picks: restore.picks.slice(), flags: new Set(restore.flags), times: restore.times.slice(), idx: restore.idx, remainSec: restore.remainSec });
+      }
     }
     App.show('quiz');
     if (config.timeLimitSec) startTimer();
@@ -70,7 +76,7 @@ const Quiz = (() => {
       if (state.remainSec <= 0) {
         stopTimer();
         finish(true);
-      }
+      } else if (state.remainSec % 10 === 0) saveMock();
     }, 1000);
   }
 
@@ -239,12 +245,77 @@ const Quiz = (() => {
     else renderQuestion();
   }
 
+  // 模試の解答中だけ body に印を付ける(スマホでは下のタブを隠し、押し間違いで画面が切り替わらないようにする)
+  const mockUi = (on) => document.body.classList.toggle('is-mock', !!on);
+
   function quit() {
     stopTimer();
+    mockUi(false);
     const cb = state.cfg.onBack;
     state = null;
     if (cb) cb();
   }
+
+  // ---------- 模試の中断と再開(この端末にだけ保存する。端末間の同期はしない) ----------
+  const MOCK_KEY = 'ap-mock-progress';
+  const hash = (str) => { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; return h; };
+  // 進み具合を保存する(答えを選ぶ・移動する・10秒ごと・画面を閉じるとき)
+  function saveMock() {
+    if (!state || state.cfg.mode !== 'mock' || state.done || !state.cfg.plan) return;
+    const times = state.times.slice();
+    times[state.idx] += Date.now() - state.enteredAt; // いま表示している問題で使った時間も含める
+    const data = {
+      v: 1, plan: state.cfg.plan, savedAt: Date.now(), idx: state.idx, remainSec: state.remainSec,
+      picks: state.picks, flags: [...state.flags], times,
+      qs: state.cfg.questions.map((q) => ({ id: q.qid, h: hash(q.q), o: q._order || null, src: q.source || null })),
+    };
+    try { localStorage.setItem(MOCK_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない環境では、中断しても再開できない */ }
+  }
+  function discardMock() {
+    try { localStorage.removeItem(MOCK_KEY); } catch (e) { /* noop */ }
+  }
+  // 保存したものが残っているか(再開できるかどうかは loadMock で確かめる)
+  function hasSavedMock() {
+    try { return !!localStorage.getItem(MOCK_KEY); } catch (e) { return false; }
+  }
+  // 保存してある模試を読み、問題を中断したときと同じ並びで組み立てる。
+  // 教材の更新などで問題が合わなくなっていたら使わない(null)
+  function loadMock() {
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(MOCK_KEY) || 'null'); } catch (e) { d = null; }
+    if (!d || d.v !== 1 || !d.plan || !Array.isArray(d.qs) || !d.qs.length) return null;
+    const n = d.qs.length;
+    const okList = (a) => Array.isArray(a) && a.length === n;
+    if (!okList(d.picks) || !okList(d.times) || !Array.isArray(d.flags) || !(d.remainSec > 0) || !(d.idx >= 0 && d.idx < n)) return null;
+    const byId = new Map((AP.allQuestions || []).map((q) => [q.qid, q]));
+    const questions = [];
+    for (const sv of d.qs) {
+      const base = byId.get(sv.id);
+      if (!base || hash(base.q) !== sv.h) return null;
+      const o = sv.o;
+      if (o && (o.length !== base.choices.length || o.slice().sort().join() !== base.choices.map((_, i) => i).join())) return null;
+      questions.push(Object.assign({}, base,
+        o ? { choices: o.map((i) => base.choices[i]), answer: o.indexOf(base.answer), _order: o } : {},
+        { fixedOrder: true }, sv.src ? { source: sv.src } : {}));
+    }
+    const picks = d.picks.map((p, i) => (Number.isInteger(p) && p >= 0 && p < questions[i].choices.length ? p : null));
+    return {
+      plan: d.plan, questions, picks, idx: d.idx, remainSec: Math.round(d.remainSec), savedAt: d.savedAt || 0,
+      flags: d.flags.filter((i) => Number.isInteger(i) && i >= 0 && i < n),
+      times: d.times.map((t) => (t > 0 ? t : 0)),
+      total: n, answered: picks.filter((p) => p !== null).length,
+    };
+  }
+  // 模試やクイズの途中で別の画面へ移ったとき: 時計を止める。模試は進み具合を保存する(続きは模試タブから)
+  function leave() {
+    mockUi(false);
+    if (!state) return;
+    saveMock();
+    stopTimer();
+    state = null;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveMock(); });
+  window.addEventListener('pagehide', saveMock);
 
   function finish(timeUp) {
     stopTimer();
@@ -263,6 +334,7 @@ const Quiz = (() => {
 
   function renderResult(r) {
     const { cfg } = state;
+    mockUi(false);
     // 分野別内訳(模試用)
     let breakdown = '';
     if (cfg.mode === 'mock') {
@@ -383,6 +455,7 @@ const Quiz = (() => {
 
   function renderCbt() {
     const { cfg, idx, picks, flags } = state;
+    mockUi(true);
     const q = cfg.questions[idx];
     const total = cfg.questions.length;
     const answered = picks.filter((p) => p !== null).length;
@@ -408,6 +481,17 @@ const Quiz = (() => {
             <button class="btn btn-primary" id="cbt-submit">終了して採点する</button>
             <button class="btn btn-ghost" data-close>問題に戻る</button>
           </div>
+        </div>
+      </div>` : state.panel === 'quit' ? `
+      <div class="cbt-overlay" role="dialog" aria-modal="true" aria-label="模擬試験の中断">
+        <div class="cbt-panel cbt-confirm">
+          <p class="cbt-confirm-title">模擬試験を中断しますか?</p>
+          <p class="cbt-panel-sub">解答 ${answered} / ${total} ・ 残り時間 ${fmtTime(state.remainSec)}<br>中断すると時計が止まります。続きは、この端末の模試タブから再開できます。</p>
+          <div class="btn-row" style="justify-content:center">
+            <button class="btn btn-primary" id="cbt-suspend">中断する(あとで続きから)</button>
+            <button class="btn btn-ghost" data-close>問題に戻る</button>
+          </div>
+          <p class="cbt-discard"><button class="btn-text" id="cbt-discard">この模試をやめる(採点も保存もしない)</button></p>
         </div>
       </div>` : '';
 
@@ -461,12 +545,16 @@ const Quiz = (() => {
     on('cbt-end2', () => { state.panel = 'confirm'; renderCbt(); });
     on('cbt-submit', () => finish(false));
     on('quiz-quit', () => {
-      if (confirm('中断すると採点されません。模擬試験をやめますか?')) quit();
+      if (cfg.plan) { state.panel = 'quit'; renderCbt(); }
+      else if (confirm('中断すると採点されません。模擬試験をやめますか?')) quit();
     });
+    on('cbt-suspend', () => { saveMock(); quit(); });
+    on('cbt-discard', () => { discardMock(); quit(); });
     v.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => goTo(Number(b.dataset.go))));
     v.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => { state.panel = null; renderCbt(); }));
     const ov = v.querySelector('.cbt-overlay');
     if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) { state.panel = null; renderCbt(); } });
+    saveMock();
   }
 
   // 提出: 解答を確定し、学習記録(正答率・復習リスト・間隔反復)に反映する。未解答は記録しない
@@ -475,6 +563,7 @@ const Quiz = (() => {
     leaveCurrent();
     state.done = true;
     state.panel = null;
+    discardMock();
     state.answers = state.cfg.questions.map((q, i) => {
       const p = state.picks[i];
       if (p === null) return undefined;
@@ -524,5 +613,5 @@ const Quiz = (() => {
     return state ? state.cfg.questions[state.idx] : null;
   }
 
-  return { start, shuffle, withShuffledChoices, current, KEYS };
+  return { start, shuffle, withShuffledChoices, current, KEYS, loadMock, discardMock, hasSavedMock, leave };
 })();

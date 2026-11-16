@@ -935,6 +935,8 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await page.click('#pn-drill');
     await page.waitForSelector('#view-quiz .choice');
     ok((await page.locator('#view-quiz').innerText()).includes('弱点ドリル: セキュリティ'), `ノート(${name}): 学んだ分野は、10問の練習を始められる`);
+    // 下に固定したタブと重なる位置にあると押せないことがあるので、画面の中央まで寄せてから押す
+    await page.locator('#quiz-quit').evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await page.click('#quiz-quit');
     ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07a', `ノート(${name}): 練習をやめると、ノートに戻る`);
     // 成績タブ: 一覧に解き直しの残りが出て、回の名前からノートを開ける
@@ -971,6 +973,105 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok((await page.locator('.uc-item .uc-left').first().innerText()).includes('残り1問'), `ノート(${name}): Udemyのカードに解き直しの残りが出る`);
     await page.locator('.uc-link[data-note="r07s"]').click();
     ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07s', `ノート(${name}): Udemyのカードから、その回のノートを開ける`);
+    await ctx.close();
+  }
+  });
+
+  // ---- I. 模試の中断と再開: 同じ問題・同じ選択肢の並び・残り時間で、続きから ----
+  await section('I', async () => {
+  {
+    const now = Date.now();
+    const { ctx, page } = await newPage(browser, { width: 390, height: 844 }, seeded(now), errors, 'resume');
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('ap-mock-progress') || 'null'));
+    const snap = () => page.evaluate(() => { const q = Quiz.current(); return JSON.stringify({ q: q.q, c: q.choices, a: q.answer, s: q.source || '' }); });
+    const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    await page.click('#main-nav [data-nav="exam"]');
+    ok(await page.locator('#exam-resume').count() === 0, '再開: 中断した模試がなければ、案内は出ない');
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    // 問1に答え、問2に見直しの印を付けて、問3まで進む
+    const q1 = await snap();
+    await page.click('#view-quiz .choice[data-i="2"]');
+    await page.click('#cbt-next');
+    const q2 = await snap();
+    await page.click('#cbt-flag');
+    await page.click('#cbt-next');
+    const q3 = await snap();
+    await page.waitForTimeout(1300);
+    await page.click('#quiz-quit');
+    ok((await page.locator('.cbt-confirm').innerText()).includes('解答 1 / 20'), '再開: 「中断する」で、解答数と残り時間を確かめられる', await page.locator('.cbt-confirm').innerText());
+    await page.click('#cbt-suspend');
+    await page.waitForSelector('#exam-resume');
+    const sv = await saved();
+    ok(sv && sv.idx === 2 && sv.picks[0] === 2 && sv.flags.join() === '1' && sv.remainSec < 38 * 60 && sv.remainSec > 37 * 60, '再開: 進み具合(解答・印・位置・残り時間)が端末に保存される', sv && { idx: sv.idx, r: sv.remainSec });
+    ok((await page.locator('#exam-resume').innerText()).includes('解答 1/20問'), '再開: 模試タブに「中断した模試があります」と出る', await page.locator('#exam-resume').innerText());
+    ok(await overflow(page) <= 0, '再開: 案内がスマホ幅ではみ出さない');
+    await page.screenshot({ path: path.join(OUT, 'sp-mock-resume.png') });
+    // 中断しているあいだ、時計は進まない。ページを読み込み直しても残る
+    await page.waitForTimeout(2200);
+    ok((await saved()).remainSec === sv.remainSec, '再開: 中断しているあいだ、時計は止まっている');
+    await page.reload();
+    await page.waitForSelector('.today-card');
+    const task = page.locator('.task-row[data-act="mock"]');
+    ok(await task.count() === 1 && (await task.innerText()).includes('模擬試験の続き'), '再開: 今日のメニューに「模擬試験の続き」が出る', await task.allInnerTexts());
+    await task.click();
+    await page.click('#exam-resume-btn');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    const t0 = await page.locator('#quiz-timer').innerText();
+    ok((await page.locator('.cbt-no').innerText()).startsWith('問3') && await snap() === q3, '再開: 中断した問題から、同じ問題・同じ選択肢の並びで始まる');
+    ok([fmt(sv.remainSec), fmt(sv.remainSec - 1)].includes(t0), '再開: 残り時間は、中断したときの続きから', [t0, sv.remainSec]);
+    await page.click('#cbt-prev');
+    ok(await snap() === q2 && (await page.locator('#cbt-flag').getAttribute('aria-pressed')) === 'true', '再開: 見直しの印が残っている');
+    await page.click('#cbt-prev');
+    ok(await snap() === q1 && (await page.locator('#view-quiz .choice.is-picked').getAttribute('data-i')) === '2', '再開: 選んだ答えが残っている');
+    // スマホでは、解答中は下のタブを隠す(押し間違いで画面が切り替わらないように)
+    ok(!(await page.locator('#main-nav').isVisible()), '再開: スマホでは、模試の解答中は下のタブを隠す');
+    // ロゴから別の画面へ移っても、自動で保存される(時計も止まる)
+    await page.click('#cbt-next');
+    await page.click('#view-quiz .choice[data-i="0"]');
+    await page.click('#logo-link');
+    ok(await page.locator('#main-nav').isVisible(), '再開: 模試を離れると、下のタブが戻る');
+    const sv2 = await saved();
+    ok(sv2 && sv2.picks[1] === 0 && sv2.idx === 1, '再開: 途中で別の画面へ移ると、自動で保存される', sv2 && { idx: sv2.idx, p: sv2.picks.slice(0, 3) });
+    await page.waitForTimeout(1500);
+    ok((await saved()).remainSec === sv2.remainSec, '再開: 別の画面にいるあいだ、時計は止まっている');
+    // 再開して採点まで進めると、保存は消え、解答が記録される
+    const before = await page.evaluate(() => Object.values(Store.answerStats()).reduce((n, a) => n + a.total, 0));
+    await page.click('#main-nav [data-nav="exam"]');
+    await page.click('#exam-resume-btn');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    await page.click('#cbt-end2');
+    await page.click('#cbt-submit');
+    await page.waitForSelector('#view-quiz .score-big');
+    const after = await page.evaluate(() => Object.values(Store.answerStats()).reduce((n, a) => n + a.total, 0));
+    ok(after - before === 2 && (await saved()) === null, '再開: 採点すると、解答した2問が記録され、保存は消える', [after - before, await saved()]);
+    await page.click('#result-back');
+    ok(await page.locator('#exam-resume').count() === 0 && await page.locator('.exam-option').count() === 3, '再開: 採点後は、模試メニューに案内が出ない');
+    // 中断中に新しい模試を始めるときは、確認してから破棄する。「やめる」は保存しない
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    const first = await snap();
+    await page.click('#quiz-quit');
+    await page.click('#cbt-suspend');
+    page.once('dialog', (d) => d.dismiss());
+    await page.click('.exam-option[data-plan="0"]');
+    ok(await page.locator('#exam-resume').count() === 1 && !(await page.locator('#view-exam').isHidden()), '再開: 中断中に新しく始めようとすると確認し、やめれば何も変わらない');
+    page.once('dialog', (d) => d.accept());
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    ok(await snap() !== first, '再開: 確認して新しく始めると、別の模試になる');
+    await page.click('#quiz-quit');
+    await page.click('#cbt-discard');
+    ok((await saved()) === null && await page.locator('#exam-resume').count() === 0, '再開: 「この模試をやめる」は、保存せずに終わる');
+    // 教材の更新などで問題が合わなくなった保存は、再開させずに片づける
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    await page.click('#quiz-quit');
+    await page.click('#cbt-suspend');
+    await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('ap-mock-progress')); d.qs[0].h += 1; localStorage.setItem('ap-mock-progress', JSON.stringify(d)); Exam.render(); });
+    ok(await page.locator('.exam-stale').count() === 1 && await page.locator('#exam-resume').count() === 0 && (await saved()) === null, '再開: 問題が変わっていたら再開させず、その旨を伝える');
     await ctx.close();
   }
   });

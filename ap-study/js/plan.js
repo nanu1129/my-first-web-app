@@ -246,7 +246,12 @@ const Plan = (() => {
         });
     }
     // 模試: Udemy講座を使う場合は、過去問をすべて終えてから(本物の過去問を優先する)
-    if (stage === 'A' && phaseIdx === 2 && (acts.mock || (longDay && (longLimited || !mockRecent))) && (!past || !past.next)) {
+    // 中断した模試があるときは、時期にかかわらず、その続きを案内する
+    const savedMock = stage === 'A' ? Quiz.loadMock() : null;
+    if (savedMock) {
+      const leftMin = Math.ceil(savedMock.remainSec / 60);
+      add({ act: 'mock', label: '模擬試験の続き(中断したところから)', sub: `解答 ${savedMock.answered}/${savedMock.total}問 ・ 残り時間 約${leftMin}分`, mins: leftMin });
+    } else if (stage === 'A' && phaseIdx === 2 && (acts.mock || (longDay && (longLimited || !mockRecent))) && (!past || !past.next)) {
       add({ act: 'mock', label: '模擬試験(科目A形式・80問)', sub: '3日に1回。本番と同じ150分で時間配分を練習', done: !!acts.mock, mins: 150 });
     }
     // 科目B: 演習期に入ったら解く分野を決め、週に1問は午後の過去問で記述に慣れておく。科目B期は毎日

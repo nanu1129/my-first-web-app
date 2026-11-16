@@ -123,7 +123,7 @@ const PastNote = (() => {
     } else if (!st.linked) {
       const recMiss = rec.total - rec.score;
       scoreHtml = `<p class="pn-warn">記録してある得点は <b>${rec.score} / ${rec.total}</b>(間違い ${recMiss}問)ですが、印は <b>${note.missed}問</b> です。${
-        note.missed < recMiss ? `あと${recMiss - note.missed}問に印を付けると、分野別の内訳が正確になります。` : '印の数のほうが多くなっています。'}</p>
+        note.missed < recMiss ? `あと${recMiss - note.missed}問に印を付けると、得点と合い、分野別の正答率が出ます。` : '印の数のほうが多くなっています。'}</p>
         <div class="btn-row"><button class="btn btn-ghost" id="pn-link">得点を印の数に合わせる(${score} / ${TOTAL})</button></div>`;
     } else {
       scoreHtml = `<p class="pn-score"><b class="${score >= PASS ? 'ok' : 'ng'}">${score}</b> / ${TOTAL}問 正解<span>(${pct}% ・ 間違い ${note.missed}問)</span></p>
