@@ -863,13 +863,26 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await sp.page.screenshot({ path: path.join(OUT, 'sp-sync-on.png') });
     await sp.page.click('#sync-btn');
 
+    // 間違い直しノート: PCで付けた印が、ノートを開いているスマホにすぐ出る。2台で別々に付けた印は両方残り、得点も合う
+    await sp.page.evaluate(() => PastNote.open('r05s'));
+    await pc.page.evaluate(() => { Store.setPastMark('r05s', 12, 'w'); Store.setPastMark('r05s', 40, 'w'); });
+    ok(await until(sp.page, () => document.querySelectorAll('.pn-cell.is-w').length === 2), '同期: PCで付けた間違いの印が、ノートを開いているスマホにすぐ出る');
+    await Promise.all([
+      pc.page.evaluate(() => Store.setPastMark('r05s', 61, 'w')),
+      sp.page.click('.pn-cell[data-no="5"]'),
+    ]);
+    const four = () => Store.pastNote('r05s').missed === 4 && Store.pastExams().find((r) => r.id === 'r05s').score === 76;
+    ok(await until(pc.page, four) && await until(sp.page, four), '同期: 2台で別々に付けた印は両方とも残り、得点(80 − 4)も合う',
+      [await pc.page.evaluate(() => Store.pastNote('r05s').missed), await sp.page.evaluate(() => Store.pastNote('r05s').missed)]);
+    ok(cloud.problems.length === 0, '同期: ノートも、Firestoreに保存できる形になっている', cloud.problems.slice(0, 5));
+
     // すべてリセット(同期中): PCで消すと、クラウドとスマホの記録も消え、同期で復活しない
     await pc.page.click('#main-nav [data-nav="stats"]');
     let asked = '';
     pc.page.once('dialog', (d) => { asked = d.message(); d.accept(); });
     await pc.page.click('#reset-all');
     ok(asked.includes('ほかの端末の記録も消えます'), 'リセット(同期中): ほかの端末の記録も消えることを確認してから実行する', asked);
-    const emptyNow = () => Object.keys(Store.snapshot().units).length === 0 && Store.pastExams().length === 0;
+    const emptyNow = () => Object.keys(Store.snapshot().units).length === 0 && Store.pastExams().length === 0 && Store.pastNoteIds().length === 0;
     ok(await until(pc.page, emptyNow) && await until(sp.page, emptyNow), 'リセット(同期中): PCで消すと、スマホの記録も消える');
     await pc.page.waitForTimeout(3000);
     const cloudState = cloud.docs.get('users/u1').data.state;
@@ -890,6 +903,222 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await tab.ctx.close();
     await pc.ctx.close();
     await sp.ctx.close();
+  }
+  });
+
+  // ---- H. 過去問の間違い直しノート: 印 → 得点の自動記録 → 分野別の内訳 → 解き直し → 今日のメニュー ----
+  await section('H', async () => {
+  for (const [name, vp] of VPS) {
+    const now = new Date('2026-12-20T10:00:00+09:00').getTime();
+    const { ctx, page } = await newPage(browser, vp, seeded(now), errors, `note-${name}`);
+    await page.clock.setFixedTime(new Date(now));
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    await page.click('#main-nav [data-nav="stats"]');
+    await page.click('#past-note-open');
+    await page.waitForSelector('.pn-wrap');
+    ok((await page.inputValue('#pn-exam')) === 'r07a' && await page.locator('.pn-cell').count() === 80, `ノート(${name}): 最新の回が選ばれ、80問分の番号が並ぶ`);
+    ok(await overflow(page) <= 0, `ノート(${name}): 横にはみ出さない`);
+    // 間違えた番号をタップ → 得点が自動で記録される
+    for (const n of [3, 12, 36, 37, 40, 44, 52, 70]) await page.click(`.pn-cell[data-no="${n}"]`);
+    ok(await page.locator('.pn-cell.is-w').count() === 8 && (await page.locator('.pn-score').innerText()).includes('72'), `ノート(${name}): 印を8つ付けると 72/80 と表示される`, await page.locator('.pn-score').innerText());
+    ok(await page.evaluate(() => { const r = Store.pastExams()[0]; return `${r.id}:${r.score}/${r.total}`; }) === 'r07a:72/80', `ノート(${name}): 得点が成績に自動で記録される`);
+    // もう一度タップすると消える
+    await page.click('.pn-cell[data-no="70"]');
+    ok(await page.locator('.pn-cell.is-w').count() === 7 && await page.evaluate(() => Store.pastExams()[0].score) === 73, `ノート(${name}): もう一度タップすると印が消え、得点も戻る`);
+    // 分野別の内訳(テクノロジ 6問、マネジメント 1問。セキュリティは目安の範囲で4問)
+    const areas = await page.locator('.pn-areas .acc-val').allInnerTexts();
+    ok(/44\/50/.test(areas[0]) && /9\/10/.test(areas[1]) && /20\/20/.test(areas[2]), `ノート(${name}): 3区分の正解数が出る`, areas);
+    ok((await page.locator('.pn-weak').innerText()).includes('セキュリティ'), `ノート(${name}): いちばん落としている分野を示す`, await page.locator('.pn-weak').innerText());
+    // 解き直しリスト: 問題と解説へのリンク・メモ・「正解できた」
+    const href = await page.locator('.pn-item').first().locator('a').getAttribute('href');
+    ok(href === 'https://www.ap-siken.com/kakomon/07_aki/q3.html', `ノート(${name}): 解き直しリストから、その問題の解説ページを開ける`, href);
+    await page.fill('.pn-memo[data-memo="12"]', 'ヒット率の式を逆に覚えていた');
+    await page.locator('.pn-memo[data-memo="12"]').dispatchEvent('change');
+    await page.click('[data-fix="3"]');
+    ok(await page.locator('#pn-redo .pill').innerText() === '残り 6問' && await page.locator('.pn-cell.is-f').count() === 1, `ノート(${name}): 「正解できた」で残りが減り、表の印が変わる`, await page.locator('#pn-redo .pill').innerText());
+    ok(await page.evaluate(() => Store.pastExams()[0].score) === 73, `ノート(${name}): 解き直しても、本番で落とした数(得点)は変わらない`);
+    ok(await page.inputValue('.pn-memo[data-memo="12"]') === 'ヒット率の式を逆に覚えていた', `ノート(${name}): メモが残る`);
+    await page.screenshot({ path: path.join(OUT, `note-${name}.png`), fullPage: true });
+    // 弱い分野: まだ学んでいない分野なら教材へ、学んだ分野なら10問の練習へ(戻るとノートに戻る)
+    ok((await page.locator('#pn-drill').innerText()) === 'この分野の教材を開く', `ノート(${name}): まだ学んでいない分野は、教材を案内する`, await page.locator('#pn-drill').innerText());
+    await page.click('#pn-drill');
+    ok((await page.locator('#view-lesson .lesson-part-tag').innerText()).includes('セキュリティ'), `ノート(${name}): いちばん落としている分野の教材が開く`);
+    await page.evaluate(() => { Store.setUnitResult('security-1', 6, 6, true); PastNote.open('r07a'); });
+    await page.click('#pn-drill');
+    await page.waitForSelector('#view-quiz .choice');
+    ok((await page.locator('#view-quiz').innerText()).includes('弱点ドリル: セキュリティ'), `ノート(${name}): 学んだ分野は、10問の練習を始められる`);
+    // 下に固定したタブと重なる位置にあると押せないことがあるので、画面の中央まで寄せてから押す
+    await page.locator('#quiz-quit').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await page.click('#quiz-quit');
+    ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07a', `ノート(${name}): 練習をやめると、ノートに戻る`);
+    // 成績タブ: 一覧に解き直しの残りが出て、回の名前からノートを開ける
+    await page.click('.crumb [data-back]');
+    ok((await page.locator('.past-note').innerText()).includes('6問') && (await page.locator('.past-row .past-name').innerText()).includes('残り6問'), `ノート(${name}): 成績に解き直しの残りが出る`, await page.locator('.past-note').innerText());
+    ok(await page.locator('.past-areas .acc-row').count() === 3, `ノート(${name}): 成績に、ノートを付けた回の分野別の正答率が出る`);
+    await page.click('.past-row .past-name');
+    ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07a', `ノート(${name}): 回の名前から、その回のノートを開ける`);
+    // 手入力した得点は、印の数と合うまで書き換えない
+    await page.evaluate(() => { Store.setPastExam('r06a', 50); PastNote.open('r06a'); });
+    ok((await page.locator('.pn-warn').innerText()).includes('間違えた30問に印') && await page.locator('#pn-link').count() === 0, `ノート(${name}): 得点だけ記録してある回は、印を付けるよう案内する`, await page.locator('.pn-warn').innerText());
+    await page.click('.pn-cell[data-no="5"]');
+    ok(await page.evaluate(() => Store.pastExams().find((r) => r.id === 'r06a').score) === 50 && (await page.locator('.pn-warn').innerText()).includes('あと29問'), `ノート(${name}): 手入力の得点は、印が一部のあいだは書き換えない`, await page.locator('.pn-warn').innerText());
+    ok(await page.locator('.pn-areas').count() === 0, `ノート(${name}): 印が一部のあいだは、分野別の正答率を出さない`);
+    await page.click('#pn-link');
+    ok(await page.evaluate(() => Store.pastExams().find((r) => r.id === 'r06a').score) === 79 && await page.locator('.pn-score').count() === 1, `ノート(${name}): 「得点を印の数に合わせる」で連動する`);
+    page.once('dialog', (d) => d.accept());
+    await page.click('#pn-clear');
+    ok(await page.locator('.pn-cell.is-w').count() === 0, `ノート(${name}): 印をすべて消せる`);
+    // 今日のメニュー: 解いた当日は出さず、翌日から「過去問の解き直し」を案内する
+    await page.evaluate(() => { Store.setPastMark('r06a', 5, 'n'); Store.removePastExam('r06a'); App.goHome(); });
+    ok(await page.locator('.task-row[data-act="pastredo"]:not(.is-done)').count() === 0, `ノート(${name}): 解いた当日は、解き直しをメニューで求めない(日をあける)`);
+    await page.clock.setFixedTime(new Date(now + DAY));
+    await page.evaluate(() => App.goHome());
+    const redo = page.locator('.task-row[data-act="pastredo"]');
+    ok(await redo.count() === 1 && (await redo.innerText()).includes('過去問の解き直し 5問'), `ノート(${name}): 翌日は、今日のメニューに「過去問の解き直し 5問」が出る`, await redo.allInnerTexts());
+    await redo.click();
+    await page.waitForSelector('.pn-wrap');
+    ok(await page.evaluate(() => { const r = document.getElementById('pn-redo').getBoundingClientRect(); return r.top >= 0 && r.top < 200; }), `ノート(${name}): メニューから開くと、解き直しリストまで進む`);
+    for (const n of [12, 36, 37, 40, 44]) await page.click(`[data-fix="${n}"]`);
+    await page.evaluate(() => App.goHome());
+    ok(await page.locator('.task-row[data-act="pastredo"].is-done').count() === 1, `ノート(${name}): 5問解き直すと、今日の分は完了になる`);
+    // Udemyのカードからも開ける
+    await page.click('#udemy-progress summary');
+    ok((await page.locator('.uc-item .uc-left').first().innerText()).includes('残り1問'), `ノート(${name}): Udemyのカードに解き直しの残りが出る`);
+    await page.locator('.uc-link[data-note="r07s"]').click();
+    ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07s', `ノート(${name}): Udemyのカードから、その回のノートを開ける`);
+    await ctx.close();
+  }
+  });
+
+  // ---- I. 模試の中断と再開: 同じ問題・同じ選択肢の並び・残り時間で、続きから ----
+  await section('I', async () => {
+  {
+    const now = Date.now();
+    const { ctx, page } = await newPage(browser, { width: 390, height: 844 }, seeded(now), errors, 'resume');
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('ap-mock-progress') || 'null'));
+    const snap = () => page.evaluate(() => { const q = Quiz.current(); return JSON.stringify({ q: q.q, c: q.choices, a: q.answer, s: q.source || '' }); });
+    const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    await page.click('#main-nav [data-nav="exam"]');
+    ok(await page.locator('#exam-resume').count() === 0, '再開: 中断した模試がなければ、案内は出ない');
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    // 問1に答え、問2に見直しの印を付けて、問3まで進む
+    const q1 = await snap();
+    await page.click('#view-quiz .choice[data-i="2"]');
+    await page.click('#cbt-next');
+    const q2 = await snap();
+    await page.click('#cbt-flag');
+    await page.click('#cbt-next');
+    const q3 = await snap();
+    await page.waitForTimeout(1300);
+    await page.click('#quiz-quit');
+    ok((await page.locator('.cbt-confirm').innerText()).includes('解答 1 / 20'), '再開: 「中断する」で、解答数と残り時間を確かめられる', await page.locator('.cbt-confirm').innerText());
+    await page.click('#cbt-suspend');
+    await page.waitForSelector('#exam-resume');
+    const sv = await saved();
+    ok(sv && sv.idx === 2 && sv.picks[0] === 2 && sv.flags.join() === '1' && sv.remainSec < 38 * 60 && sv.remainSec > 37 * 60, '再開: 進み具合(解答・印・位置・残り時間)が端末に保存される', sv && { idx: sv.idx, r: sv.remainSec });
+    ok((await page.locator('#exam-resume').innerText()).includes('解答 1/20問'), '再開: 模試タブに「中断した模試があります」と出る', await page.locator('#exam-resume').innerText());
+    ok(await overflow(page) <= 0, '再開: 案内がスマホ幅ではみ出さない');
+    await page.screenshot({ path: path.join(OUT, 'sp-mock-resume.png') });
+    // 中断しているあいだ、時計は進まない。ページを読み込み直しても残る
+    await page.waitForTimeout(2200);
+    ok((await saved()).remainSec === sv.remainSec, '再開: 中断しているあいだ、時計は止まっている');
+    await page.reload();
+    await page.waitForSelector('.today-card');
+    const task = page.locator('.task-row[data-act="mock"]');
+    ok(await task.count() === 1 && (await task.innerText()).includes('模擬試験の続き'), '再開: 今日のメニューに「模擬試験の続き」が出る', await task.allInnerTexts());
+    await task.click();
+    await page.click('#exam-resume-btn');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    const t0 = await page.locator('#quiz-timer').innerText();
+    ok((await page.locator('.cbt-no').innerText()).startsWith('問3') && await snap() === q3, '再開: 中断した問題から、同じ問題・同じ選択肢の並びで始まる');
+    ok([fmt(sv.remainSec), fmt(sv.remainSec - 1)].includes(t0), '再開: 残り時間は、中断したときの続きから', [t0, sv.remainSec]);
+    await page.click('#cbt-prev');
+    ok(await snap() === q2 && (await page.locator('#cbt-flag').getAttribute('aria-pressed')) === 'true', '再開: 見直しの印が残っている');
+    await page.click('#cbt-prev');
+    ok(await snap() === q1 && (await page.locator('#view-quiz .choice.is-picked').getAttribute('data-i')) === '2', '再開: 選んだ答えが残っている');
+    // スマホでは、解答中は下のタブを隠す(押し間違いで画面が切り替わらないように)
+    ok(!(await page.locator('#main-nav').isVisible()), '再開: スマホでは、模試の解答中は下のタブを隠す');
+    // ロゴから別の画面へ移っても、自動で保存される(時計も止まる)
+    await page.click('#cbt-next');
+    await page.click('#view-quiz .choice[data-i="0"]');
+    await page.click('#logo-link');
+    ok(await page.locator('#main-nav').isVisible(), '再開: 模試を離れると、下のタブが戻る');
+    const sv2 = await saved();
+    ok(sv2 && sv2.picks[1] === 0 && sv2.idx === 1, '再開: 途中で別の画面へ移ると、自動で保存される', sv2 && { idx: sv2.idx, p: sv2.picks.slice(0, 3) });
+    await page.waitForTimeout(1500);
+    ok((await saved()).remainSec === sv2.remainSec, '再開: 別の画面にいるあいだ、時計は止まっている');
+    // 再開して採点まで進めると、保存は消え、解答が記録される
+    const before = await page.evaluate(() => Object.values(Store.answerStats()).reduce((n, a) => n + a.total, 0));
+    await page.click('#main-nav [data-nav="exam"]');
+    await page.click('#exam-resume-btn');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    await page.click('#cbt-end2');
+    await page.click('#cbt-submit');
+    await page.waitForSelector('#view-quiz .score-big');
+    const after = await page.evaluate(() => Object.values(Store.answerStats()).reduce((n, a) => n + a.total, 0));
+    ok(after - before === 2 && (await saved()) === null, '再開: 採点すると、解答した2問が記録され、保存は消える', [after - before, await saved()]);
+    await page.click('#result-back');
+    ok(await page.locator('#exam-resume').count() === 0 && await page.locator('.exam-option').count() === 3, '再開: 採点後は、模試メニューに案内が出ない');
+    // 中断中に新しい模試を始めるときは、確認してから破棄する。「やめる」は保存しない
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    const first = await snap();
+    await page.click('#quiz-quit');
+    await page.click('#cbt-suspend');
+    page.once('dialog', (d) => d.dismiss());
+    await page.click('.exam-option[data-plan="0"]');
+    ok(await page.locator('#exam-resume').count() === 1 && !(await page.locator('#view-exam').isHidden()), '再開: 中断中に新しく始めようとすると確認し、やめれば何も変わらない');
+    page.once('dialog', (d) => d.accept());
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    ok(await snap() !== first, '再開: 確認して新しく始めると、別の模試になる');
+    await page.click('#quiz-quit');
+    await page.click('#cbt-discard');
+    ok((await saved()) === null && await page.locator('#exam-resume').count() === 0, '再開: 「この模試をやめる」は、保存せずに終わる');
+    // 教材の更新などで問題が合わなくなった保存は、再開させずに片づける
+    await page.click('.exam-option[data-plan="0"]');
+    await page.waitForSelector('#view-quiz .cbt-no');
+    await page.click('#quiz-quit');
+    await page.click('#cbt-suspend');
+    await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('ap-mock-progress')); d.qs[0].h += 1; localStorage.setItem('ap-mock-progress', JSON.stringify(d)); Exam.render(); });
+    ok(await page.locator('.exam-stale').count() === 1 && await page.locator('#exam-resume').count() === 0 && (await saved()) === null, '再開: 問題が変わっていたら再開させず、その旨を伝える');
+    await ctx.close();
+  }
+  });
+
+  // ---- J. 図解: スマホでは「拡大する」で元の大きさにして、横にずらして見られる ----
+  await section('J', async () => {
+  for (const [name, vp] of VPS) {
+    const { ctx, page } = await newPage(browser, vp, seeded(Date.now()), errors, `art-${name}`);
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    await page.evaluate(() => Course.openLesson('security-2'));
+    const fig = page.locator('figure.art[data-art="fido"]');
+    await fig.scrollIntoViewIfNeeded();
+    const svgW = () => fig.locator('.art-svg').evaluate((el) => Math.round(el.getBoundingClientRect().width));
+    if (name === 'pc') {
+      ok(!(await fig.locator('.art-zoom').isVisible()) && await svgW() >= 560, '図解(pc): PCでは元の大きさ以上で表示され、拡大ボタンは出ない', await svgW());
+    } else {
+      const w0 = await svgW();
+      ok(await fig.locator('.art-zoom').isVisible() && w0 < 400, '図解(sp): スマホでは画面の幅に縮むので、「拡大する」を出す', w0);
+      await fig.locator('.art-zoom').click();
+      const z = await fig.evaluate((el) => { const st = el.querySelector('.art-stage'); return { w: Math.round(el.querySelector('.art-svg').getBoundingClientRect().width), pan: st.scrollWidth > st.clientWidth + 100, label: el.querySelector('.art-zoom').innerText.trim() }; });
+      ok(z.w === 560 && z.pan && z.label === '元に戻す', '図解(sp): 拡大すると元の大きさ(文字が読める大きさ)になり、図の中を横にずらせる', z);
+      ok(await overflow(page) <= 0, '図解(sp): 拡大しても、ページ全体は横にはみ出さない');
+      // アニメ図解は、ステップを進めても拡大したまま
+      await fig.locator('[data-next]').click();
+      ok(await svgW() === 560, '図解(sp): ステップを進めても拡大したまま');
+      await page.screenshot({ path: path.join(OUT, 'sp-art-zoom.png') });
+      await fig.locator('.art-zoom').click();
+      ok(await svgW() === w0, '図解(sp): 「元に戻す」で画面の幅に戻る');
+      await fig.locator('.art-stage').click();
+      ok(await svgW() === 560, '図解(sp): 図をタップしても拡大できる');
+    }
+    await ctx.close();
   }
   });
 

@@ -7,6 +7,8 @@ const App = (() => {
   let currentView = 'home';
 
   function show(view) {
+    // クイズや模試の途中で別の画面へ移るときは、時計を止める(模試は進み具合を保存する)
+    if (view !== 'quiz') Quiz.leave();
     currentView = view;
     VIEWS.forEach((v) => {
       document.getElementById(`view-${v}`).hidden = v !== view;
@@ -131,7 +133,7 @@ const App = (() => {
   // 同期でデータが更新されたとき、表示中の画面を描き直す
   function refresh() {
     if (currentView === 'home') Course.renderHome();
-    else if (currentView === 'stats') Stats.render();
+    else if (currentView === 'stats') { if (PastNote.isOpen()) PastNote.refresh(); else Stats.render(); }
     else if (currentView === 'cards') Cards.render();
     else if (currentView === 'exam') Exam.render();
   }

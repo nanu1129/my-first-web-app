@@ -699,4 +699,101 @@
       ],
     };
   }
+
+  // ---- バッファオーバフロー(アニメ) ----
+  {
+    const BX = 40, CW = 40, Y = 100, H = 44, RX = 372, RW = 148;
+    const cells = (chars, fill, stroke, col) => {
+      let t = '';
+      for (let i = 0; i < 8; i++) {
+        const ch = chars[i] || '';
+        t += box(BX + i * CW, Y, CW, H, ch, ch ? { fs: 15, r: 0, fill, stroke, col } : { r: 0 });
+      }
+      return t;
+    };
+    const labels = txt(BX + 4 * CW, Y + H + 14, 'バッファ(8文字分の領域)', { fs: 11.5, w: 700, col: C.ink2 }) +
+      txt(RX + RW / 2, Y + H + 14, '戻り先のアドレス', { fs: 11.5, w: 700, col: C.ink2 });
+    // 正常: 入力がバッファに収まる
+    let ok = txt(280, 14, '正常な入力: バッファの中に収まる', { fs: 13, w: 900, col: C.ink });
+    ok += box(BX, 28, 4 * CW, 28, '入力「TARO」(4文字)', { fs: 12, fill: C.accSoft, stroke: C.acc, col: C.acc });
+    ok += arrow(BX + 2 * CW, 58, BX + 2 * CW, Y - 4, { col: C.acc });
+    ok += cells('TARO', C.accSoft, C.acc, C.acc);
+    ok += box(RX, Y, RW, H, '正しい戻り先', { fs: 12.5, fill: C.okSoft, stroke: C.ok, col: C.ok, r: 0 });
+    ok += labels + arrow(RX + RW / 2, Y + H + 26, RX + RW / 2, 196, { col: C.ok });
+    ok += box(336, 200, 220, 32, '元のプログラムの続きへ戻る', { fs: 12, fill: C.okSoft, stroke: C.ok, col: C.ok });
+    // 攻撃: あふれた分が戻り先を書き換える
+    let ng = txt(280, 14, '長すぎる入力: あふれた分が、戻り先を書き換える', { fs: 13, w: 900, col: C.ink });
+    ng += box(BX, 28, 8 * CW, 28, '入力の先頭8文字「AAAAAAAA」', { fs: 12, fill: C.goldSoft, stroke: C.gold, col: C.gold });
+    ng += box(RX, 28, RW, 28, 'あふれた分', { fs: 12, fill: C.ngSoft, stroke: C.ng, col: C.ng });
+    ng += arrow(BX + 4 * CW, 58, BX + 4 * CW, Y - 4, { col: C.gold }) + arrow(RX + RW / 2, 58, RX + RW / 2, Y - 4, { col: C.ng });
+    ng += cells('AAAAAAAA', C.goldSoft, C.gold, C.gold);
+    ng += box(RX, Y, RW, H, '攻撃者が選んだ場所', { fs: 12.5, fill: C.ngSoft, stroke: C.ng, col: C.ng, r: 0 });
+    ng += labels + arrow(RX + RW / 2, Y + H + 26, RX + RW / 2, 196, { col: C.ng });
+    ng += box(336, 200, 220, 32, '攻撃者の用意した命令を実行', { fs: 12, fill: C.ngSoft, stroke: C.ng, col: C.ng });
+    ng += box(14, 200, 300, 32, '対策: 入力の長さを必ず確かめる', { fs: 12, fill: C.okSoft, stroke: C.ok, col: C.ok });
+    AP.art['buffer-overflow'] = {
+      frames: [
+        { svg: svg(244, ok), cap: 'プログラムは、入力を入れる領域(バッファ)を決まった大きさで用意する。そのすぐ近くに、処理が終わったあとに戻る場所(戻り先のアドレス)が置かれている。入力がバッファに収まれば、問題は起きない。' },
+        { svg: svg(244, ng), cap: 'バッファより長いデータを、長さを確かめずに書き込むと、あふれた分が隣の「戻り先」を上書きする。攻撃者はそこに自分の命令の場所を書き込んで、処理を乗っ取る。' },
+      ],
+    };
+  }
+
+  // ---- FIDO認証(アニメ) ----
+  {
+    const base = txt(115, 52, '利用者の端末(スマホなど)', { fs: 12, w: 900, col: C.ink }) +
+      txt(455, 52, 'サーバ', { fs: 12.5, w: 900, col: C.ink });
+    const frameBox = `<rect x="20" y="36" width="190" height="130" rx="10" fill="none" stroke="${C.ink3}" stroke-width="1.5"/>` +
+      `<rect x="370" y="36" width="170" height="130" rx="10" fill="none" stroke="${C.ink3}" stroke-width="1.5"/>`;
+    const secret = box(36, 66, 158, 30, '秘密鍵(外に出さない)', { fs: 11.5, fill: C.goldSoft, stroke: C.gold, col: C.gold });
+    const pub = box(386, 66, 138, 30, '公開鍵', { fs: 12, fill: C.accSoft, stroke: C.acc, col: C.acc });
+    const bio = box(36, 104, 158, 48, '指紋・顔で本人確認\n(端末の中だけ)', { fs: 11.5, fill: C.okSoft, stroke: C.ok, col: C.ok });
+    const verify = box(386, 104, 138, 48, '公開鍵で署名を検証\n→ 本人と確認', { fs: 11.5, fill: C.okSoft, stroke: C.ok, col: C.ok });
+    const a1 = arrow(214, 82, 366, 82, { col: C.acc, sw: 2.5, label: '① 公開鍵を登録', dy: -11 });
+    const a2 = arrow(366, 114, 214, 114, { col: C.gold, sw: 2.5, label: '② チャレンジ', dy: -11 });
+    const a3 = arrow(214, 146, 366, 146, { col: C.ok, sw: 2.5, label: '③ 署名を返す', dy: -11 });
+    const note = box(20, 182, 520, 34, '流れるのは公開鍵・チャレンジ・署名だけ。秘密鍵と生体情報は端末から出ない', { fs: 11.5, fill: C.s2, stroke: C.line, col: C.ink });
+    const title = (t) => txt(280, 14, t, { fs: 13, w: 900, col: C.ink });
+    AP.art['fido'] = {
+      frames: [
+        { svg: svg(226, title('登録: 公開鍵だけをサーバに渡す') + frameBox + base + secret + pub + a1),
+          cap: '登録: 端末の中で秘密鍵と公開鍵のペアを作り、公開鍵だけをサーバに登録する。秘密鍵は端末の安全な領域に保管し、外には出さない。' },
+        { svg: svg(226, title('ログイン: 端末の中で本人確認をする') + frameBox + base + secret + pub + a1 + a2 + bio),
+          cap: 'ログイン: サーバが、毎回ちがうデータ(チャレンジ)を送る。端末は、指紋や顔で本人であることを確かめる。この確認は端末の中だけで行い、生体情報は送らない。' },
+        { svg: svg(226, title('ログイン: 秘密鍵で署名し、公開鍵で確かめる') + frameBox + base + secret + pub + a1 + a2 + bio + a3 + verify + note),
+          cap: '端末は、チャレンジに秘密鍵で署名して返す。サーバは、登録済みの公開鍵で署名を確かめる。パスワードも生体情報もネットワークを流れないので、盗まれる心配がない。' },
+      ],
+    };
+  }
+
+  // ---- PWM(デューティ比) ----
+  {
+    const X0 = 124, PW = 80, N = 4;
+    const row = (y0, duty, label, bright, word) => {
+      const hi = y0 + 6, lo = y0 + 44;
+      let t = txt(X0, y0 - 7, label, { fs: 11.5, w: 900, col: C.ink, a: 'start' });
+      t += txt(X0 - 8, hi + 2, 'オン', { fs: 10, w: 700, col: C.ink3, a: 'end' }) + txt(X0 - 8, lo - 2, 'オフ', { fs: 10, w: 700, col: C.ink3, a: 'end' });
+      let d = `M ${X0} ${lo}`;
+      for (let p = 0; p < N; p++) {
+        const x = X0 + p * PW, on = PW * duty;
+        t += `<rect x="${x}" y="${hi}" width="${on}" height="${lo - hi}" fill="${C.accSoft}"/>`;
+        d += ` V ${hi} H ${x + on} V ${lo} H ${x + PW}`;
+      }
+      t += `<path d="${d}" fill="none" stroke="${C.acc}" stroke-width="2" stroke-linejoin="round"/>`;
+      t += `<circle cx="470" cy="${y0 + 25}" r="14" fill="${C.gold}" opacity="${bright}"/>` +
+        `<circle cx="470" cy="${y0 + 25}" r="14" fill="none" stroke="${C.gold}" stroke-width="1.5"/>`;
+      t += txt(492, y0 + 25, word, { fs: 11.5, w: 700, col: C.ink2, a: 'start' });
+      return t;
+    };
+    let s = txt(280, 14, 'PWM: オンにする時間の割合で、平均の電力を変える', { fs: 13, w: 900, col: C.ink });
+    s += txt(470, 30, 'LED', { fs: 10.5, w: 700, col: C.ink3 });
+    s += row(50, 0.25, 'デューティ比 25%(1周期の 1/4 だけオン)', 0.2, '暗い');
+    s += row(122, 0.5, 'デューティ比 50%(半分オン)', 0.5, '中くらい');
+    s += row(194, 0.75, 'デューティ比 75%(3/4 がオン)', 0.9, '明るい');
+    s += line(X0, 252, X0 + PW, 252, C.ink3, { sw: 1.5 }) + line(X0, 247, X0, 257, C.ink3, { sw: 1.5 }) + line(X0 + PW, 247, X0 + PW, 257, C.ink3, { sw: 1.5 });
+    s += txt(X0 + PW / 2, 265, '1周期', { fs: 10.5, w: 700, col: C.ink3 });
+    AP.art['pwm'] = {
+      frames: [{ svg: svg(276, s), cap: 'PWM(パルス幅変調): 電圧の高さは変えずに、オンとオフをすばやく繰り返す。1周期のうちオンにしている時間の割合(デューティ比)を大きくするほど、平均の電力が大きくなり、LEDは明るく、モータは速く回る。' }],
+    };
+  }
 })();

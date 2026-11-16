@@ -52,6 +52,29 @@ const Stats = (() => {
     const verdict = !sum ? '' : sum.avg >= 70 ? '合格ラインを余裕をもって超えています。この調子で本番まで維持しよう。'
       : sum.avg >= 60 ? '合格ライン(60%)を超えています。間違えた問題の解説を見直して、安定させよう。'
         : `合格ラインまであと${Math.ceil(0.6 * 80 - sum.avg * 0.8)}問ほど。間違えた問題の分野を、弱点ドリルと教材で補強しよう。`;
+    // 間違い直しノート: 解き直しの残りと、印を付けた回をまとめた分野別の正答率
+    const ns = PastNote.summary();
+    const redoOf = new Map((AP.pastExamList || []).map((e) => [e.id, Store.pastNote(e.id).wrong.length]));
+    const noteBox = `
+        <div class="past-note">
+          <div class="past-note-main">
+            <b>間違い直しノート</b>
+            <span>${ns.redo.left ? `解き直しが <b>${ns.redo.left}問</b> 残っています(${ns.redo.exams}回分)。` : '間違えた問題の番号に印を付けると、得点と分野別の内訳が分かり、解き直しリストができます。'}</span>
+          </div>
+          <button class="btn btn-ghost" id="past-note-open">${ns.redo.left ? '解き直す' : 'ノートを開く'} →</button>
+        </div>`;
+    const areaBox = !ns.times ? '' : `
+        <div class="past-areas">
+          <p class="past-areas-h">分野別の正答率<small>ノートを付けた${ns.times}回分</small></p>
+          <div class="acc-bars">${ns.areas.map((a) => `
+            <div class="acc-row">
+              <span class="acc-name">${a.name}</span>
+              <span class="acc-bar"><span class="acc-fill ${a.pct >= 60 ? 'is-good' : 'is-weak'}" style="width:${a.pct}%"></span><span class="acc-pass"></span></span>
+              <span class="acc-val"><b>${a.pct}%</b> <small>${a.ok}/${a.n}</small></span>
+            </div>`).join('')}</div>
+          <div class="pn-fields">${ns.fields.map((f) => `<span class="pn-field ${f.pct < 60 ? 'is-weak' : ''}">${f.name} <b>${f.pct}%</b></span>`).join('')}</div>
+          <p class="pn-foot">テクノロジ系の内訳は、問題番号から分けた目安です。${ns.weak ? `いちばん落としているのは「${ns.weak.name}」です。` : ''}</p>
+        </div>`;
     return `
       <div class="panel" id="past-panel">
         <h3>本物の過去問(IPA)の得点</h3>
@@ -64,18 +87,20 @@ const Stats = (() => {
           <label class="past-score"><input type="number" id="past-score" min="0" max="80" inputmode="numeric" placeholder="正解数" required> / 80問</label>
           <button class="btn btn-primary" type="submit">記録する</button>
         </form>
+        ${noteBox}
         ${sum ? `
           <div class="acc-bars past-bars">${sum.recs.map((r) => {
             const pct = Math.round((r.score / r.total) * 100);
             return `
             <div class="acc-row past-row">
-              <span class="acc-name">${esc(examName(r.id))}</span>
+              <button class="acc-name past-name" data-note="${r.id}" aria-label="${esc(examName(r.id))}の間違い直しノートを開く">${esc(examName(r.id))}${redoOf.get(r.id) ? `<small>解き直し 残り${redoOf.get(r.id)}問</small>` : ''}</button>
               <span class="acc-bar"><span class="acc-fill ${pct >= 60 ? 'is-good' : 'is-weak'}" style="width:${pct}%"></span><span class="acc-pass"></span></span>
               <span class="acc-val"><b>${pct}%</b> <small>${r.score}/${r.total}</small></span>
               <button class="past-del" data-del="${r.id}" aria-label="${esc(examName(r.id))}の記録を削除">×</button>
             </div>`;
           }).join('')}</div>
-          <p class="past-summary">直近${sum.recent.length}回の平均 <b class="${sum.avg >= 60 ? 'ok' : 'ng'}">${sum.avg}%</b>(合格ライン60%)<br><span>${verdict}</span></p>`
+          <p class="past-summary">直近${sum.recent.length}回の平均 <b class="${sum.avg >= 60 ? 'ok' : 'ng'}">${sum.avg}%</b>(合格ライン60%)<br><span>${verdict}</span></p>
+          ${areaBox}`
           : '<p class="chart-empty">まだ記録がありません。12月ごろから、1回分(80問)ずつ解いて記録していきましょう。</p>'}
       </div>`;
   }
@@ -349,6 +374,10 @@ const Stats = (() => {
     $view().querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
       if (confirm(`${examName(b.dataset.del)} の記録を削除しますか?`)) { Store.removePastExam(b.dataset.del); render(); }
     }));
+    // 間違い直しノート(回の名前を押すと、その回のノートを開く)
+    const noteOpen = document.getElementById('past-note-open');
+    if (noteOpen) noteOpen.addEventListener('click', () => PastNote.open());
+    $view().querySelectorAll('[data-note]').forEach((b) => b.addEventListener('click', () => PastNote.open(b.dataset.note)));
     document.getElementById('backup-export').addEventListener('click', exportBackup);
     const fileInput = document.getElementById('backup-file');
     document.getElementById('backup-import').addEventListener('click', () => fileInput.click());
@@ -362,6 +391,7 @@ const Stats = (() => {
         ? '学習の進捗・成績・カードの記録をすべて削除します。\n同期中なので、クラウドと、同期しているほかの端末の記録も消えます。元に戻せません。よろしいですか?'
         : '学習の進捗・成績・カードの記録をすべて削除します。元に戻せません。よろしいですか?';
       if (!confirm(msg)) return;
+      Quiz.discardMock(); // 中断した模試(この端末だけに保存)も消す
       if (synced) Sync.resetEverywhere().then(() => { if (!$view().hidden) render(); });
       else Store.resetAll();
       render();
