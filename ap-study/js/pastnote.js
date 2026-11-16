@@ -120,6 +120,9 @@ const PastNote = (() => {
     } else if (!rec) {
       scoreHtml = `<p class="pn-warn">この回の得点は、まだ記録されていません。</p>
         <div class="btn-row"><button class="btn btn-primary" id="pn-link">印の数から得点を記録する(${score} / ${TOTAL})</button></div>`;
+    } else if (!st.linked && !note.missed) {
+      // 得点だけ手入力してある回: 印を付けるよう案内する(得点は書き換えない)
+      scoreHtml = `<p class="pn-warn">この回の得点は <b>${rec.score} / ${rec.total}</b> と記録してあります。間違えた${rec.total - rec.score}問に印を付けると、分野別の正答率が分かり、解き直しリストができます。</p>`;
     } else if (!st.linked) {
       const recMiss = rec.total - rec.score;
       scoreHtml = `<p class="pn-warn">記録してある得点は <b>${rec.score} / ${rec.total}</b>(間違い ${recMiss}問)ですが、印は <b>${note.missed}問</b> です。${
@@ -186,7 +189,7 @@ const PastNote = (() => {
             <a class="pn-ipa" href="${Plan.PAST_URL}" target="_blank" rel="noopener">問題冊子と解答(IPA)</a>
           </div>
           <h3>① 間違えた問題の番号をタップ</h3>
-          <p class="panel-note">答え合わせをして、間違えた問題に印を付けます(迷って当たった問題にも付けておくと、解き直しで確かめられます)。もう一度タップすると印が消えます。</p>
+          <p class="panel-note">答え合わせをして、間違えた問題すべてに印を付けます。もう一度タップすると印が消えます。</p>
           ${groups}
           <div class="pn-legend">
             <span><i class="pn-key is-w" aria-hidden="true">×</i>間違い</span>

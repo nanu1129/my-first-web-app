@@ -39,7 +39,7 @@
   --surface-2: #34333D;
   --ink: #ECEAF0;
   --ink-2: #B5B2BF;
-  --ink-3: #9F9CA6;
+  --ink-3: #A6A3AD;
   --line: #45444F;
   --accent: #8AB1D8;
   --accent-strong: #A2C3E3;
@@ -63,7 +63,7 @@
     --surface-2: #34333D;
     --ink: #ECEAF0;
     --ink-2: #B5B2BF;
-    --ink-3: #9F9CA6;
+    --ink-3: #A6A3AD;
     --line: #45444F;
     --accent: #8AB1D8;
     --accent-strong: #A2C3E3;
@@ -365,6 +365,21 @@ main { max-width: 880px; margin: 0 auto; padding: 28px 16px 60px; }
 .art-dots { display: inline-flex; gap: 6px; margin-left: 6px; }
 .art-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--line); padding: 0; }
 .art-dot.on { background: var(--accent); }
+/* スマホ: 図を元の大きさに拡大して、横にずらして見る */
+.art-zoom, .art-pan { display: none; }
+@media (max-width: 560px) {
+  .art { margin-top: 18px; padding: 16px 10px 12px; }
+  .art-zoom {
+    display: inline-flex; align-items: center; gap: 4px; position: absolute; top: -11px; right: 12px;
+    background: var(--surface); color: var(--accent); border: 1px solid var(--line); border-radius: 999px;
+    font-size: 11px; font-weight: 900; padding: 3px 11px 3px 9px; line-height: 1.4;
+  }
+  .art-zoom svg { width: 12px; height: 12px; }
+  .art-zoom[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .art.is-zoom .art-stage { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -10px; padding: 0 10px; }
+  .art.is-zoom .art-svg { width: 560px; max-width: none; }
+  .art.is-zoom .art-pan { display: block; font-size: 11px; color: var(--ink-3); text-align: center; margin-top: 6px; }
+}
 
 .lesson-cta {
   margin-top: 32px; padding-top: 22px; border-top: 1px dashed var(--line);
@@ -1759,5 +1774,6 @@ button.pf-chip:hover { border-color: var(--accent); }
 .er-main > b { font-size: 14.5px; color: var(--ink); }
 .exam-resume .btn-row { gap: 14px; }
 .exam-resume .btn { padding: 10px 18px; font-size: 13.5px; }
+.exam-resume .btn-text { color: var(--ink-2); }
 .exam-stale { font-size: 12.5px; color: var(--ink-2); background: var(--surface-2); border-radius: 10px; padding: 10px 14px; margin-bottom: 18px; }
 .cbt-discard { margin-top: 14px; }

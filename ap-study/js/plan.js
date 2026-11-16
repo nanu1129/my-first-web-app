@@ -250,7 +250,7 @@ const Plan = (() => {
     const savedMock = stage === 'A' ? Quiz.loadMock() : null;
     if (savedMock) {
       const leftMin = Math.ceil(savedMock.remainSec / 60);
-      add({ act: 'mock', label: '模擬試験の続き(中断したところから)', sub: `解答 ${savedMock.answered}/${savedMock.total}問 ・ 残り時間 約${leftMin}分`, mins: leftMin });
+      add({ act: 'mock', label: '模擬試験の続き', sub: `中断したところから再開(解答 ${savedMock.answered}/${savedMock.total}問 ・ 残り時間 約${leftMin}分)`, mins: leftMin });
     } else if (stage === 'A' && phaseIdx === 2 && (acts.mock || (longDay && (longLimited || !mockRecent))) && (!past || !past.next)) {
       add({ act: 'mock', label: '模擬試験(科目A形式・80問)', sub: '3日に1回。本番と同じ150分で時間配分を練習', done: !!acts.mock, mins: 150 });
     }

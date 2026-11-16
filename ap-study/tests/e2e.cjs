@@ -863,13 +863,26 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await sp.page.screenshot({ path: path.join(OUT, 'sp-sync-on.png') });
     await sp.page.click('#sync-btn');
 
+    // 間違い直しノート: PCで付けた印が、ノートを開いているスマホにすぐ出る。2台で別々に付けた印は両方残り、得点も合う
+    await sp.page.evaluate(() => PastNote.open('r05s'));
+    await pc.page.evaluate(() => { Store.setPastMark('r05s', 12, 'w'); Store.setPastMark('r05s', 40, 'w'); });
+    ok(await until(sp.page, () => document.querySelectorAll('.pn-cell.is-w').length === 2), '同期: PCで付けた間違いの印が、ノートを開いているスマホにすぐ出る');
+    await Promise.all([
+      pc.page.evaluate(() => Store.setPastMark('r05s', 61, 'w')),
+      sp.page.click('.pn-cell[data-no="5"]'),
+    ]);
+    const four = () => Store.pastNote('r05s').missed === 4 && Store.pastExams().find((r) => r.id === 'r05s').score === 76;
+    ok(await until(pc.page, four) && await until(sp.page, four), '同期: 2台で別々に付けた印は両方とも残り、得点(80 − 4)も合う',
+      [await pc.page.evaluate(() => Store.pastNote('r05s').missed), await sp.page.evaluate(() => Store.pastNote('r05s').missed)]);
+    ok(cloud.problems.length === 0, '同期: ノートも、Firestoreに保存できる形になっている', cloud.problems.slice(0, 5));
+
     // すべてリセット(同期中): PCで消すと、クラウドとスマホの記録も消え、同期で復活しない
     await pc.page.click('#main-nav [data-nav="stats"]');
     let asked = '';
     pc.page.once('dialog', (d) => { asked = d.message(); d.accept(); });
     await pc.page.click('#reset-all');
     ok(asked.includes('ほかの端末の記録も消えます'), 'リセット(同期中): ほかの端末の記録も消えることを確認してから実行する', asked);
-    const emptyNow = () => Object.keys(Store.snapshot().units).length === 0 && Store.pastExams().length === 0;
+    const emptyNow = () => Object.keys(Store.snapshot().units).length === 0 && Store.pastExams().length === 0 && Store.pastNoteIds().length === 0;
     ok(await until(pc.page, emptyNow) && await until(sp.page, emptyNow), 'リセット(同期中): PCで消すと、スマホの記録も消える');
     await pc.page.waitForTimeout(3000);
     const cloudState = cloud.docs.get('users/u1').data.state;
@@ -947,6 +960,7 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07a', `ノート(${name}): 回の名前から、その回のノートを開ける`);
     // 手入力した得点は、印の数と合うまで書き換えない
     await page.evaluate(() => { Store.setPastExam('r06a', 50); PastNote.open('r06a'); });
+    ok((await page.locator('.pn-warn').innerText()).includes('間違えた30問に印') && await page.locator('#pn-link').count() === 0, `ノート(${name}): 得点だけ記録してある回は、印を付けるよう案内する`, await page.locator('.pn-warn').innerText());
     await page.click('.pn-cell[data-no="5"]');
     ok(await page.evaluate(() => Store.pastExams().find((r) => r.id === 'r06a').score) === 50 && (await page.locator('.pn-warn').innerText()).includes('あと29問'), `ノート(${name}): 手入力の得点は、印が一部のあいだは書き換えない`, await page.locator('.pn-warn').innerText());
     ok(await page.locator('.pn-areas').count() === 0, `ノート(${name}): 印が一部のあいだは、分野別の正答率を出さない`);
@@ -1072,6 +1086,38 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
     await page.click('#cbt-suspend');
     await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('ap-mock-progress')); d.qs[0].h += 1; localStorage.setItem('ap-mock-progress', JSON.stringify(d)); Exam.render(); });
     ok(await page.locator('.exam-stale').count() === 1 && await page.locator('#exam-resume').count() === 0 && (await saved()) === null, '再開: 問題が変わっていたら再開させず、その旨を伝える');
+    await ctx.close();
+  }
+  });
+
+  // ---- J. 図解: スマホでは「拡大する」で元の大きさにして、横にずらして見られる ----
+  await section('J', async () => {
+  for (const [name, vp] of VPS) {
+    const { ctx, page } = await newPage(browser, vp, seeded(Date.now()), errors, `art-${name}`);
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    await page.evaluate(() => Course.openLesson('security-2'));
+    const fig = page.locator('figure.art[data-art="fido"]');
+    await fig.scrollIntoViewIfNeeded();
+    const svgW = () => fig.locator('.art-svg').evaluate((el) => Math.round(el.getBoundingClientRect().width));
+    if (name === 'pc') {
+      ok(!(await fig.locator('.art-zoom').isVisible()) && await svgW() >= 560, '図解(pc): PCでは元の大きさ以上で表示され、拡大ボタンは出ない', await svgW());
+    } else {
+      const w0 = await svgW();
+      ok(await fig.locator('.art-zoom').isVisible() && w0 < 400, '図解(sp): スマホでは画面の幅に縮むので、「拡大する」を出す', w0);
+      await fig.locator('.art-zoom').click();
+      const z = await fig.evaluate((el) => { const st = el.querySelector('.art-stage'); return { w: Math.round(el.querySelector('.art-svg').getBoundingClientRect().width), pan: st.scrollWidth > st.clientWidth + 100, label: el.querySelector('.art-zoom').innerText.trim() }; });
+      ok(z.w === 560 && z.pan && z.label === '元に戻す', '図解(sp): 拡大すると元の大きさ(文字が読める大きさ)になり、図の中を横にずらせる', z);
+      ok(await overflow(page) <= 0, '図解(sp): 拡大しても、ページ全体は横にはみ出さない');
+      // アニメ図解は、ステップを進めても拡大したまま
+      await fig.locator('[data-next]').click();
+      ok(await svgW() === 560, '図解(sp): ステップを進めても拡大したまま');
+      await page.screenshot({ path: path.join(OUT, 'sp-art-zoom.png') });
+      await fig.locator('.art-zoom').click();
+      ok(await svgW() === w0, '図解(sp): 「元に戻す」で画面の幅に戻る');
+      await fig.locator('.art-stage').click();
+      ok(await svgW() === 560, '図解(sp): 図をタップしても拡大できる');
+    }
     await ctx.close();
   }
   });
