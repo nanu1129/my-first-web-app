@@ -204,3 +204,98 @@ test('科目Bの過去問の記録: 端末間では新しい記録(削除を含�
   assert.deepEqual(plain(m.pmExams['r07a-6']).deleted, true);
   assert.equal(Store.lastSeen('nothing'), 0);
 });
+
+test('間違い直しノート: 印を付けると得点(80 − 印の数)が自動で記録され、解き直しても得点は変わらない', () => {
+  const { Store } = freshStore();
+  [3, 12, 40, 55].forEach((n) => Store.setPastMark('r07a', n, 'w'));
+  let rec = plain(Store.pastExams()).find((r) => r.id === 'r07a');
+  assert.equal(rec.score, 76);
+  assert.equal(rec.total, 80);
+  assert.equal(rec.auto, 'note');
+  // 解き直して正解にしても、本番で落とした数は同じ
+  Store.setPastMark('r07a', 12, 'f');
+  const note = plain(Store.pastNote('r07a'));
+  assert.deepEqual(note.wrong, [3, 40, 55]);
+  assert.deepEqual(note.fixed, [12]);
+  assert.equal(note.missed, 4);
+  assert.equal(Store.pastExams().find((r) => r.id === 'r07a').score, 76);
+  // 印を消すと得点が戻る
+  Store.setPastMark('r07a', 55, 'n');
+  assert.equal(Store.pastExams().find((r) => r.id === 'r07a').score, 77);
+  // 記録した時刻(並び順に使う)は、印を変えても動かない
+  assert.equal(Store.pastExams().find((r) => r.id === 'r07a').at, rec.at);
+  // メモは解き直しの前後で保たれ、印を消すと消える
+  Store.setPastMemo('r07a', 3, '  稼働率の直列と並列を逆にした  ');
+  Store.setPastMark('r07a', 3, 'f');
+  assert.equal(Store.pastNote('r07a').marks[3].m, '稼働率の直列と並列を逆にした');
+  Store.setPastMark('r07a', 3, 'n');
+  Store.setPastMark('r07a', 3, 'w');
+  assert.equal(Store.pastNote('r07a').marks[3].m, '');
+  // すべての印を消すと、ノートが作った記録も消える
+  Store.clearPastNote('r07a');
+  assert.equal(Store.pastExams().length, 0);
+  assert.deepEqual(plain(Store.pastNoteIds()), []);
+});
+
+test('間違い直しノート: 手入力した得点は、印の数と合うまで書き換えない(合ったあとは連動する)', () => {
+  const { Store } = freshStore();
+  Store.setPastExam('r06a', 77);
+  Store.setPastMark('r06a', 5, 'w');
+  Store.setPastMark('r06a', 6, 'w');
+  // 印は2問(= 78点)だが、手入力の 77点 のまま
+  let rec = plain(Store.pastExams()).find((r) => r.id === 'r06a');
+  assert.equal(rec.score, 77);
+  assert.equal(rec.auto, undefined);
+  // 3問目で一致 → 4問目からはノートに合わせて変わる
+  Store.setPastMark('r06a', 7, 'w');
+  assert.equal(Store.pastExams().find((r) => r.id === 'r06a').score, 77);
+  Store.setPastMark('r06a', 8, 'w');
+  rec = plain(Store.pastExams()).find((r) => r.id === 'r06a');
+  assert.equal(rec.score, 76);
+  assert.equal(rec.auto, 'link');
+  // 手入力から始めた記録は、印をすべて消しても残る(80点になる)
+  Store.clearPastNote('r06a');
+  assert.equal(Store.pastExams().find((r) => r.id === 'r06a').score, 80);
+  // 得点を手で入れ直すと、連動は外れる
+  Store.setPastExam('r06a', 60);
+  Store.setPastMark('r06a', 1, 'w');
+  assert.equal(Store.pastExams().find((r) => r.id === 'r06a').score, 60);
+  // 「ノートに合わせる」で連動し直せる
+  Store.linkPastScore('r06a');
+  assert.equal(Store.pastExams().find((r) => r.id === 'r06a').score, 79);
+});
+
+test('間違い直しノートのマージ: 問題ごとに新しい方を採用し、別々の端末で付けた印が両方残る(得点も合う)', () => {
+  const { Store } = freshStore();
+  const now = Date.now();
+  [1, 2, 3].forEach((n) => Store.setPastMark('r05a', n, 'w'));
+  const pc = plain(Store.snapshot());
+  // スマホ: 同じ状態から、問3を解き直して正解にし、問50に印を付け、問1の印を消した
+  const phone = plain(pc);
+  phone.deviceId = 'phone';
+  phone.pastNotes.r05a[3] = { s: 'f', at: now + 1000 };
+  phone.pastNotes.r05a[50] = { s: 'w', at: now + 2000 };
+  phone.pastNotes.r05a[1] = { s: 'n', at: now + 3000 };
+  phone.pastExams.r05a = Object.assign({}, phone.pastExams.r05a, { score: 77, mt: now + 3000 });
+  // PC: オフラインのあいだに、問70に印を付けた
+  const pc2 = plain(pc);
+  pc2.pastNotes.r05a[70] = { s: 'w', at: now + 2500 };
+  pc2.pastExams.r05a = Object.assign({}, pc2.pastExams.r05a, { score: 76, mt: now + 2500 });
+  const m1 = Store.mergeStates(pc2, phone), m2 = Store.mergeStates(phone, pc2);
+  assert.deepEqual(plain(m1.pastNotes), plain(m2.pastNotes));
+  assert.deepEqual(plain(m1.pastExams), plain(m2.pastExams));
+  assert.deepEqual(plain(Store.mergeStates(m1, phone).pastNotes), plain(m1.pastNotes));
+  Store.applyState(m1);
+  const note = plain(Store.pastNote('r05a'));
+  assert.deepEqual(note.wrong, [2, 50, 70]);
+  assert.deepEqual(note.fixed, [3]);
+  // 得点は印の数から計算するので、どちらの端末の値(76・77)でもなく 80 − 4 = 76
+  assert.equal(Store.pastExams().find((r) => r.id === 'r05a').score, 76);
+  // 保存済みの古いデータ(pastNotes が無い)を読んでも動く
+  const old = plain(Store.snapshot());
+  delete old.pastNotes;
+  const { Store: S2 } = freshStore(old);
+  assert.equal(S2.pastNote('r05a').missed, 0);
+  S2.setPastMark('r05a', 9, 'w');
+  assert.equal(S2.pastNote('r05a').missed, 1);
+});

@@ -222,6 +222,18 @@ const Plan = (() => {
     if (stage === 'A' && phaseIdx >= 1) {
       add({ act: 'drill', label: '計算ドリル 10問', sub: '数値が変わっても解ける状態に', done: (acts.drill || 0) >= 10, mins: 10 });
     }
+    // 過去問の解き直し: 間違い直しノートに残っている問題を、毎日少しずつ(解いた当日の回は、日をあけるために入れない)
+    const redo = PastNote.redoStatus();
+    const redoDone = acts.pastredo || 0;
+    if (stage === 'A' && (redo.due > 0 || redoDone)) {
+      const n = Math.min(PastNote.REDO_PER_DAY, redo.due + redoDone);
+      add(redoDone >= n
+        ? { act: 'pastredo', label: '過去問の解き直し', sub: `今日 ${redoDone}問 解き直しました${redo.left ? `(残り${redo.left}問)` : ''}`, done: true }
+        : {
+          act: 'pastredo', id: redo.next.id, label: `過去問の解き直し ${n - redoDone}問`,
+          sub: `${redo.next.name}${redo.dueExams > 1 ? 'ほか' : ''}の間違い(残り${redo.due}問)。解説を読んでから、何も見ずにもう一度解く`, mins: (n - redoDone) * 4,
+        });
+    }
     // Udemy講座の過去問解説(§14〜23): 演習期からは、本物の過去問を解いてから解説動画で見直す(3日に1回)
     const past = udemy ? Order.pastStatus() : null;
     // 時間の取れる日が限られている設定(平日は短い、など)では、3日おきではなく、取れる日ごとに1回
@@ -230,7 +242,7 @@ const Plan = (() => {
         ? { act: 'udemy', label: '過去問1回分 + Udemyの解説', sub: `今日1回分を終えました(${past.done}/${past.total}回)`, done: true }
         : {
           act: 'udemy', label: `過去問(${past.next.exam})→ Udemy §${past.next.no} の解説`,
-          sub: 'IPAの過去問題80問を150分で解き、得点を記録してから、間違えた問題の解説動画を見る', mins: 180,
+          sub: 'IPAの過去問題80問を150分で解き、間違えた番号を「間違い直しノート」に付けてから、解説動画を見る', mins: 180,
         });
     }
     // 模試: Udemy講座を使う場合は、過去問をすべて終えてから(本物の過去問を優先する)

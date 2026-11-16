@@ -26,6 +26,7 @@ const Store = (() => {
     cardSrs: {},    // termKey -> { box(0〜6), due(ms), at(最終回答ms) }
     pastExams: {},  // 本物の過去問の得点 examId -> { score, total, at }(削除は { deleted: true, at })
     pmExams: {},    // 科目B(午後)の過去問の自己採点 '試験ID-問番号' -> { score(%), at }(削除は { deleted: true, at })
+    pastNotes: {},  // 過去問(科目A)の間違い直しノート examId -> { 問番号: { s: 'w'間違い | 'f'解き直して正解 | 'n'印なし, at, m: メモ } }
     srs: {},        // qid -> { reps, interval(日), due(ms) }
     lastWrong: {},  // qid -> 最後に間違えた時刻(ms)
     lastRight: {},  // qid -> 最後に正解した時刻(ms)
@@ -87,6 +88,7 @@ const Store = (() => {
     if (!cache.cardSrs) cache.cardSrs = {};
     if (!cache.pastExams) cache.pastExams = {};
     if (!cache.pmExams) cache.pmExams = {};
+    if (!cache.pastNotes) cache.pastNotes = {};
     if (!cache.prefsTs) cache.prefsTs = {};
     return cache;
   }
@@ -152,13 +154,28 @@ const Store = (() => {
       out.cardSrs[id] = (!x || (y && (y.at || 0) > (x.at || 0))) ? y : x;
     });
 
-    // 過去問の得点(午前・午後): 試験ごとに、あとから記録した方(削除も含む)を採用
+    // 過去問の得点(午前・午後): 試験ごとに、あとから記録した方(削除も含む)を採用。
+    // 更新時刻は mt(なければ at)。同時刻なら内容で決める(どちらの端末でマージしても同じ結果になるように)
+    const newer = (x, y) => {
+      const tx = (x.mt || x.at || 0), ty = (y.mt || y.at || 0);
+      return ty > tx || (ty === tx && JSON.stringify(y) > JSON.stringify(x));
+    };
     ['pastExams', 'pmExams'].forEach((f) => {
       const pk = new Set([...Object.keys(a[f] || {}), ...Object.keys(b[f] || {})]);
       pk.forEach((id) => {
         const x = (a[f] || {})[id], y = (b[f] || {})[id];
-        out[f][id] = (!x || (y && (y.at || 0) > (x.at || 0))) ? y : x;
+        out[f][id] = (!x || (y && newer(x, y))) ? y : x;
       });
+    });
+    // 間違い直しノート: 問題ごとに、あとから変更した方を採用(別々の端末で付けた印が両方残る)
+    const nk = new Set([...Object.keys(a.pastNotes || {}), ...Object.keys(b.pastNotes || {})]);
+    nk.forEach((id) => {
+      const x = (a.pastNotes || {})[id] || {}, y = (b.pastNotes || {})[id] || {};
+      const m = {};
+      new Set([...Object.keys(x), ...Object.keys(y)]).forEach((no) => {
+        m[no] = (!x[no] || (y[no] && newer(x[no], y[no]))) ? y[no] : x[no];
+      });
+      out.pastNotes[id] = m;
     });
 
     // 間隔反復: 学習が進んでいる方(反復回数が多い、同数なら次回が先の方)を採用
@@ -232,6 +249,35 @@ const Store = (() => {
     return out;
   }
 
+  // ---------- 過去問の間違い直しノート ----------
+  const NOTE_TOTAL = 80;
+  const isMark = (v) => !!v && (v.s === 'w' || v.s === 'f');
+  // 印の数(間違い + 解き直して正解)。本番で落とした問題数に当たる
+  function noteMissed(id) {
+    return Object.values(load().pastNotes[id] || {}).filter(isMark).length;
+  }
+  const liveExam = (id) => { const r = load().pastExams[id]; return r && !r.deleted ? r : null; };
+  // ノートの印と得点の記録を連動させる(得点 = 80 − 印の数)。
+  // 記録がまだ無いとき、または印の数と合っていた記録だけを更新する。
+  // 手入力した得点が印の数と合っていないあいだは、勝手に書き換えない(印を一部だけ付ける使い方を妨げない)
+  function linkScore(id, before, now) {
+    const d = load();
+    const rec = liveExam(id);
+    const linked = rec ? (rec.auto || (rec.total === NOTE_TOTAL && rec.score === NOTE_TOTAL - before)) : before === 0;
+    if (!linked) return;
+    const missed = noteMissed(id);
+    if (!missed && (!rec || rec.auto === 'note')) {
+      // 印をすべて消したら、ノートが作った記録も消す
+      if (rec) d.pastExams[id] = { deleted: true, at: now };
+      return;
+    }
+    if (rec && rec.auto && rec.score === NOTE_TOTAL - missed) return;
+    d.pastExams[id] = {
+      score: NOTE_TOTAL - missed, total: NOTE_TOTAL, at: rec ? rec.at : now, mt: now,
+      auto: rec && rec.auto !== 'note' ? 'link' : 'note',
+    };
+  }
+
   // { キー: 時刻 } の表を、キーごとに新しい方でまとめる。負の値は「解除した時刻」を表す
   function mergeStamps(x, y) {
     const out = {};
@@ -258,6 +304,7 @@ const Store = (() => {
       if (!cache.cardSrs) cache.cardSrs = {};
       if (!cache.pastExams) cache.pastExams = {};
       if (!cache.pmExams) cache.pmExams = {};
+      if (!cache.pastNotes) cache.pastNotes = {};
       if (!cache.prefsTs) cache.prefsTs = {};
       save(true);
     },
@@ -318,12 +365,67 @@ const Store = (() => {
       const d = load();
       if (d.pastExams[id]) { d.pastExams[id] = { deleted: true, at: Date.now() }; save(); }
     },
-    // 記録した順(古い → 新しい)。削除したものは含めない
+    // 記録した順(古い → 新しい)。削除したものは含めない。
+    // 間違い直しノートと連動している記録(auto)は、印の数から計算する(端末ごとに付けた印をまとめた直後も正しい)
     pastExams() {
       return Object.entries(load().pastExams)
         .filter(([, v]) => v && !v.deleted)
-        .map(([id, v]) => Object.assign({ id }, v))
+        .map(([id, v]) => Object.assign({ id }, v, v.auto ? { score: Math.max(0, v.total - noteMissed(id)) } : {}))
         .sort((x, y) => x.at - y.at);
+    },
+
+    // --- 過去問(科目A)の間違い直しノート ---
+    // 印: 'w' 間違い / 'f' 解き直して正解。'n' は印を消した記録(別の端末にも消したことが伝わる)
+    pastNote(id) {
+      const marks = {}, wrong = [], fixed = [];
+      Object.entries(load().pastNotes[id] || {}).forEach(([no, v]) => {
+        if (!isMark(v)) return;
+        marks[no] = { s: v.s, m: v.m || '' };
+        (v.s === 'w' ? wrong : fixed).push(Number(no));
+      });
+      const asc = (x, y) => x - y;
+      return { marks, wrong: wrong.sort(asc), fixed: fixed.sort(asc), missed: wrong.length + fixed.length };
+    },
+    // 印のある回の一覧
+    pastNoteIds() {
+      return Object.keys(load().pastNotes).filter((id) => noteMissed(id) > 0);
+    },
+    setPastMark(id, no, s) {
+      const d = load();
+      const before = noteMissed(id);
+      const note = d.pastNotes[id] || (d.pastNotes[id] = {});
+      const prev = note[no];
+      const now = Date.now();
+      note[no] = s === 'w' || s === 'f'
+        ? Object.assign({ s, at: now }, isMark(prev) && prev.m ? { m: prev.m } : {})
+        : { s: 'n', at: now };
+      linkScore(id, before, now);
+      save();
+    },
+    setPastMemo(id, no, memo) {
+      const d = load();
+      const cur = (d.pastNotes[id] || {})[no];
+      if (!isMark(cur)) return;
+      const m = String(memo || '').trim().slice(0, 120);
+      if (m === (cur.m || '')) return;
+      d.pastNotes[id][no] = Object.assign({ s: cur.s, at: Date.now() }, m ? { m } : {});
+      save();
+    },
+    clearPastNote(id) {
+      const d = load();
+      const before = noteMissed(id);
+      const now = Date.now();
+      Object.entries(d.pastNotes[id] || {}).forEach(([no, v]) => { if (isMark(v)) d.pastNotes[id][no] = { s: 'n', at: now }; });
+      linkScore(id, before, now);
+      save();
+    },
+    // 得点の記録を、ノートの印の数に合わせる(以後はノートと連動する)
+    linkPastScore(id) {
+      const d = load();
+      const rec = liveExam(id);
+      const now = Date.now();
+      d.pastExams[id] = { score: NOTE_TOTAL - noteMissed(id), total: NOTE_TOTAL, at: rec ? rec.at : now, mt: now, auto: rec ? 'link' : 'note' };
+      save();
     },
 
     // --- 科目B(午後)の過去問(IPA公開)の自己採点(%) ---

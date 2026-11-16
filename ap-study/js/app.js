@@ -131,7 +131,7 @@ const App = (() => {
   // 同期でデータが更新されたとき、表示中の画面を描き直す
   function refresh() {
     if (currentView === 'home') Course.renderHome();
-    else if (currentView === 'stats') Stats.render();
+    else if (currentView === 'stats') { if (PastNote.isOpen()) PastNote.refresh(); else Stats.render(); }
     else if (currentView === 'cards') Cards.render();
     else if (currentView === 'exam') Exam.render();
   }

@@ -100,6 +100,7 @@ const Course = (() => {
       uc.querySelectorAll('input[data-sec]').forEach((cb) => {
         cb.addEventListener('change', () => { udemyOpen = true; Order.setWatched(Number(cb.dataset.sec), cb.checked); renderHome(); });
       });
+      uc.querySelectorAll('[data-note]').forEach((b) => b.addEventListener('click', () => { udemyOpen = true; PastNote.open(b.dataset.note); }));
     }
     const goalSel = document.getElementById('daily-goal');
     if (goalSel) goalSel.addEventListener('change', () => {
@@ -197,8 +198,10 @@ const Course = (() => {
           <span class="uc-prog ${done === us.length ? 'is-done' : ''}">一問一答 ${done}/${us.length}</span>`;
       } else if (s.kind === 'past') {
         const rec = Store.pastExams().find((r) => r.id === s.pastId);
+        const left = Store.pastNote(s.pastId).wrong.length;
         meta = `<label class="uc-score">得点 <input type="number" min="0" max="80" inputmode="numeric" data-past="${s.pastId}" value="${rec ? rec.score : ''}" aria-label="${esc(s.exam)}の得点"> /80</label>
-          <span class="uc-hint">過去問を解いて得点を記録 → 解説を見たらチェック</span>`;
+          <span class="uc-hint">過去問を解いたら <button class="uc-link" data-note="${s.pastId}" aria-label="${esc(s.exam)}の間違い直しノートを開く">間違い直しノート</button> に印を付ける(得点も記録されます)→ 解説を見たらチェック${
+            left ? ` <b class="uc-left">解き直し 残り${left}問</b>` : ''}</span>`;
       } else if (s.kind === 'pm') {
         meta = '<span class="uc-hint">科目B(旧午後)の記述対策</span>';
       }
@@ -536,6 +539,7 @@ const Course = (() => {
     if (act === 'drill') { App.navigate('practice'); return Drill.render(); }
     if (act === 'trace') { App.navigate('practice'); return Trace.renderMenu(); }
     if (act === 'mock') return App.navigate('exam');
+    if (act === 'pastredo') return PastNote.open(id, { focus: 'redo' });
     if (act === 'case') { App.navigate('practice'); return id ? Afternoon.start(id) : Afternoon.renderMenu(); }
     if (act === 'pmfields') { App.navigate('practice'); return Afternoon.renderMenu({ focus: 'pm-fields' }); }
     if (act === 'pmpast') { App.navigate('practice'); return Afternoon.renderMenu({ focus: 'pm-past', key: id }); }

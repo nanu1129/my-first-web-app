@@ -893,6 +893,88 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
   }
   });
 
+  // ---- H. 過去問の間違い直しノート: 印 → 得点の自動記録 → 分野別の内訳 → 解き直し → 今日のメニュー ----
+  await section('H', async () => {
+  for (const [name, vp] of VPS) {
+    const now = new Date('2026-12-20T10:00:00+09:00').getTime();
+    const { ctx, page } = await newPage(browser, vp, seeded(now), errors, `note-${name}`);
+    await page.clock.setFixedTime(new Date(now));
+    await page.goto(BASE);
+    await page.waitForSelector('.today-card');
+    await page.click('#main-nav [data-nav="stats"]');
+    await page.click('#past-note-open');
+    await page.waitForSelector('.pn-wrap');
+    ok((await page.inputValue('#pn-exam')) === 'r07a' && await page.locator('.pn-cell').count() === 80, `ノート(${name}): 最新の回が選ばれ、80問分の番号が並ぶ`);
+    ok(await overflow(page) <= 0, `ノート(${name}): 横にはみ出さない`);
+    // 間違えた番号をタップ → 得点が自動で記録される
+    for (const n of [3, 12, 36, 37, 40, 44, 52, 70]) await page.click(`.pn-cell[data-no="${n}"]`);
+    ok(await page.locator('.pn-cell.is-w').count() === 8 && (await page.locator('.pn-score').innerText()).includes('72'), `ノート(${name}): 印を8つ付けると 72/80 と表示される`, await page.locator('.pn-score').innerText());
+    ok(await page.evaluate(() => { const r = Store.pastExams()[0]; return `${r.id}:${r.score}/${r.total}`; }) === 'r07a:72/80', `ノート(${name}): 得点が成績に自動で記録される`);
+    // もう一度タップすると消える
+    await page.click('.pn-cell[data-no="70"]');
+    ok(await page.locator('.pn-cell.is-w').count() === 7 && await page.evaluate(() => Store.pastExams()[0].score) === 73, `ノート(${name}): もう一度タップすると印が消え、得点も戻る`);
+    // 分野別の内訳(テクノロジ 6問、マネジメント 1問。セキュリティは目安の範囲で4問)
+    const areas = await page.locator('.pn-areas .acc-val').allInnerTexts();
+    ok(/44\/50/.test(areas[0]) && /9\/10/.test(areas[1]) && /20\/20/.test(areas[2]), `ノート(${name}): 3区分の正解数が出る`, areas);
+    ok((await page.locator('.pn-weak').innerText()).includes('セキュリティ'), `ノート(${name}): いちばん落としている分野を示す`, await page.locator('.pn-weak').innerText());
+    // 解き直しリスト: 問題と解説へのリンク・メモ・「正解できた」
+    const href = await page.locator('.pn-item').first().locator('a').getAttribute('href');
+    ok(href === 'https://www.ap-siken.com/kakomon/07_aki/q3.html', `ノート(${name}): 解き直しリストから、その問題の解説ページを開ける`, href);
+    await page.fill('.pn-memo[data-memo="12"]', 'ヒット率の式を逆に覚えていた');
+    await page.locator('.pn-memo[data-memo="12"]').dispatchEvent('change');
+    await page.click('[data-fix="3"]');
+    ok(await page.locator('#pn-redo .pill').innerText() === '残り 6問' && await page.locator('.pn-cell.is-f').count() === 1, `ノート(${name}): 「正解できた」で残りが減り、表の印が変わる`, await page.locator('#pn-redo .pill').innerText());
+    ok(await page.evaluate(() => Store.pastExams()[0].score) === 73, `ノート(${name}): 解き直しても、本番で落とした数(得点)は変わらない`);
+    ok(await page.inputValue('.pn-memo[data-memo="12"]') === 'ヒット率の式を逆に覚えていた', `ノート(${name}): メモが残る`);
+    await page.screenshot({ path: path.join(OUT, `note-${name}.png`), fullPage: true });
+    // 弱い分野: まだ学んでいない分野なら教材へ、学んだ分野なら10問の練習へ(戻るとノートに戻る)
+    ok((await page.locator('#pn-drill').innerText()) === 'この分野の教材を開く', `ノート(${name}): まだ学んでいない分野は、教材を案内する`, await page.locator('#pn-drill').innerText());
+    await page.click('#pn-drill');
+    ok((await page.locator('#view-lesson .lesson-part-tag').innerText()).includes('セキュリティ'), `ノート(${name}): いちばん落としている分野の教材が開く`);
+    await page.evaluate(() => { Store.setUnitResult('security-1', 6, 6, true); PastNote.open('r07a'); });
+    await page.click('#pn-drill');
+    await page.waitForSelector('#view-quiz .choice');
+    ok((await page.locator('#view-quiz').innerText()).includes('弱点ドリル: セキュリティ'), `ノート(${name}): 学んだ分野は、10問の練習を始められる`);
+    await page.click('#quiz-quit');
+    ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07a', `ノート(${name}): 練習をやめると、ノートに戻る`);
+    // 成績タブ: 一覧に解き直しの残りが出て、回の名前からノートを開ける
+    await page.click('.crumb [data-back]');
+    ok((await page.locator('.past-note').innerText()).includes('6問') && (await page.locator('.past-row .past-name').innerText()).includes('残り6問'), `ノート(${name}): 成績に解き直しの残りが出る`, await page.locator('.past-note').innerText());
+    ok(await page.locator('.past-areas .acc-row').count() === 3, `ノート(${name}): 成績に、ノートを付けた回の分野別の正答率が出る`);
+    await page.click('.past-row .past-name');
+    ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07a', `ノート(${name}): 回の名前から、その回のノートを開ける`);
+    // 手入力した得点は、印の数と合うまで書き換えない
+    await page.evaluate(() => { Store.setPastExam('r06a', 50); PastNote.open('r06a'); });
+    await page.click('.pn-cell[data-no="5"]');
+    ok(await page.evaluate(() => Store.pastExams().find((r) => r.id === 'r06a').score) === 50 && (await page.locator('.pn-warn').innerText()).includes('あと29問'), `ノート(${name}): 手入力の得点は、印が一部のあいだは書き換えない`, await page.locator('.pn-warn').innerText());
+    ok(await page.locator('.pn-areas').count() === 0, `ノート(${name}): 印が一部のあいだは、分野別の正答率を出さない`);
+    await page.click('#pn-link');
+    ok(await page.evaluate(() => Store.pastExams().find((r) => r.id === 'r06a').score) === 79 && await page.locator('.pn-score').count() === 1, `ノート(${name}): 「得点を印の数に合わせる」で連動する`);
+    page.once('dialog', (d) => d.accept());
+    await page.click('#pn-clear');
+    ok(await page.locator('.pn-cell.is-w').count() === 0, `ノート(${name}): 印をすべて消せる`);
+    // 今日のメニュー: 解いた当日は出さず、翌日から「過去問の解き直し」を案内する
+    await page.evaluate(() => { Store.setPastMark('r06a', 5, 'n'); Store.removePastExam('r06a'); App.goHome(); });
+    ok(await page.locator('.task-row[data-act="pastredo"]:not(.is-done)').count() === 0, `ノート(${name}): 解いた当日は、解き直しをメニューで求めない(日をあける)`);
+    await page.clock.setFixedTime(new Date(now + DAY));
+    await page.evaluate(() => App.goHome());
+    const redo = page.locator('.task-row[data-act="pastredo"]');
+    ok(await redo.count() === 1 && (await redo.innerText()).includes('過去問の解き直し 5問'), `ノート(${name}): 翌日は、今日のメニューに「過去問の解き直し 5問」が出る`, await redo.allInnerTexts());
+    await redo.click();
+    await page.waitForSelector('.pn-wrap');
+    ok(await page.evaluate(() => { const r = document.getElementById('pn-redo').getBoundingClientRect(); return r.top >= 0 && r.top < 200; }), `ノート(${name}): メニューから開くと、解き直しリストまで進む`);
+    for (const n of [12, 36, 37, 40, 44]) await page.click(`[data-fix="${n}"]`);
+    await page.evaluate(() => App.goHome());
+    ok(await page.locator('.task-row[data-act="pastredo"].is-done').count() === 1, `ノート(${name}): 5問解き直すと、今日の分は完了になる`);
+    // Udemyのカードからも開ける
+    await page.click('#udemy-progress summary');
+    ok((await page.locator('.uc-item .uc-left').first().innerText()).includes('残り1問'), `ノート(${name}): Udemyのカードに解き直しの残りが出る`);
+    await page.locator('.uc-link[data-note="r07s"]').click();
+    ok(await page.locator('.pn-wrap').getAttribute('data-exam') === 'r07s', `ノート(${name}): Udemyのカードから、その回のノートを開ける`);
+    await ctx.close();
+  }
+  });
+
   // ---- G. Service Worker: 2回目からはバージョン付きのファイルをキャッシュから読み、オフラインでも開ける ----
   await section('G', async () => {
   {
